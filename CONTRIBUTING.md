@@ -12,6 +12,7 @@ Please read [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) before participating.
 git clone https://github.com/YOUR_USERNAME/Scraper.git
 cd Scraper
 npm install
+python3 -m pip install -r requirements.txt
 node -c server.js
 python3 -m py_compile convert_image.py create_zip.py
 ```
@@ -81,6 +82,7 @@ Commit prefixes:
 ├── server.js
 ├── convert_image.py
 ├── create_zip.py
+├── requirements.txt
 ├── Dockerfile
 ├── railway.toml
 ├── .env.example

@@ -42,6 +42,7 @@ Production-oriented scraper service for product pages and category pages, with S
 git clone https://github.com/arslanbasharat-o-o/Scraper.git
 cd Scraper
 npm install
+python3 -m pip install -r requirements.txt
 ```
 
 Start server:
@@ -199,6 +200,7 @@ docker run --rm -p 3001:3001 --env-file .env.example mobilesentrix-scraper
 ├── server.js
 ├── convert_image.py
 ├── create_zip.py
+├── requirements.txt
 ├── Dockerfile
 ├── railway.toml
 ├── .env.example

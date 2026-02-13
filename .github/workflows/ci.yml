@@ -37,6 +37,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: Install Node dependencies
         run: npm ci
@@ -44,7 +45,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install Pillow requests
+          pip install -r requirements.txt
 
       - name: JavaScript syntax checks
         run: |
@@ -100,6 +101,7 @@ jobs:
           test -f .github/labels.json
           test -f .github/workflows/release-drafter.yml
           test -f .github/workflows/labels-sync.yml
+          test -f requirements.txt
           test -f docs/README.md
           test -f docs/API_REFERENCE.md
           test -f docs/DEPLOYMENT_RAILWAY.md
