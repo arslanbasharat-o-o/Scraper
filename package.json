@@ -1,0 +1,22 @@
+{
+  "name": "mobilesentrix_scraping",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node start.js",
+    "start:linux": "./start.sh",
+    "start:windows": "start.bat",
+    "server": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "chromedriver": "^144.0.1",
+    "express": "^5.1.0",
+    "selenium-webdriver": "^4.35.0"
+  }
+}
