@@ -1,0 +1,27 @@
+name: Support question
+description: Ask setup or usage questions
+title: "[Question]: "
+labels:
+  - question
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do?
+      placeholder: How should I configure MAX_ACTIVE_SCRAPES on Railway for 512MB RAM?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Include relevant config, logs, and environment info
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I checked the docs in `docs/` first.
+          required: true

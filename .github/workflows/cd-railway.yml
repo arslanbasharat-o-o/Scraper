@@ -1,0 +1,95 @@
+name: CD - Railway
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-railway-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Preflight checks
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+      missing_secrets: ${{ steps.check.outputs.missing_secrets }}
+
+    steps:
+      - name: Check required secrets
+        id: check
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${RAILWAY_TOKEN:-}" ] || missing+=("RAILWAY_TOKEN")
+          [ -n "${RAILWAY_PROJECT_ID:-}" ] || missing+=("RAILWAY_PROJECT_ID")
+          [ -n "${RAILWAY_SERVICE_ID:-}" ] || missing+=("RAILWAY_SERVICE_ID")
+
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "missing_secrets=" >> "$GITHUB_OUTPUT"
+            echo "All required Railway secrets are configured."
+          else
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "missing_secrets=${missing[*]}" >> "$GITHUB_OUTPUT"
+            printf 'Missing required Railway secrets: %s\n' "${missing[*]}"
+          fi
+
+  deploy:
+    name: Deploy to Railway
+    needs: [preflight]
+    if: ${{ needs.preflight.outputs.should_deploy == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
+        run: |
+          set -euo pipefail
+          CMD=(railway up --ci --detach --project "$RAILWAY_PROJECT_ID" --service "$RAILWAY_SERVICE_ID")
+          if [ -n "${RAILWAY_ENVIRONMENT_ID:-}" ]; then
+            CMD+=(--environment "$RAILWAY_ENVIRONMENT_ID")
+          fi
+          printf 'Running: %q ' "${CMD[@]}"
+          echo
+          "${CMD[@]}"
+
+  missing-secrets:
+    name: Deployment skipped (missing Railway secrets)
+    needs: [preflight]
+    if: ${{ needs.preflight.outputs.should_deploy != 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Explain skip reason
+        run: |
+          echo "Skipping Railway deployment. Configure these GitHub repository secrets:"
+          echo "- RAILWAY_TOKEN"
+          echo "- RAILWAY_PROJECT_ID"
+          echo "- RAILWAY_SERVICE_ID"
+          echo "Optional: RAILWAY_ENVIRONMENT_ID"
+          echo "Missing now: ${{ needs.preflight.outputs.missing_secrets }}"

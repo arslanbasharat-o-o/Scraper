@@ -1,6 +1,6 @@
 # Python Image Conversion Integration
 
-This project uses Python for faster image conversion to JPG format, replacing the slower Node.js sharp library with Python's optimized PIL/Pillow library.
+This project uses Python for faster image conversion to JPG format, using Pillow for conversion and optimization.
 
 ## Requirements
 
@@ -60,13 +60,13 @@ Returns:
 ## Configuration
 
 Environment variables:
-- `IMAGE_HTTP_TIMEOUT_MS` (default: 25000ms) - Download timeout
-- `IMAGE_CONVERT_TIMEOUT_MS` (default: 30000ms) - Python conversion timeout
-- `IMAGE_DOWNLOAD_CONCURRENCY` (default: 4) - Concurrent conversions
+- `IMAGE_HTTP_TIMEOUT_MS` (default: 20000ms) - Download timeout
+- `IMAGE_CONVERT_TIMEOUT_MS` (default: 25000ms) - Python conversion timeout
+- `IMAGE_DOWNLOAD_CONCURRENCY` (default: 3) - Concurrent conversions
 
 ## Performance
 
-Python/Pillow is **3-5x faster** than Node.js sharp for:
+Python/Pillow is typically much faster than pure Node.js conversion for:
 - Large batch image processing
 - RGBA/transparency handling
 - JPEG quality optimization

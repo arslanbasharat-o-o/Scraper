@@ -1,0 +1,57 @@
+name: Feature request
+description: Propose a new capability or improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: input
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+      placeholder: Operators cannot prioritize jobs by urgency
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe your preferred implementation
+      placeholder: Add priority field to /scrape and priority queue scheduler
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: Manual queue ordering via admin endpoint
+  - type: textarea
+    id: scope
+    attributes:
+      label: Success criteria
+      description: How do we know this feature is done?
+      placeholder: |
+        - Priority accepted by API
+        - Queue executes high > normal > low
+        - Metrics exposed in /admin/api/overview
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Expected impact
+      options:
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I reviewed existing issues and discussions.
+          required: true
+        - label: I can help validate the solution once implemented.
+          required: false

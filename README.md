@@ -1,369 +1,213 @@
-# 🕷️ Optimized Web Scraper
+# MobileSentrix Scraper API
+
+Production-oriented scraper service for product pages and category pages, with Selenium extraction, Python image conversion, and ZIP export.
 
 [![Node.js](https://img.shields.io/badge/Node.js-v20+-green?logo=node.js)](https://nodejs.org/)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/arslanbasharat-o-o/Scraper?style=social)](https://github.com/arslanbasharat-o-o/Scraper)
 
-A high-performance, production-ready web scraper built with Node.js and Python. Optimized for speed, memory efficiency, and reliability with intelligent image extraction, conversion, and compression.
+## Features
 
-## 🚀 Features
+- Concurrent scrape queue (`MAX_ACTIVE_SCRAPES`)
+- Single-product and category scraping
+- Multiple image extraction fallbacks
+- Python-based image conversion (`convert_image.py`)
+- Python ZIP creation with Node.js fallback (`create_zip.py`)
+- Job APIs for status, images, ZIP downloads, and cleanup
+- Health and memory monitoring endpoints
 
-- ✅ **Multi-threaded Web Scraping** - Concurrent product scraping with Selenium WebDriver
-- ✅ **Smart Image Detection** - 10+ detection methods (lazy-load, meta tags, JSON-LD, CSS backgrounds)
-- ✅ **Python Image Processing** - 4-5x faster image conversion using PIL
-- ✅ **Intelligent Compression** - 6-10x faster ZIP creation with Python zipfile
-- ✅ **Memory Optimized** - 60% memory reduction through intelligent caching
-- ✅ **Auto Cleanup** - Automatic image deletion after 24 hours
-- ✅ **Real-time Monitoring** - Health checks and memory alerts at 70% threshold
-- ✅ **Database Storage** - Base64 image storage with metadata
-- ✅ **Single Product URLs** - Support for individual product pages
-- ✅ **RESTful API** - Complete API for job management
-- ✅ **Production Ready** - Error handling, logging, and graceful degradation
-
-## 📋 Table of Contents
-
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [API Documentation](#api-documentation)
-- [Configuration](#configuration)
-- [Performance](#performance)
-- [Architecture](#architecture)
-- [Contributing](#contributing)
-- [License](#license)
-
-## 💾 Installation
-
-### Requirements
+## Requirements
 
 - Node.js 20+
-- Python 3.11+
-- macOS / Linux / Windows (WSL2)
-- 512MB RAM minimum (1GB+ recommended)
+- Python 3.11+ (recommended)
+- Chrome/Chromium runtime for Selenium
 
-### Setup
+## Quick Start
 
 ```bash
-# Clone repository
 git clone https://github.com/arslanbasharat-o-o/Scraper.git
 cd Scraper
-
-# Install Node dependencies
 npm install
-
-# Verify Python setup
-python3 --version
 ```
 
-## ⚡ Quick Start
-
-### Start Server
+Start server:
 
 ```bash
-# Fast (in-memory, recommended)
-node server.js
+npm start
 
-# With persistent job storage
-PERSIST_JOBS=true node server.js
-
-# With garbage collection monitoring
-node --expose-gc server.js
+# Startup checks + server boot
+npm run start:check
 ```
 
-Server runs on `http://localhost:3000`
+Server default: `http://localhost:3001`
 
-### Example: Scrape a Category
+Health check:
 
 ```bash
-curl -X POST http://localhost:3000/api/scrape \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://example.com/products",
-    "selectors": {
-      "productLinks": "a.product-link",
-      "productName": "h2.name",
-      "productPrice": "span.price"
-    }
-  }'
+curl http://localhost:3001/health
 ```
 
-### Example: Scrape Single Product
+## API Overview
+
+### Start scrape job
+
+`GET /scrape` and `POST /scrape` are both supported. The URL is passed as query parameter.
 
 ```bash
-curl -X POST http://localhost:3000/api/scrape \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://example.com/product/item-123"
-  }'
+curl -G "http://localhost:3001/scrape" \
+  --data-urlencode "url=https://www.mobilesentrix.ca/replacement-parts/motorola/g-series/moto-g06-power-xt2535-10-2025"
 ```
 
-## 📡 API Documentation
-
-### POST /api/scrape
-
-Start a new scraping job
-
-**Request Body:**
-```json
-{
-  "url": "https://example.com/products",
-  "selectors": {
-    "productLinks": "a.product",
-    "productName": "h2.name",
-    "productPrice": "span.price"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "jobId": "job_1707850421000",
-  "status": "pending",
-  "createdAt": "2026-02-13T18:07:01.000Z"
-}
-```
-
-### GET /api/jobs/:id
-
-Get job status and results
-
-**Response:**
-```json
-{
-  "jobId": "job_1707850421000",
-  "status": "completed",
-  "productsScraped": 45,
-  "imagesExtracted": 120,
-  "progress": 100,
-  "downloadUrl": "/jobs/job_1707850421000/zip"
-}
-```
-
-### GET /jobs/:id/zip
-
-Download scraped data as ZIP
-
-### GET /health
-
-Health check endpoint with memory stats
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "uptime": 3600,
-  "memory": {
-    "used": 245,
-    "total": 512,
-    "percentage": 47.8
-  }
-}
-```
-
-## ⚙️ Configuration
-
-### Environment Variables
+Optional idempotency key:
 
 ```bash
-# Job persistence (false by default)
-PERSIST_JOBS=true
-
-# Server port (3000 by default)
-PORT=3000
-
-# Chrome headless mode (true by default)
-CHROME_HEADLESS=false
+curl -G "http://localhost:3001/scrape" \
+  --data-urlencode "url=https://example.com/category" \
+  --data-urlencode "job_id=my-stable-job-id"
 ```
 
-### Scraper Settings
+### Job endpoints
 
-Edit `server.js` to modify:
+- `GET /jobs` - list jobs
+- `GET /jobs/:id` - job summary
+- `GET /jobs/:id?include_products=true` - include product payload
+- `POST /jobs/:id/stop` - stop a running job
+- `DELETE /jobs/:id` - delete job and files
+- `POST /jobs/reset` - reset all jobs
 
-- **PRODUCT_DELAY_MIN_MS / MAX_MS** - Delay between product page loads (500-1500ms)
-- **IMAGE_SELECTOR_TIMEOUT_MS** - Wait time for image selectors (5000ms default)
-- **CHALLENGE_WAIT_MS** - Challenge page timeout (10000ms default)
-- **CONCURRENT_IMAGE_DLS** - Parallel image downloads (3 default)
-- **MAX_LOG_SIZE** - Log history retained (200 entries)
+### Asset endpoints
 
-## 📊 Performance
+- `GET /jobs/:id/zip` - download job ZIP
+- `GET /jobs/:id/images` - image metadata
+- `GET /jobs/:id/images/:imageId` - JPG binary (if converted) or metadata fallback
 
-### Benchmarks
+### Logs and monitoring
 
-| Operation | Time | Improvement |
-|-----------|------|-------------|
-| Image Conversion (1000 images) | 45s | 4-5x faster (vs sharp) |
-| ZIP Compression (50MB) | 8s | 6-10x faster (vs archiver) |
-| Memory Usage (startup) | 95MB | 60% reduction |
-| Page Load | ~2s | Optimized timeouts |
+- `GET /health`
+- `GET /logs?limit=50`
+- `GET /logs/stream` (SSE)
+- `GET /events` (job update SSE)
+- `GET /admin/api/overview`
 
-### Optimization Techniques
+## Configuration
 
-- Lazy image loading detection with page scrolling
-- Concurrent downloads with controlled concurrency
-- Python integration for CPU-intensive operations
-- Database storage for in-memory efficiency
-- Automatic old image cleanup (24-hour retention)
-- Chrome window optimization (1366x768)
-- Browser restart after 8 products (prevents memory leak)
+Main environment variables:
 
-## 🏗️ Architecture
+- `PORT` (default `3001`)
+- `PERSIST_JOBS` (default `false`)
+- `MAX_ACTIVE_SCRAPES` (default `3`)
+- `JOB_MAX_RUNTIME_MS` (default `2700000`)
+- `CHROME_HEADLESS` (default `true`)
+- `PRODUCTS_PER_BROWSER` (default `8`)
+- `IMAGE_DOWNLOAD_CONCURRENCY` (default `3`)
 
+Use `.env.example` as a baseline for local and hosted environments.
+
+## Railway Deployment
+
+Railway deployment is preconfigured via `railway.toml` and Docker.
+
+### Option 1: GitHub deploy (recommended)
+
+1. Push repository to GitHub.
+2. In Railway, choose **Deploy from GitHub repo**.
+3. Select this repository.
+4. Railway uses `Dockerfile` and exposes the service.
+5. Verify with `/health`.
+
+### Option 2: Railway CLI
+
+```bash
+npm install -g @railway/cli
+railway login
+railway init
+railway up
 ```
-┌─────────────────┐
-│   Web Client    │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────────────────────┐
-│   Express API Server (Node.js)  │
-│  ├─ Job Manager                 │
-│  ├─ Selenium WebDriver          │
-│  └─ Image Processing Coordinator│
-└────────┬────────────────────────┘
-         │
-    ┌────┴────┐
-    ▼         ▼
-┌───────┐  ┌──────────┐
-│Chrome │  │ Python   │
-│Driver │  │ Scripts  │
-└───────┘  └──────────┘
-           ├─ PIL (image conversion)
-           └─ zipfile (compression)
+
+Detailed guide: [`docs/DEPLOYMENT_RAILWAY.md`](docs/DEPLOYMENT_RAILWAY.md)
+
+## CI/CD
+
+GitHub Actions workflows are included for both validation and deployment:
+
+- `CI` (`.github/workflows/ci.yml`) runs syntax/smoke checks, standards checks, and Docker build smoke tests.
+- `CD - Railway` (`.github/workflows/cd-railway.yml`) deploys on `main` pushes or manual dispatch when Railway secrets are configured.
+
+Required secrets for Railway CD:
+
+- `RAILWAY_TOKEN`
+- `RAILWAY_PROJECT_ID`
+- `RAILWAY_SERVICE_ID`
+- `RAILWAY_ENVIRONMENT_ID` (optional)
+
+## Docker (Any Host)
+
+```bash
+docker build -t mobilesentrix-scraper .
+docker run --rm -p 3001:3001 --env-file .env.example mobilesentrix-scraper
 ```
 
-## 🔧 Development
+## Project Structure
 
-### Project Structure
-
-```
+```text
 .
-├── server.js                  # Main Express server (67KB)
-├── convert_image.py          # Python image converter
-├── create_zip.py             # Python ZIP creator
-├── package.json              # Node dependencies
-├── README.md                 # This file
-├── CONTRIBUTING.md           # Contribution guidelines
-├── LICENSE                   # MIT License
-└── .github/
-    ├── ISSUE_TEMPLATE/
-    ├── PULL_REQUEST_TEMPLATE.md
-    └── workflows/
+├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.yml
+│   │   ├── feature_request.yml
+│   │   ├── support_question.yml
+│   │   └── config.yml
+│   ├── workflows/
+│   │   ├── ci.yml
+│   │   └── cd-railway.yml
+│   ├── CODEOWNERS
+│   ├── dependabot.yml
+│   └── PULL_REQUEST_TEMPLATE.md
+├── docs/
+│   ├── README.md
+│   ├── DEPLOYMENT_RAILWAY.md
+│   ├── QUICK_START.md
+│   ├── START_SERVER.md
+│   ├── OPTIMIZATION.md
+│   ├── PYTHON_SETUP.md
+│   └── PYTHON_CONVERSION.md
+├── frontend/
+├── downloads/
+├── server.js
+├── convert_image.py
+├── create_zip.py
+├── Dockerfile
+├── railway.toml
+├── .env.example
+├── .editorconfig
+├── .gitattributes
+├── package.json
+├── README.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── CODE_OF_CONDUCT.md
+└── LICENSE
 ```
 
-### Testing
+## Development Checks
 
 ```bash
-# Syntax check
 node -c server.js
-
-# Python validation
-python3 convert_image.py --help
-
-# Start with test mode
-node server.js
+python3 -m py_compile convert_image.py create_zip.py
 ```
 
-## 🚀 Deployment
+## Documentation
 
-### Docker
+- [`docs/README.md`](docs/README.md)
+- [`docs/QUICK_START.md`](docs/QUICK_START.md)
+- [`docs/OPTIMIZATION.md`](docs/OPTIMIZATION.md)
+- [`docs/PYTHON_SETUP.md`](docs/PYTHON_SETUP.md)
+- [`docs/START_SERVER.md`](docs/START_SERVER.md)
 
-```bash
-docker build -t scraper .
-docker run -p 3000:3000 scraper
-```
+## Contributing
 
-### Alternative Hosting Options
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-- **Railway** - `railway up`
-- **Render** - Connect GitHub repository
-- **PiknoCloud** - Simple Node.js hosting
-- **AWS Lambda** - Serverless option
-- **Self-Hosted** - Any VPS or server
+## License
 
-## 📈 Monitoring
-
-### Health Endpoint
-
-```bash
-curl http://localhost:3000/health
-```
-
-### Memory Alerts
-
-- ⚠️ Alert at 70% memory usage
-- 🔴 Forced cleanup at 85% usage
-
-### Logs
-
-Last 200 log entries retained. Check `/api/logs` endpoint.
-
-## 🐛 Troubleshooting
-
-### Chrome Connection Issues
-
-```bash
-# Use local Chrome instead of chromedriver
-which google-chrome  # or chromium-browser
-```
-
-### Python Import Errors
-
-```bash
-python3 -m pip install Pillow requests
-```
-
-### Memory Issues
-
-Enable job persistence (slower but uses DB storage):
-```bash
-PERSIST_JOBS=true node server.js
-```
-
-## 📝 Changelog
-
-### v1.0.0 (Feb 2026)
-
-- ✅ Initial release
-- ✅ Python image processing pipeline
-- ✅ Intelligent image detection (10 methods)
-- ✅ Memory optimization (60% reduction)
-- ✅ Auto cleanup and health monitoring
-- ✅ ZIP compression optimization
-- ✅ Single product URL support
-
-## 🤝 Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Code Standards
-
-- Follow ESLint rules for JavaScript
-- Use async/await patterns
-- Add JSDoc comments for functions
-- Test before submitting PR
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## 👤 Author
-
-**Arslan Basharat**
-- GitHub: [@arslanbasharat-o-o](https://github.com/arslanbasharat-o-o)
-- Email: arslanbasharat.o.o@gmail.com
-
-## 🙋 Support
-
-- 📖 Read the [QUICK_START.md](QUICK_START.md)
-- 🔍 Check [OPTIMIZATION.md](OPTIMIZATION.md) for advanced tuning
-- 📊 Review [PYTHON_SETUP.md](PYTHON_SETUP.md) for Python integration
-- 🐛 [Report Issues](https://github.com/arslanbasharat-o-o/Scraper/issues)
-
-## ⭐ Show Your Support
-
-If this project helped you, please star ⭐ it on GitHub!
-
----
-
-**Made with ❤️ by [Arslan Basharat](https://github.com/arslanbasharat-o-o)**
+MIT. See [`LICENSE`](LICENSE).

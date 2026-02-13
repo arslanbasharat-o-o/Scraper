@@ -1,39 +1,53 @@
 version: 2
 updates:
-  # Node.js dependencies
-  - package-ecosystem: "npm"
+  - package-ecosystem: npm
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "03:00"
+      timezone: "UTC"
     open-pull-requests-limit: 5
-    reviewers:
-      - "arslanbasharat-o-o"
     labels:
-      - "dependencies"
+      - dependencies
     commit-message:
-      prefix: "chore(deps):"
-      include: "scope"
-    allow:
-      - dependency-type: "direct"
-      - dependency-type: "indirect"
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      node-minor-patch:
+        update-types:
+          - minor
+          - patch
 
-  # Python dependencies  
-  - package-ecosystem: "pip"
+  - package-ecosystem: pip
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "03:30"
+      timezone: "UTC"
     open-pull-requests-limit: 5
-    reviewers:
-      - "arslanbasharat-o-o"
     labels:
-      - "dependencies"
+      - dependencies
     commit-message:
-      prefix: "chore(deps):"
-      include: "scope"
-    allow:
-      - dependency-type: "direct"
-      - dependency-type: "indirect"
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      python-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(ci)"
+      include: scope

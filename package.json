@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node start.js",
+    "start": "node server.js",
+    "start:check": "node start.js",
     "start:linux": "./start.sh",
     "start:windows": "start.bat",
     "server": "node server.js",
