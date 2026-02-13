@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Admin Panel v2.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-900">
+    <main class="max-w-7xl mx-auto p-4 sm:p-6">
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm mb-6">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                    <h1 class="text-2xl font-bold">Admin Panel <span class="text-cyan-600">v2.0</span></h1>
+                    <p class="text-sm text-slate-500">Control all users, jobs, and SEO settings.</p>
+                </div>
+                <div class="flex gap-2">
+                    <input id="admin-token" type="password" placeholder="Admin token"
+                        class="px-3 py-2 border border-slate-300 rounded-lg text-sm w-48" />
+                    <button id="save-token" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-sm font-semibold">Connect</button>
+                </div>
+            </div>
+            <p id="auth-status" class="text-xs text-slate-500 mt-2">Not connected</p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6" id="stats-grid"></div>
+
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm mb-6">
+            <div class="flex flex-wrap gap-2 mb-4">
+                <button id="pause-all" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-semibold">Pause All</button>
+                <button id="resume-all" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold">Resume All</button>
+                <input id="reset-user-id" type="text" placeholder="user_id to reset" class="px-3 py-2 border border-slate-300 rounded-lg text-sm w-56" />
+                <button id="reset-user-btn" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold">Reset User</button>
+                <button id="refresh-btn" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-semibold">Refresh</button>
+            </div>
+
+            <div class="overflow-auto">
+                <table class="w-full min-w-[1100px] text-sm">
+                    <thead>
+                        <tr class="text-left border-b border-slate-200">
+                            <th class="py-2 pr-3">ID</th>
+                            <th class="py-2 pr-3">User</th>
+                            <th class="py-2 pr-3">Status</th>
+                            <th class="py-2 pr-3">Model</th>
+                            <th class="py-2 pr-3">Progress</th>
+                            <th class="py-2 pr-3">Images</th>
+                            <th class="py-2 pr-3">URL</th>
+                            <th class="py-2 pr-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobs-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                <div>
+                    <h2 class="text-lg font-bold">SEO Manager Pro</h2>
+                    <p class="text-xs text-slate-500">Manage meta tags, social cards, crawl rules, canonical URL, and live preview.</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button id="seo-copy-basic" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold">Copy Basic -> Social</button>
+                    <button id="seo-load-defaults" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold">Load Defaults</button>
+                    <button id="seo-copy-json" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold">Copy JSON</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 xl:grid-cols-5 gap-4">
+                <div class="xl:col-span-3 space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Page Title</label>
+                            <input id="seo-title" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Homepage title" />
+                            <p id="count-title" class="text-[11px] text-slate-500 mt-1">0 / 60</p>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Meta Description</label>
+                            <textarea id="seo-description" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Search result description"></textarea>
+                            <p id="count-description" class="text-[11px] text-slate-500 mt-1">0 / 160</p>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Keywords</label>
+                            <input id="seo-keywords" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="keyword 1, keyword 2, keyword 3" />
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Canonical URL</label>
+                            <input id="seo-canonical-url" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="https://example.com/" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Robots</label>
+                            <select id="seo-robots" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+                                <option value="index,follow">index,follow</option>
+                                <option value="noindex,nofollow">noindex,nofollow</option>
+                                <option value="noindex,follow">noindex,follow</option>
+                                <option value="index,nofollow">index,nofollow</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Site Name</label>
+                            <input id="seo-site-name" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Brand name" />
+                        </div>
+                    </div>
+
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h3 class="text-sm font-bold mb-2 text-slate-700">Open Graph</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">OG Title</label>
+                                <input id="seo-og-title" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Open Graph title" />
+                                <p id="count-og-title" class="text-[11px] text-slate-500 mt-1">0 / 60</p>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">OG Description</label>
+                                <textarea id="seo-og-description" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Open Graph description"></textarea>
+                                <p id="count-og-description" class="text-[11px] text-slate-500 mt-1">0 / 160</p>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">OG Image URL</label>
+                                <input id="seo-og-image" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="https://.../cover.jpg" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h3 class="text-sm font-bold mb-2 text-slate-700">Twitter Card</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Card Type</label>
+                                <select id="seo-twitter-card" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+                                    <option value="summary_large_image">summary_large_image</option>
+                                    <option value="summary">summary</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Twitter Image URL</label>
+                                <input id="seo-twitter-image" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="https://.../twitter-cover.jpg" />
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Twitter Title</label>
+                                <input id="seo-twitter-title" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Twitter title" />
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Twitter Description</label>
+                                <textarea id="seo-twitter-description" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Twitter description"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button id="save-seo" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-sm font-semibold">Save SEO Settings</button>
+                        <p id="seo-status" class="text-xs text-slate-500"></p>
+                    </div>
+                </div>
+
+                <div class="xl:col-span-2">
+                    <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                        <h3 class="text-sm font-bold mb-2 text-slate-700">Live SERP Preview</h3>
+                        <p class="text-xs text-slate-400 mb-2">How Google result could look</p>
+                        <div class="bg-white border border-slate-200 rounded-lg p-3">
+                            <p id="preview-title" class="text-[17px] leading-6 text-blue-700 truncate">Title preview</p>
+                            <p id="preview-url" class="text-[12px] text-emerald-700 truncate">https://example.com/</p>
+                            <p id="preview-description" class="text-[13px] text-slate-600 mt-1 line-clamp-3">Description preview</p>
+                        </div>
+                        <div class="mt-3 bg-white border border-slate-200 rounded-lg p-3">
+                            <p class="text-xs font-semibold text-slate-500 mb-2">SEO Checks</p>
+                            <ul class="space-y-1 text-[12px] text-slate-600">
+                                <li id="check-title">Title length: pending</li>
+                                <li id="check-description">Description length: pending</li>
+                                <li id="check-canonical">Canonical URL: pending</li>
+                                <li id="check-robots">Robots: pending</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const tokenInput = document.getElementById('admin-token');
+        const authStatus = document.getElementById('auth-status');
+        const statsGrid = document.getElementById('stats-grid');
+        const jobsTbody = document.getElementById('jobs-tbody');
+        const saved = localStorage.getItem('adminToken') || '';
+        if (saved) tokenInput.value = saved;
+
+        function token() { return tokenInput.value.trim(); }
+        function hdr() { return { 'x-admin-token': token(), 'Content-Type': 'application/json' }; }
+        const DEFAULT_CANONICAL = window.location.protocol === 'file:'
+            ? 'http://localhost:3001/'
+            : `${window.location.origin}/`;
+
+        function setStatus(msg, ok = true) {
+            authStatus.textContent = msg;
+            authStatus.className = `text-xs mt-2 ${ok ? 'text-emerald-600' : 'text-rose-600'}`;
+        }
+
+        async function api(url, options = {}) {
+            const res = await fetch(url, { ...options, headers: { ...(options.headers || {}), ...hdr() } });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || data.message || `Request failed (${res.status})`);
+            return data;
+        }
+
+        function statCard(label, value) {
+            return `<div class="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+                <p class="text-xs text-slate-500">${label}</p>
+                <p class="text-xl font-bold text-slate-900">${value}</p>
+            </div>`;
+        }
+
+        function renderStats(t) {
+            statsGrid.innerHTML = [
+                statCard('Jobs', t.jobs || 0),
+                statCard('Users', t.users || 0),
+                statCard('Images', t.images || 0),
+                statCard('Running', t.running || 0),
+                statCard('Paused', t.paused || 0),
+                statCard('Queued', t.queued || 0),
+                statCard('Failed', t.failed || 0)
+            ].join('');
+        }
+
+        function badge(status) {
+            const map = {
+                running: 'bg-blue-100 text-blue-700',
+                completed: 'bg-emerald-100 text-emerald-700',
+                failed: 'bg-rose-100 text-rose-700',
+                paused: 'bg-amber-100 text-amber-700',
+                queued: 'bg-slate-100 text-slate-700',
+                cancelled: 'bg-zinc-100 text-zinc-700'
+            };
+            return map[status] || 'bg-slate-100 text-slate-700';
+        }
+
+        function row(job) {
+            const pr = job.total_items ? Math.round((job.processed_items / job.total_items) * 100) : 0;
+            return `<tr class="border-b border-slate-100">
+                <td class="py-2 pr-3">#${job.id}</td>
+                <td class="py-2 pr-3">${job.user_id || '-'}</td>
+                <td class="py-2 pr-3"><span class="px-2 py-0.5 rounded-full text-xs font-semibold ${badge(job.status)}">${job.status}</span></td>
+                <td class="py-2 pr-3 max-w-[160px] truncate" title="${job.model || ''}">${job.model || '-'}</td>
+                <td class="py-2 pr-3">${job.processed_items || 0}/${job.total_items || 0} (${pr}%)</td>
+                <td class="py-2 pr-3">${job.images || 0}</td>
+                <td class="py-2 pr-3 max-w-[360px] truncate" title="${job.url || ''}">${job.url || '-'}</td>
+                <td class="py-2 pr-3">
+                    <div class="flex gap-1">
+                        <button onclick="adminStop(${job.id})" class="px-2 py-1 bg-amber-500 text-white rounded text-xs">Stop</button>
+                        <button onclick="adminDelete(${job.id})" class="px-2 py-1 bg-rose-600 text-white rounded text-xs">Delete</button>
+                    </div>
+                </td>
+            </tr>`;
+        }
+
+        async function loadOverview() {
+            const data = await api('/admin/api/overview');
+            renderStats(data.totals || {});
+            jobsTbody.innerHTML = (data.recent_jobs || []).map(row).join('');
+        }
+
+        const SEO_DEFAULTS = {
+            title: 'MobileSentrix & XCellParts Image Scraper v2.0',
+            description: 'Fast image scraping for mobile parts from MobileSentrix and XCellParts.',
+            keywords: 'mobile parts, image scraper, xcellparts, mobilesentrix, ecommerce',
+            og_title: 'MobileSentrix & XCellParts Image Scraper',
+            og_description: 'Scrape and organize mobile parts images quickly.',
+            og_image: '',
+            canonical_url: DEFAULT_CANONICAL,
+            robots: 'index,follow',
+            twitter_card: 'summary_large_image',
+            twitter_title: '',
+            twitter_description: '',
+            twitter_image: '',
+            site_name: 'MobileSentrix & XCellParts Image Scraper'
+        };
+
+        function getValue(id) {
+            const el = document.getElementById(id);
+            return el ? (el.value || '').trim() : '';
+        }
+
+        function setValue(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.value = value || '';
+        }
+
+        function seoPayloadFromForm() {
+            return {
+                title: getValue('seo-title'),
+                description: getValue('seo-description'),
+                keywords: getValue('seo-keywords'),
+                og_title: getValue('seo-og-title'),
+                og_description: getValue('seo-og-description'),
+                og_image: getValue('seo-og-image'),
+                canonical_url: getValue('seo-canonical-url'),
+                robots: getValue('seo-robots') || 'index,follow',
+                twitter_card: getValue('seo-twitter-card') || 'summary_large_image',
+                twitter_title: getValue('seo-twitter-title'),
+                twitter_description: getValue('seo-twitter-description'),
+                twitter_image: getValue('seo-twitter-image'),
+                site_name: getValue('seo-site-name')
+            };
+        }
+
+        function fillSeoForm(data = {}) {
+            setValue('seo-title', data.title || '');
+            setValue('seo-description', data.description || '');
+            setValue('seo-keywords', data.keywords || '');
+            setValue('seo-og-title', data.og_title || '');
+            setValue('seo-og-description', data.og_description || '');
+            setValue('seo-og-image', data.og_image || '');
+            setValue('seo-canonical-url', data.canonical_url || '');
+            setValue('seo-robots', data.robots || 'index,follow');
+            setValue('seo-twitter-card', data.twitter_card || 'summary_large_image');
+            setValue('seo-twitter-title', data.twitter_title || '');
+            setValue('seo-twitter-description', data.twitter_description || '');
+            setValue('seo-twitter-image', data.twitter_image || '');
+            setValue('seo-site-name', data.site_name || '');
+            updateSeoPreview();
+        }
+
+        function counterText(current, ideal) {
+            return `${current} / ${ideal}`;
+        }
+
+        function updateCounter(counterId, value, idealMin, idealMax) {
+            const el = document.getElementById(counterId);
+            if (!el) return;
+            const len = (value || '').trim().length;
+            el.textContent = counterText(len, idealMax);
+            if (len === 0) {
+                el.className = 'text-[11px] text-slate-500 mt-1';
+                return;
+            }
+            if (len < idealMin || len > idealMax) {
+                el.className = 'text-[11px] text-amber-600 mt-1';
+                return;
+            }
+            el.className = 'text-[11px] text-emerald-600 mt-1';
+        }
+
+        function setCheck(id, ok, text) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = text;
+            el.className = ok ? 'text-[12px] text-emerald-700' : 'text-[12px] text-amber-700';
+        }
+
+        function updateSeoPreview() {
+            const seo = seoPayloadFromForm();
+            const canonical = seo.canonical_url || DEFAULT_CANONICAL;
+            const previewTitle = seo.title || 'Title preview';
+            const previewDescription = seo.description || 'Description preview';
+
+            document.getElementById('preview-title').textContent = previewTitle;
+            document.getElementById('preview-url').textContent = canonical;
+            document.getElementById('preview-description').textContent = previewDescription;
+
+            updateCounter('count-title', seo.title, 45, 60);
+            updateCounter('count-description', seo.description, 120, 160);
+            updateCounter('count-og-title', seo.og_title, 45, 60);
+            updateCounter('count-og-description', seo.og_description, 120, 160);
+
+            const titleLen = seo.title.length;
+            const descLen = seo.description.length;
+            const canonicalOk = /^https?:\/\/.+/i.test(canonical);
+            const robotsOk = ['index,follow', 'noindex,nofollow', 'noindex,follow', 'index,nofollow'].includes(seo.robots);
+
+            setCheck('check-title', titleLen >= 45 && titleLen <= 60, `Title length: ${titleLen} characters (${titleLen >= 45 && titleLen <= 60 ? 'good' : 'adjust to 45-60'})`);
+            setCheck('check-description', descLen >= 120 && descLen <= 160, `Description length: ${descLen} characters (${descLen >= 120 && descLen <= 160 ? 'good' : 'adjust to 120-160'})`);
+            setCheck('check-canonical', canonicalOk, `Canonical URL: ${canonicalOk ? 'valid' : 'must start with http(s)://'}`);
+            setCheck('check-robots', robotsOk, `Robots: ${robotsOk ? seo.robots : 'invalid value'}`);
+        }
+
+        async function loadSeo() {
+            const data = await api('/admin/api/seo');
+            fillSeoForm({ ...SEO_DEFAULTS, ...(data || {}) });
+        }
+
+        async function initAll() {
+            try {
+                await loadOverview();
+                await loadSeo();
+                setStatus('Connected as admin');
+            } catch (e) {
+                setStatus(e.message || 'Admin auth failed', false);
+            }
+        }
+
+        window.adminStop = async (id) => {
+            if (!confirm(`Stop job #${id}?`)) return;
+            try { await api(`/admin/api/jobs/${id}/stop`, { method: 'POST' }); await loadOverview(); } catch (e) { alert(e.message); }
+        };
+
+        window.adminDelete = async (id) => {
+            if (!confirm(`Delete job #${id}?`)) return;
+            try { await api(`/admin/api/jobs/${id}`, { method: 'DELETE' }); await loadOverview(); } catch (e) { alert(e.message); }
+        };
+
+        document.getElementById('save-token').onclick = async () => {
+            localStorage.setItem('adminToken', token());
+            await initAll();
+        };
+
+        document.getElementById('refresh-btn').onclick = async () => { await initAll(); };
+        document.getElementById('pause-all').onclick = async () => { await api('/admin/api/pause-all', { method: 'POST' }); await loadOverview(); };
+        document.getElementById('resume-all').onclick = async () => { await api('/admin/api/resume-all', { method: 'POST' }); await loadOverview(); };
+        document.getElementById('reset-user-btn').onclick = async () => {
+            const u = document.getElementById('reset-user-id').value.trim();
+            if (!u) return alert('Enter user_id');
+            if (!confirm(`Reset all jobs/images for "${u}"?`)) return;
+            await api(`/admin/api/reset-user?user_id=${encodeURIComponent(u)}`, { method: 'POST' });
+            await loadOverview();
+        };
+
+        const seoInputs = [
+            'seo-title', 'seo-description', 'seo-keywords', 'seo-og-title', 'seo-og-description',
+            'seo-og-image', 'seo-canonical-url', 'seo-robots', 'seo-twitter-card',
+            'seo-twitter-title', 'seo-twitter-description', 'seo-twitter-image', 'seo-site-name'
+        ];
+        seoInputs.forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', updateSeoPreview);
+            if (el && el.tagName === 'SELECT') el.addEventListener('change', updateSeoPreview);
+        });
+
+        document.getElementById('seo-copy-basic').onclick = () => {
+            const title = getValue('seo-title');
+            const desc = getValue('seo-description');
+            const image = getValue('seo-og-image');
+            setValue('seo-og-title', title);
+            setValue('seo-og-description', desc);
+            setValue('seo-twitter-title', title);
+            setValue('seo-twitter-description', desc);
+            if (image) setValue('seo-twitter-image', image);
+            updateSeoPreview();
+            document.getElementById('seo-status').textContent = 'Copied basic SEO into social fields.';
+        };
+
+        document.getElementById('seo-load-defaults').onclick = () => {
+            fillSeoForm(SEO_DEFAULTS);
+            document.getElementById('seo-status').textContent = 'Loaded default SEO template.';
+        };
+
+        document.getElementById('seo-copy-json').onclick = async () => {
+            const payload = seoPayloadFromForm();
+            try {
+                await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+                document.getElementById('seo-status').textContent = 'SEO JSON copied.';
+            } catch (_) {
+                document.getElementById('seo-status').textContent = 'Clipboard blocked in this browser.';
+            }
+        };
+
+        document.getElementById('save-seo').onclick = async () => {
+            const payload = seoPayloadFromForm();
+            try {
+                await api('/admin/api/seo', { method: 'POST', body: JSON.stringify(payload) });
+                document.getElementById('seo-status').textContent = 'SEO settings saved successfully.';
+            } catch (e) {
+                document.getElementById('seo-status').textContent = `Save failed: ${e.message}`;
+            }
+        };
+
+        updateSeoPreview();
+        if (saved) initAll();
+    </script>
+</body>
+</html>

@@ -57,25 +57,6 @@ jobs:
       - name: Verify package.json
         run: npm list --depth=0
 
-  deploy:
-    needs: lint-and-test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Deploy to Fly.io
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          if [ -n "$FLY_API_TOKEN" ]; then
-            curl -L https://fly.io/install.sh | sh
-            /root/.fly/bin/flyctl deploy
-          else
-            echo "⚠️  FLY_API_TOKEN not set. Skipping deployment."
-          fi
-
   code-quality:
     runs-on: ubuntu-latest
     

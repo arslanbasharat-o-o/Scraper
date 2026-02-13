@@ -1,0 +1,304 @@
+/* =============================================
+   MAIN.CSS - Base styles, typography, layout
+   ============================================= */
+
+/* CSS Custom Properties */
+:root {
+    --font-sans: 'Manrope', system-ui, sans-serif;
+    --font-display: 'Space Grotesk', 'Manrope', sans-serif;
+    --color-brand-50: #ecfeff;
+    --color-brand-100: #cffafe;
+    --color-brand-500: #06b6d4;
+    --color-brand-600: #0891b2;
+    --color-brand-700: #0e7490;
+    --transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-smooth: 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    --transition-snappy: 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+    --shadow-soft: 0 12px 32px -18px rgba(15, 23, 42, 0.45);
+    --focus-ring: 0 0 0 3px rgba(6, 182, 212, 0.22);
+}
+
+/* Base Styles */
+* {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--font-sans);
+    line-height: 1.45;
+    background: #f7f7f8;
+    transition: background-color var(--transition-smooth), color var(--transition-smooth);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+}
+
+/* App shell polish */
+.app-shell {
+    position: relative;
+    overflow-x: clip;
+}
+
+#app-nav {
+    background: #ffffff;
+    border-bottom-color: rgba(148, 163, 184, 0.28);
+}
+
+.app-main>.bg-white,
+.app-main .bg-white.rounded-2xl {
+    border-color: rgba(148, 163, 184, 0.24) !important;
+    box-shadow: 0 8px 24px -22px rgba(15, 23, 42, 0.32);
+    position: relative;
+    will-change: transform, box-shadow;
+    transition: box-shadow var(--transition-smooth), border-color var(--transition-base);
+}
+
+.app-main input,
+.app-main textarea {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.app-main input:focus,
+.app-main textarea:focus {
+    box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.app-main button {
+    font-weight: 600;
+}
+
+.app-main>.bg-white:hover,
+.app-main .bg-white.rounded-2xl:hover {
+    box-shadow: 0 12px 30px -24px rgba(15, 23, 42, 0.4);
+}
+
+/* v2.0 ambient layer */
+.v2-aurora {
+    display: none !important;
+}
+
+.v2-aurora-a {
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle at 30% 30%, rgba(34, 211, 238, 0.28), rgba(34, 211, 238, 0));
+    top: -120px;
+    left: -120px;
+}
+
+.v2-aurora-b {
+    width: 440px;
+    height: 440px;
+    background: radial-gradient(circle at 70% 70%, rgba(14, 165, 233, 0.24), rgba(14, 165, 233, 0));
+    top: 8%;
+    right: -160px;
+    animation-duration: 22s;
+}
+
+.v2-grid-overlay {
+    display: none !important;
+}
+
+/* Interactive polish */
+button,
+[role="button"],
+.filter-btn,
+.grid-btn,
+a {
+    transition:
+        transform var(--transition-snappy),
+        box-shadow var(--transition-base),
+        background-color var(--transition-base),
+        border-color var(--transition-base),
+        color var(--transition-base),
+        opacity var(--transition-base);
+}
+
+button:active,
+[role="button"]:active {
+    transform: translateY(1px) scale(0.995);
+}
+
+input,
+textarea,
+select {
+    transition:
+        border-color var(--transition-base),
+        box-shadow var(--transition-base),
+        background-color var(--transition-base),
+        color var(--transition-base);
+}
+
+:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
+#jobs-list,
+#gallery,
+#server-logs {
+    contain: layout paint style;
+    content-visibility: auto;
+}
+
+.v2-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.12rem 0.52rem;
+    border-radius: 9999px;
+    font-family: var(--font-display);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #155e75;
+    background: #ecfeff;
+    border: 1px solid rgba(14, 165, 233, 0.35);
+    box-shadow: none;
+}
+
+#start-btn,
+#bulk-url-mode button {
+    position: relative;
+    overflow: hidden;
+}
+
+#start-btn::before,
+#bulk-url-mode button::before {
+    content: none;
+}
+
+#start-btn:hover::before,
+#bulk-url-mode button:hover::before {
+    transform: none;
+}
+
+@keyframes v2Float {
+    0% {
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    100% {
+        transform: translate3d(18px, -12px, 0) scale(1.06);
+    }
+}
+
+@keyframes v2Reveal {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.995);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Base Transitions */
+.transition-all {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: var(--transition-base);
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.transition-smooth {
+    transition: all var(--transition-smooth);
+}
+
+/* Responsive top bar improvements */
+@media (max-width: 1279px) {
+    #nav-actions {
+        gap: 0.5rem !important;
+    }
+
+    #nav-actions>button span {
+        display: none;
+    }
+
+    #global-status {
+        display: none !important;
+    }
+}
+
+@media (max-width: 900px) {
+    #app-nav .h-16 {
+        height: auto;
+        min-height: 4rem;
+        padding-top: 0.6rem;
+        padding-bottom: 0.6rem;
+        align-items: flex-start;
+    }
+
+    #app-nav .h-16>div:first-child p {
+        display: none;
+    }
+
+    #nav-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    .app-main > div,
+    .app-main .lg\:col-span-1 > div,
+    .app-main .lg\:col-span-3 > div,
+    .v2-aurora,
+    #start-btn::before,
+    #bulk-url-mode button::before {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+}
+
+@media (max-width: 640px) {
+    .app-main {
+        padding-top: 1.15rem !important;
+    }
+
+    .app-main .rounded-2xl {
+        border-radius: 1rem;
+    }
+
+    .v2-aurora {
+        display: none !important;
+    }
+}

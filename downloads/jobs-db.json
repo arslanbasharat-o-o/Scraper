@@ -1,0 +1,195 @@
+{
+  "updated_at": "2026-02-11T23:24:12.596Z",
+  "jobs": [
+    {
+      "id": "dup_guard_1770852235",
+      "url": "https://www.mobilesentrix.com/replacement-parts/others-brands-parts/huawei/p-series/huawei-p30",
+      "status": "failed",
+      "model": "Huawei P30",
+      "images": 0,
+      "total_items": 22,
+      "processed_items": 22,
+      "error": "Stopped by user",
+      "created_at": "2026-02-11T23:23:55.649Z",
+      "updated_at": "2026-02-11T23:24:12.596Z",
+      "products": [
+        {
+          "name": "LCD Assembly Without Frame For Huawei P30 (Aftermarket: Incell) (All Colors)",
+          "price": "$23.58",
+          "product_url": "https://www.mobilesentrix.com/lcd-assembly-without-frame-for-huawei-p30-aftermarket-incell-all-colors",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/0/107082065105_1__1.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "LCD Assembly With Frame For Huawei P30 (Aftermarket: Incell) (Aurora)",
+          "price": "$36.93",
+          "product_url": "https://www.mobilesentrix.com/lcd-assembly-with-frame-for-huawei-p30-aftermarket-incell-aurora",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/0/107082065108_1_.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "OLED Assembly Without Frame For Huawei P30 (Refurbished) (Black)",
+          "price": "$69.54",
+          "product_url": "https://www.mobilesentrix.com/oled-assembly-without-frame-for-huawei-p30-refurbished-black",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1732049805-673cfb8dd0c90.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "OLED Assembly With Frame For Huawei P30 (Refurbished) (Breathing Crystal)",
+          "price": "$73.26",
+          "product_url": "https://www.mobilesentrix.com/oled-assembly-with-frame-for-huawei-p30-refurbished-breathing-crystal",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1732130376-673e3648c2dd4.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "OLED Assembly With Frame For Huawei P30 (Refurbished) (Black)",
+          "price": "$75.06",
+          "product_url": "https://www.mobilesentrix.com/oled-assembly-with-frame-for-huawei-p30-refurbished-black",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1732130458-673e369a59c8e.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "OLED Assembly With Frame For Huawei P30 (2019) (Refurbished) (Aurora)",
+          "price": "$77.26",
+          "product_url": "https://www.mobilesentrix.com/oled-assembly-with-frame-for-huawei-p30-2019-refurbished-aurora",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1732049901-673cfbedae082.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Replacement Battery For Huawei P30 (HB436380ECW)",
+          "price": "$5.50",
+          "product_url": "https://www.mobilesentrix.com/replacement-battery-for-huawei-p30",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/6/1695061609-650896698943d.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Charging Port With Board For Huawei P30",
+          "price": "$3.70",
+          "product_url": "https://www.mobilesentrix.com/charging-port-flex-cable-for-huawei-p30",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/6/1694189604-64fb482424b7e.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Home Button With Flex Cable For Huawei P30",
+          "price": "$1.30",
+          "product_url": "https://www.mobilesentrix.com/home-button-with-flex-cable-for-huawei-p30",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/0/107082065123.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Fingerprint Sensor Flex For Huawei P30",
+          "price": "$3.90",
+          "product_url": "https://www.mobilesentrix.com/fingerprint-sensor-flex-for-huawei-p30",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1749166552-684229d859698.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Front Camera For Huawei P30",
+          "price": "$6.42",
+          "product_url": "https://www.mobilesentrix.com/front-camera-for-huawei-p30",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/0/107082065119-a.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Back Camera For Huawei P30",
+          "price": "$7.39",
+          "product_url": "https://www.mobilesentrix.com/back-camera-for-huawei-p30",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1749855308-684cac4c99a20.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Earpiece Speaker For Huawei P30",
+          "price": "$0.55",
+          "product_url": "https://www.mobilesentrix.com/earpiece-speaker-for-huawei-p30",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1744747326-67febb3ebf644.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Back cover Glass With Camera Lens For Huawei P30 (Black)",
+          "price": "$5.60",
+          "product_url": "https://www.mobilesentrix.com/back-cover-with-camera-lens-for-huawei-p30-black",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1729200589-671181cd242cd.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Antenna Connecting Cable For Huawei P30",
+          "price": "$0.45",
+          "product_url": "https://www.mobilesentrix.com/antenna-connecting-cable-for-huawei-p30",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/0/107082065124-a.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Sim Card Reader For Motorola Edge 5G (XT2141 / 2021) / Huawei P30 (2 Piece Set)",
+          "price": "$0.31",
+          "product_url": "https://www.mobilesentrix.com/sim-card-raeder-for-motorola-edge-xt2141-2021",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1751920811-686c30abe98d9.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Sim Card Tray For Huawei P30 (Amber sunrise)",
+          "price": "$0.35",
+          "product_url": "https://www.mobilesentrix.com/sim-card-tray-for-huawei-p30-amber-sunrise",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1732141591-673e621778cb1.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Sim Card Tray For Huawei P30 (Breathing Crystal)",
+          "price": "$0.39",
+          "product_url": "https://www.mobilesentrix.com/sim-card-tray-for-huawei-p30-breathing-crystal",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1732141732-673e62a44b69b.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Sim Card Reader For Huawei P30",
+          "price": "$0.52",
+          "product_url": "https://www.mobilesentrix.com/sim-card-reader-compatible-for-huawei-p30",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1748029617-6830d0b109ad5.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Sim Card Tray For Huawei P30 (Black)",
+          "price": "$0.61",
+          "product_url": "https://www.mobilesentrix.com/sim-card-tray-for-huawei-p30-black",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1733157644-674de30c70174.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Sim Card Tray For Huawei P30 (Aurora)",
+          "price": "$0.72",
+          "product_url": "https://www.mobilesentrix.com/sim-card-tray-for-huawei-p30-aurora",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1733158012-674de47c33dfe.webp",
+          "images": [],
+          "source_images": []
+        },
+        {
+          "name": "Tester Flex Cable For iTestBox (S300) For Huawei P30",
+          "price": "$1.33",
+          "product_url": "https://www.mobilesentrix.com/tester-flex-cable-for-itestbox-s300-for-huawei-p30",
+          "img": "https://static.mobilesentrix.com/catalog/product/small_image/1/7/1747955587-682faf8308766.webp",
+          "images": [],
+          "source_images": []
+        }
+      ]
+    }
+  ]
+}

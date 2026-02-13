@@ -266,22 +266,20 @@ node server.js
 
 ## 🚀 Deployment
 
-### Fly.io (Recommended)
-
-```bash
-flyctl auth login
-flyctl launch
-flyctl deploy
-```
-
-See [FLY_DEPLOYMENT.md](FLY_DEPLOYMENT.md) for detailed instructions.
-
 ### Docker
 
 ```bash
 docker build -t scraper .
 docker run -p 3000:3000 scraper
 ```
+
+### Alternative Hosting Options
+
+- **Railway** - `railway up`
+- **Render** - Connect GitHub repository
+- **PiknoCloud** - Simple Node.js hosting
+- **AWS Lambda** - Serverless option
+- **Self-Hosted** - Any VPS or server
 
 ## 📈 Monitoring
 

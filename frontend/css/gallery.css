@@ -1,0 +1,225 @@
+/* =============================================
+   GALLERY.CSS - Image grid and gallery styles
+   ============================================= */
+
+/* =============================================
+   IMAGE GRID
+   ============================================= */
+
+.image-grid {
+    display: grid;
+    --image-cell-min: 170px;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(var(--image-cell-min), 1fr));
+    align-items: stretch;
+}
+
+.image-grid.grid-small {
+    --image-cell-min: 120px;
+    gap: 10px;
+}
+
+.image-grid.grid-medium {
+    --image-cell-min: 170px;
+    gap: 12px;
+}
+
+.image-grid.grid-large {
+    --image-cell-min: 240px;
+    gap: 14px;
+}
+
+/* =============================================
+   IMAGE CARDS
+   ============================================= */
+
+.image-card {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: #ffffff;
+    contain: layout style paint;
+    content-visibility: auto;
+    contain-intrinsic-size: 180px 180px;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    transition:
+        transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+        box-shadow 0.24s ease,
+        border-color 0.24s ease;
+}
+
+.dark .image-card {
+    border-color: rgba(100, 116, 139, 0.45);
+    background: #0f172a;
+}
+
+.image-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(14, 165, 233, 0.5);
+    box-shadow: 0 10px 26px -18px rgba(15, 23, 42, 0.5);
+}
+
+.image-frame {
+    position: absolute;
+    inset: 0;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f8fafc;
+}
+
+.dark .image-frame {
+    background: #111827;
+}
+
+.gallery-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    transform: translateZ(0) scale(0.985);
+    transition:
+        transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.22s ease,
+        filter 0.2s ease;
+    opacity: 0;
+    will-change: transform, opacity;
+}
+
+.gallery-image.is-visible,
+.image-card.img-loaded .gallery-image {
+    opacity: 1;
+    transform: translateZ(0) scale(1);
+}
+
+.image-card:hover .gallery-image {
+    transform: translateZ(0) scale(1.02);
+    filter: saturate(1.03) contrast(1.01);
+}
+
+/* =============================================
+   IMAGE OVERLAY + CONTROLS
+   ============================================= */
+
+.img-skeleton {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 0%, rgba(148, 163, 184, 0.2) 50%, transparent 100%);
+    animation: shimmer 1.4s linear infinite;
+}
+
+.image-card.img-loaded .img-skeleton {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.image-overlay {
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    background: linear-gradient(to top, rgba(15, 23, 42, 0.45), rgba(15, 23, 42, 0.05), transparent 70%);
+}
+
+.image-card:hover .image-overlay {
+    opacity: 1;
+}
+
+.image-overlay button,
+.image-overlay a {
+    pointer-events: auto;
+    backdrop-filter: blur(2px);
+}
+
+.select-toggle {
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+
+.image-card:hover .select-toggle,
+.image-card.selected .select-toggle,
+.image-card:focus-within .select-toggle {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .select-toggle {
+        opacity: 1;
+    }
+}
+
+/* =============================================
+   STATES
+   ============================================= */
+
+.image-card.selected {
+    border-color: rgba(14, 165, 233, 0.7);
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.3), 0 6px 18px -12px rgba(14, 165, 233, 0.45);
+}
+
+.image-card.img-error .image-frame {
+    padding: 0;
+    background: #f1f5f9;
+}
+
+.dark .image-card.img-error .image-frame {
+    background: #1e293b;
+}
+
+/* =============================================
+   LOADING STATES
+   ============================================= */
+
+.image-loading {
+    background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite linear;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.dark .image-loading {
+    background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+    background-size: 200% 100%;
+}
+
+/* =============================================
+   MODAL IMAGE CONTAINER
+   ============================================= */
+
+#modal-image-container {
+    contain: layout style;
+}
+
+#modal-image {
+    transition: transform 0.2s ease-out, opacity 0.16s ease;
+    will-change: transform;
+}
+
+/* Thumbnail Strip */
+#modal-thumbnails {
+    scrollbar-width: thin;
+}
+
+#modal-thumbnails::-webkit-scrollbar {
+    height: 4px;
+}
+
+#modal-thumbnails button {
+    transition: transform 0.16s ease-out, opacity 0.16s ease-out, box-shadow 0.2s ease-out;
+}
+
+#modal-thumbnails button:hover {
+    opacity: 1;
+}

@@ -1,0 +1,303 @@
+/* =============================================
+   ANIMATIONS.CSS - Keyframes & animation classes
+   GPU-accelerated and accessibility-aware
+   ============================================= */
+
+/* GPU Acceleration Utility */
+.gpu-accelerated {
+    transform: translateZ(0);
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+}
+
+/* =============================================
+   KEYFRAME DEFINITIONS
+   ============================================= */
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px) translateZ(0);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) translateZ(0);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(16px) translateY(4px) scale(0.98) translateZ(0);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0) translateY(0) scale(1) translateZ(0);
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        opacity: 1;
+        transform: translateX(0) translateY(0) scale(1) translateZ(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateX(14px) translateY(2px) scale(0.98) translateZ(0);
+    }
+}
+
+@keyframes toastIn {
+    from {
+        opacity: 0;
+        transform: translateX(14px) translateY(4px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0) translateY(0) scale(1);
+    }
+}
+
+@keyframes toastOut {
+    from {
+        opacity: 1;
+        transform: translateX(0) translateY(0) scale(1);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateX(12px) translateY(2px) scale(0.98);
+    }
+}
+
+@keyframes toastPulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.01);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes bounceIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.3) translateZ(0);
+    }
+
+    50% {
+        transform: scale(1.05) translateZ(0);
+    }
+
+    70% {
+        transform: scale(0.9) translateZ(0);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1) translateZ(0);
+    }
+}
+
+@keyframes shake {
+
+    0%,
+    100% {
+        transform: translateX(0) translateZ(0);
+    }
+
+    10%,
+    30%,
+    50%,
+    70%,
+    90% {
+        transform: translateX(-5px) translateZ(0);
+    }
+
+    20%,
+    40%,
+    60%,
+    80% {
+        transform: translateX(5px) translateZ(0);
+    }
+}
+
+@keyframes confetti-fall {
+    0% {
+        transform: translateY(-10px) rotate(0deg) translateZ(0);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateY(100vh) rotate(720deg) translateZ(0);
+        opacity: 0;
+    }
+}
+
+@keyframes pop {
+    0% {
+        transform: scale(1) translateZ(0);
+    }
+
+    50% {
+        transform: scale(1.2) translateZ(0);
+    }
+
+    100% {
+        transform: scale(1) translateZ(0);
+    }
+}
+
+@keyframes glow {
+
+    0%,
+    100% {
+        box-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
+    }
+
+    50% {
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.8);
+    }
+}
+
+@keyframes countUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px) translateZ(0);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) translateZ(0);
+    }
+}
+
+@keyframes shrink {
+    from {
+        width: 100%;
+    }
+
+    to {
+        width: 0%;
+    }
+}
+
+/* =============================================
+   ANIMATION UTILITY CLASSES
+   ============================================= */
+
+.animate-spin {
+    animation: spin 1s linear infinite;
+    will-change: transform;
+}
+
+.animate-pulse {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+    will-change: transform, opacity;
+}
+
+.animate-slideIn {
+    animation: slideInRight 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, opacity;
+}
+
+.animate-slideOut {
+    animation: slideOutRight 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+    will-change: transform, opacity;
+}
+
+.animate-bounceIn {
+    animation: bounceIn 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, opacity;
+}
+
+.animate-shake {
+    animation: shake 0.5s ease-in-out;
+    will-change: transform;
+}
+
+.animate-pop {
+    animation: pop 0.3s ease-out;
+    will-change: transform;
+}
+
+.animate-glow {
+    animation: glow 2s ease-in-out infinite;
+}
+
+.animate-countUp {
+    animation: countUp 0.24s ease-out;
+    will-change: transform, opacity;
+}
+
+.animate-toastIn {
+    animation: toastIn 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, opacity;
+}
+
+.animate-toastOut {
+    animation: toastOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+    will-change: transform, opacity;
+}
+
+.animate-toastPulse {
+    animation: toastPulse 0.24s ease-out;
+}
+
+/* =============================================
+   ACCESSIBILITY - Reduced Motion
+   ============================================= */
+
+@media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    .animate-spin,
+    .animate-pulse,
+    .animate-glow {
+        animation: none !important;
+    }
+
+    .confetti,
+    .confetti-piece {
+        display: none !important;
+    }
+}
