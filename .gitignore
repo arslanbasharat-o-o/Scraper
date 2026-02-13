@@ -1,9 +1,6 @@
 ## Dependencies
 node_modules/
 
-## Optional lockfile policy
-package-lock.json
-
 ## Environment files
 .env
 .env.*
