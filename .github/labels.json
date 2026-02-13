@@ -1,0 +1,15 @@
+[
+  {"name":"bug","color":"d73a4a","description":"Something is not working"},
+  {"name":"enhancement","color":"a2eeef","description":"New feature or request"},
+  {"name":"question","color":"d876e3","description":"Further information is requested"},
+  {"name":"documentation","color":"0075ca","description":"Documentation-only changes"},
+  {"name":"dependencies","color":"0366d6","description":"Dependency updates"},
+  {"name":"ci","color":"5319e7","description":"Continuous integration changes"},
+  {"name":"cd","color":"1d76db","description":"Continuous deployment changes"},
+  {"name":"performance","color":"fbca04","description":"Performance improvements"},
+  {"name":"security","color":"b60205","description":"Security-related changes"},
+  {"name":"chore","color":"cfd3d7","description":"Maintenance work"},
+  {"name":"breaking","color":"000000","description":"Breaking changes"},
+  {"name":"good first issue","color":"7057ff","description":"Good for newcomers"},
+  {"name":"help wanted","color":"008672","description":"Maintainer requests assistance"}
+]

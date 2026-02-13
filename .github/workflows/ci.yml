@@ -84,6 +84,7 @@ jobs:
         run: |
           test -f README.md
           test -f CONTRIBUTING.md
+          test -f CHANGELOG.md
           test -f SECURITY.md
           test -f LICENSE
           test -f CODE_OF_CONDUCT.md
@@ -95,7 +96,12 @@ jobs:
           test -f .github/ISSUE_TEMPLATE/feature_request.yml
           test -f .github/ISSUE_TEMPLATE/support_question.yml
           test -f .github/PULL_REQUEST_TEMPLATE.md
+          test -f .github/release-drafter.yml
+          test -f .github/labels.json
+          test -f .github/workflows/release-drafter.yml
+          test -f .github/workflows/labels-sync.yml
           test -f docs/README.md
+          test -f docs/API_REFERENCE.md
           test -f docs/DEPLOYMENT_RAILWAY.md
 
   docker-smoke:

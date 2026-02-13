@@ -6,6 +6,7 @@ Project guides are grouped here for easier navigation and cleaner repository roo
 
 - [Quick Start](./QUICK_START.md)
 - [Start Server](./START_SERVER.md)
+- [API Reference](./API_REFERENCE.md)
 
 ## Performance and Optimization
 
@@ -20,3 +21,4 @@ Project guides are grouped here for easier navigation and cleaner repository roo
 
 - [Railway Deployment](./DEPLOYMENT_RAILWAY.md)
 - Contribution guide in repository root: `CONTRIBUTING.md`
+- Changelog in repository root: `CHANGELOG.md`

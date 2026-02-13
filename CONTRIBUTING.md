@@ -52,6 +52,8 @@ Commit prefixes:
 - Use `.github/PULL_REQUEST_TEMPLATE.md` for all pull requests
 - CI runs from `.github/workflows/ci.yml`
 - CD to Railway runs from `.github/workflows/cd-railway.yml` when required secrets are set
+- Release notes are auto-drafted via `.github/workflows/release-drafter.yml`
+- Label definitions are managed in `.github/labels.json` and synced by `.github/workflows/labels-sync.yml`
 
 ## Repository Structure
 
@@ -61,9 +63,12 @@ Commit prefixes:
 │   ├── ISSUE_TEMPLATE/
 │   ├── workflows/
 │   ├── CODEOWNERS
+│   ├── labels.json
+│   ├── release-drafter.yml
 │   ├── dependabot.yml
 │   └── PULL_REQUEST_TEMPLATE.md
 ├── docs/
+│   ├── API_REFERENCE.md
 │   ├── README.md
 │   ├── DEPLOYMENT_RAILWAY.md
 │   ├── QUICK_START.md
@@ -83,6 +88,7 @@ Commit prefixes:
 ├── .gitattributes
 ├── README.md
 ├── CONTRIBUTING.md
+├── CHANGELOG.md
 └── SECURITY.md
 ```
 

@@ -4,7 +4,21 @@ Production-oriented scraper service for product pages and category pages, with S
 
 [![Node.js](https://img.shields.io/badge/Node.js-v20+-green?logo=node.js)](https://nodejs.org/)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://www.python.org/)
+[![CI](https://github.com/arslanbasharat-o-o/Scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/arslanbasharat-o-o/Scraper/actions/workflows/ci.yml)
+[![CD - Railway](https://github.com/arslanbasharat-o-o/Scraper/actions/workflows/cd-railway.yml/badge.svg)](https://github.com/arslanbasharat-o-o/Scraper/actions/workflows/cd-railway.yml)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+
+## Table of Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+- [API Overview](#api-overview)
+- [Configuration](#configuration)
+- [Railway Deployment](#railway-deployment)
+- [CI/CD](#cicd)
+- [Project Structure](#project-structure)
+- [Documentation](#documentation)
 
 ## Features
 
@@ -89,6 +103,8 @@ curl -G "http://localhost:3001/scrape" \
 - `GET /events` (job update SSE)
 - `GET /admin/api/overview`
 
+Detailed endpoint examples: [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)
+
 ## Configuration
 
 Main environment variables:
@@ -132,6 +148,8 @@ GitHub Actions workflows are included for both validation and deployment:
 
 - `CI` (`.github/workflows/ci.yml`) runs syntax/smoke checks, standards checks, and Docker build smoke tests.
 - `CD - Railway` (`.github/workflows/cd-railway.yml`) deploys on `main` pushes or manual dispatch when Railway secrets are configured.
+- `Release Drafter` (`.github/workflows/release-drafter.yml`) prepares release notes from merged PR labels.
+- `Labels Sync` (`.github/workflows/labels-sync.yml`) keeps repository labels consistent from `.github/labels.json`.
 
 Required secrets for Railway CD:
 
@@ -159,12 +177,17 @@ docker run --rm -p 3001:3001 --env-file .env.example mobilesentrix-scraper
 │   │   └── config.yml
 │   ├── workflows/
 │   │   ├── ci.yml
-│   │   └── cd-railway.yml
+│   │   ├── cd-railway.yml
+│   │   ├── release-drafter.yml
+│   │   └── labels-sync.yml
 │   ├── CODEOWNERS
+│   ├── labels.json
+│   ├── release-drafter.yml
 │   ├── dependabot.yml
 │   └── PULL_REQUEST_TEMPLATE.md
 ├── docs/
 │   ├── README.md
+│   ├── API_REFERENCE.md
 │   ├── DEPLOYMENT_RAILWAY.md
 │   ├── QUICK_START.md
 │   ├── START_SERVER.md
@@ -184,6 +207,7 @@ docker run --rm -p 3001:3001 --env-file .env.example mobilesentrix-scraper
 ├── package.json
 ├── README.md
 ├── CONTRIBUTING.md
+├── CHANGELOG.md
 ├── SECURITY.md
 ├── CODE_OF_CONDUCT.md
 └── LICENSE
@@ -199,6 +223,7 @@ python3 -m py_compile convert_image.py create_zip.py
 ## Documentation
 
 - [`docs/README.md`](docs/README.md)
+- [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)
 - [`docs/QUICK_START.md`](docs/QUICK_START.md)
 - [`docs/OPTIMIZATION.md`](docs/OPTIMIZATION.md)
 - [`docs/PYTHON_SETUP.md`](docs/PYTHON_SETUP.md)
