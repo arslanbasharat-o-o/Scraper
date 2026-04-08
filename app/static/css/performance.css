@@ -1,0 +1,81 @@
+/* Performance Optimizations for MobileSentrix Tool */
+
+/* Remove expensive backdrop filters and replace with solid backgrounds */
+.cy-card {
+  backdrop-filter: none !important;
+}
+
+.stat-card {
+  backdrop-filter: none !important;
+}
+
+.history-filters {
+  backdrop-filter: none !important;
+}
+
+.history-control-chip {
+  backdrop-filter: none !important;
+}
+
+.overview-chip {
+  backdrop-filter: none !important;
+}
+
+.cleanup-modal-content {
+  backdrop-filter: none !important;
+}
+
+.history-detail-modal {
+  backdrop-filter: none !important;
+}
+
+.overlay {
+  backdrop-filter: none !important;
+}
+
+/* Optimize animations - reduce to transform and opacity only */
+* {
+  will-change: auto !important;
+}
+
+.stat-card:hover,
+.history-card:hover,
+.cleanup-quick-btn:hover,
+.btn:hover {
+  /* will-change removed */
+}
+
+/* Reduce shadow complexity */
+:root {
+  --shadow: 0 4px 12px rgba(3, 10, 32, 0.25) !important;
+}
+
+[data-bs-theme="light"] {
+  --shadow: 0 2px 8px rgba(38, 48, 94, 0.06) !important;
+}
+
+/* Optimize table rendering */
+table {
+  transform: translateZ(0);
+}
+
+/* GPU acceleration for smooth scrolling */
+.history-detail-content,
+.url-list {
+  transform: translateZ(0);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Disable animations on slow devices */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Optimize filter inputs */
+input, select, textarea {
+  transform: translateZ(0);
+}

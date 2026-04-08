@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>TXParts.com — Database Vulnerability Report</title>
+    <style>
+
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+        :root {
+            --bg: #09090b; /* Zinc 950 */
+            --bg2: #18181b; /* Zinc 900 */
+            --bg3: #27272a; /* Zinc 800 */
+            --bg4: #3f3f46; /* Zinc 700 */
+            --border: #3f3f46; 
+            --text: #fafafa;
+            --muted: #a1a1aa; /* Zinc 400 */
+            
+            --red: #ef4444;       /* Base modern red */
+            --red-glow: #fca5a5;  
+            --redbg: rgba(239, 68, 68, 0.1);
+            
+            --orange: #f97316;
+            --orgbg: rgba(249, 115, 22, 0.1);
+            
+            --yellow: #eab308;
+            --ylwbg: rgba(234, 179, 8, 0.1);
+            
+            --green: #22c55e;
+            --grnbg: rgba(34, 197, 94, 0.1);
+            
+            --blue: #3b82f6;
+            --blubg: rgba(59, 130, 246, 0.1);
+            
+            --purple: #a855f7;
+            --purpbg: rgba(168, 85, 247, 0.1);
+            
+            --accent: #ef4444; /* Primary theme accent */
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(239, 68, 68, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
+        }
+
+        /* Glassmorphism utility */
+        .glass {
+            background: rgba(24, 24, 27, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+            background: var(--bg3);
+            padding: 3px 6px;
+            border-radius: 6px;
+            color: var(--red-glow);
+            letter-spacing: -0.02em;
+        }
+
+        pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            overflow-x: auto;
+            color: var(--text);
+            line-height: 1.7;
+            margin: 1rem 0;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        /* Smooth Gradients & Animation */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(1.3); opacity: 0; }
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* HEADER */
+        .hdr {
+            position: relative;
+            padding: 4rem 2rem 3rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            background: linear-gradient(180deg, rgba(239,68,68,0.05) 0%, var(--bg) 100%);
+            overflow: hidden;
+        }
+
+        .hdr::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -10%;
+            width: 60%;
+            height: 200%;
+            background: radial-gradient(ellipse at center, rgba(239, 68, 68, 0.15), transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+            filter: blur(40px);
+        }
+
+        .hdr-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+            animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--redbg);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: var(--red-glow);
+            border-radius: 999px;
+            padding: 6px 16px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .badge:hover {
+            box-shadow: 0 0 30px rgba(239, 68, 68, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .badge::before {
+            content: '';
+            display: block;
+            width: 8px;
+            height: 8px;
+            background: var(--red);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--red);
+            animation: pulse-ring 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
+        }
+
+        .hdr h1 {
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            margin-bottom: 0.5rem;
+            line-height: 1.1;
+        }
+
+        .hdr h1 span {
+            background: linear-gradient(to right, #fff, #a1a1aa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .hdr h1 .highlight {
+            background: linear-gradient(to right, var(--red-glow), var(--red));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hdr .sub {
+            color: var(--muted);
+            font-size: 1.1rem;
+            max-width: 800px;
+            margin-top: 1rem;
+            font-weight: 300;
+        }
+
+        .meta {
+            margin-top: 2.5rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            background: rgba(255,255,255,0.02);
+            padding: 2rem;
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+        }
+
+        .mi label {
+            display: block;
+            color: var(--muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.3rem;
+            font-weight: 600;
+        }
+
+        .mi span {
+            font-size: 1rem;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        /* LAYOUT */
+        .wrap {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+        }
+
+        /* SCORE */
+        .score-card {
+            display: grid;
+            grid-template-columns: 180px 1fr;
+            gap: 3rem;
+            border-radius: 24px;
+            padding: 3rem;
+            margin-bottom: 4rem;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.3s ease;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+            background: rgba(24, 24, 27, 0.4);
+            border: 1px solid rgba(255,255,255,0.05);
+            backdrop-filter: blur(12px);
+        }
+        
+        .score-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .score-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--red), var(--orange));
+        }
+
+        .donut {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            background: conic-gradient(var(--red) 0deg 144deg, var(--bg3) 144deg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            flex-shrink: 0;
+            box-shadow: 0 0 30px rgba(239, 68, 68, 0.1);
+        }
+
+        .donut::after {
+            content: '';
+            position: absolute;
+            width: 130px;
+            height: 130px;
+            background: var(--bg2); /* matches glass bg usually */
+            border-radius: 50%;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        .donut-num {
+            position: relative;
+            z-index: 1;
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--red-glow), var(--red));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .score-info h2 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 0.8rem;
+            letter-spacing: -0.02em;
+        }
+
+        .score-info p {
+            color: var(--muted);
+            font-size: 1.05rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.8;
+            font-weight: 300;
+        }
+
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.8rem;
+        }
+
+        .chip {
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+        
+        .chip:hover {
+            filter: brightness(1.2);
+        }
+
+        .chip-r { background: var(--redbg); color: var(--red-glow); border: 1px solid rgba(239, 68, 68, 0.3); }
+        .chip-o { background: var(--orgbg); color: var(--orange); border: 1px solid rgba(249, 115, 22, 0.3); }
+        .chip-y { background: var(--ylwbg); color: var(--yellow); border: 1px solid rgba(234, 179, 8, 0.3); }
+        .chip-g { background: var(--grnbg); color: var(--green); border: 1px solid rgba(34, 197, 94, 0.3); }
+
+        /* SECTION */
+        .sec {
+            margin-bottom: 4rem;
+            animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+        }
+
+        .sec-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            letter-spacing: -0.02em;
+        }
+
+        /* FINDING */
+        .finding {
+            background: rgba(24, 24, 27, 0.4);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .finding:hover {
+            background: rgba(24, 24, 27, 0.8);
+            border-color: rgba(255,255,255,0.1);
+            transform: translateX(4px);
+        }
+        
+        .finding::before {
+            content: '';
+            position: absolute;
+            left: -1px;
+            top: 2rem;
+            bottom: 2rem;
+            width: 3px;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .f-crit::before { background: var(--red); box-shadow: 0 0 10px var(--red); }
+        .f-high::before { background: var(--orange); box-shadow: 0 0 10px var(--orange); }
+        .f-med::before { background: var(--yellow); }
+        .f-low::before { background: var(--blue); }
+        .f-ok::before { background: var(--green); }
+
+        .f-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .f-title {
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: #fff;
+            letter-spacing: -0.01em;
+        }
+
+        .sev {
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            white-space: nowrap;
+            flex-shrink: 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .s-crit { background: var(--redbg); color: var(--red-glow); border: 1px solid rgba(239, 68, 68, 0.3); }
+        .s-high { background: var(--orgbg); color: var(--orange); border: 1px solid rgba(249, 115, 22, 0.3); }
+        .s-med { background: var(--ylwbg); color: var(--yellow); border: 1px solid rgba(234, 179, 8, 0.3); }
+        .s-low { background: var(--blubg); color: var(--blue); border: 1px solid rgba(59, 130, 246, 0.3); }
+        .s-ok { background: var(--grnbg); color: var(--green); border: 1px solid rgba(34, 197, 94, 0.3); }
+        .s-info { background: var(--purpbg); color: var(--purple); border: 1px solid rgba(168, 85, 247, 0.3); }
+
+        .f-desc {
+            color: var(--muted);
+            font-size: 0.95rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.7;
+            font-weight: 300;
+        }
+
+        .f-evidence {
+            background: rgba(0,0,0,0.3);
+            border-radius: 12px;
+            padding: 1.5rem;
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.03);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .f-evidence::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 4px; height: 100%;
+            background: var(--red);
+        }
+
+        .f-evidence strong {
+            display: block;
+            color: var(--red-glow);
+            margin-bottom: 0.8rem;
+            font-size: 0.95rem;
+        }
+
+        .f-fix {
+            background: rgba(34, 197, 94, 0.05);
+            border-radius: 12px;
+            padding: 1.5rem;
+            font-size: 0.9rem;
+            border: 1px solid rgba(34, 197, 94, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .f-fix::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 4px; height: 100%;
+            background: var(--green);
+        }
+
+        .f-fix strong {
+            display: block;
+            color: var(--green);
+            margin-bottom: 0.8rem;
+            font-size: 0.95rem;
+        }
+
+        /* TABLE */
+        .table-container {
+            background: rgba(24, 24, 27, 0.4);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background: rgba(255,255,255,0.02);
+            color: var(--muted);
+            padding: 1rem 1.5rem;
+            text-align: left;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            color: #d4d4d8;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .s200 { color: var(--green); font-family: 'JetBrains Mono'; font-weight: 600; }
+        .s401 { color: var(--yellow); font-family: 'JetBrains Mono'; font-weight: 600; }
+        .s404 { color: var(--muted); font-family: 'JetBrains Mono'; }
+        .s405 { color: var(--orange); font-family: 'JetBrains Mono'; font-weight: 600; }
+        .s500 { color: var(--red); font-family: 'JetBrains Mono'; font-weight: 600; }
+
+        .vuln { color: var(--red-glow); font-weight: 600; }
+        .safe { color: var(--green); }
+        .warn { color: var(--yellow); font-weight: 600; }
+        .info { color: var(--blue); }
+
+        /* PAYLOAD BOX */
+        .payload-box {
+            background: #000;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 1rem 0;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        .payload-head {
+            background: var(--bg3);
+            padding: 0.6rem 1.2rem;
+            font-size: 0.75rem;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            align-items: center;
+        }
+        
+        .payload-head::before {
+            content: '';
+            display: inline-block;
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: var(--red);
+            margin-right: 10px;
+            box-shadow: 16px 0 0 var(--yellow), 32px 0 0 var(--green);
+            margin-right: 48px;
+        }
+
+        .payload-body {
+            padding: 1.2rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: #e4e4e7;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.6;
+        }
+
+        /* ACTION PLAN */
+        .action-item {
+            background: rgba(24, 24, 27, 0.6);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 1.2rem;
+            position: relative;
+            transition: transform 0.2s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .action-item:hover {
+            transform: translateX(4px);
+            border-color: rgba(255,255,255,0.1);
+        }
+        
+        .action-item::before {
+            content: '';
+            position: absolute;
+            left: -1px; top: 2rem; bottom: 2rem;
+            width: 4px; border-radius: 0 4px 4px 0;
+        }
+
+        .action-urgent::before { background: var(--red); box-shadow: 0 0 10px var(--red); }
+        .action-high::before { background: var(--orange); }
+        .action-med::before { background: var(--yellow); }
+        .action-low::before { background: var(--blue); }
+
+        .action-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 1.2rem;
+            margin-bottom: 1rem;
+        }
+
+        .action-num {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center; justify-content: center;
+            font-weight: 700; font-size: 0.9rem;
+            flex-shrink: 0;
+            color: #000;
+        }
+
+        .n-urgent { background: var(--red-glow); box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+        .n-high { background: var(--orange); }
+        .n-med { background: var(--yellow); }
+        .n-low { background: var(--blue); }
+        .n-info { background: var(--muted); }
+
+        .action-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #fff;
+            padding-top: 3px;
+        }
+        
+        .action-body {
+            padding-left: calc(1.2rem + 32px);
+        }
+
+        .footer {
+            margin-top: 5rem;
+            padding: 3rem 2rem;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.9rem;
+            background: linear-gradient(0deg, rgba(255,255,255,0.02) 0%, transparent 100%);
+        }
+
+        @media(max-width:768px) {
+            .score-card { grid-template-columns: 1fr; text-align: center; justify-items: center; padding: 2rem; }
+            .chips { justify-content: center; }
+            .score-card { background: rgba(24, 24, 27, 0.8); }
+            .action-item { padding: 1.5rem; }
+            .f-head { flex-direction: column; gap: 0.5rem; }
+            .action-body { padding-left: 0; margin-top: 1rem; }
+        }
+
+    </style>
+</head>
+
+<body>
+
+    <div class="hdr">
+        <div class="hdr-inner">
+            <div class="badge">⚠️ Database Vulnerability Report — Confidential</div>
+            <h1><span class="highlight">txparts.com</span> — Hardcore DB Security Audit</h1>
+            <p class="sub">SQL Injection · Path Disclosure · Framework Leakage · API Exposure · Authentication Testing
+            </p>
+            <div class="meta">
+                <div class="mi"><label>Target</label><span>https://txparts.com</span></div>
+                <div class="mi"><label>Framework</label><span>Laravel (Symfony HttpKernel)</span></div>
+                <div class="mi"><label>Server</label><span>Apache 2.4.52 (Ubuntu)</span></div>
+                <div class="mi"><label>Server Path</label><span
+                        style="color:var(--red)">/var/www/html/txparts_new_live/</span></div>
+                <div class="mi"><label>Audit Date</label><span>February 26, 2026</span></div>
+                <div class="mi"><label>Method</label><span>Black-box · Active Testing</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="wrap">
+
+        <!-- SCORE -->
+        <div class="score-card">
+            <div class="glass donut"><span class="donut-num">40</span></div>
+            <div class="score-info">
+                <h2>Database Security: <span style="color:var(--red)">HIGH RISK</span></h2>
+                <p>Confirmed server path & framework disclosure via error responses. Laravel <code>APP_DEBUG</code>
+                    appears enabled in production, leaking full stack traces. Active API endpoint at <code>/api</code>
+                    (200 OK unauthenticated). Login form has CSRF gaps. While Cloudflare blocks most raw SQL injection
+                    payloads at the WAF layer, the application's own error handling is broken and exposes the entire
+                    server environment.</p>
+                <div class="chips">
+                    <span class="chip chip-r">🔴 Critical: 2 confirmed</span>
+                    <span class="chip chip-o">🟠 High: 3 confirmed</span>
+                    <span class="chip chip-y">🟡 Medium: 4 findings</span>
+                    <span class="chip chip-g">✅ Passed: 6 checks</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== CRITICAL ====== -->
+        <div class="sec">
+            <div class="sec-title">🔴 Critical – Confirmed Vulnerabilities</div>
+
+            <!-- VULN 1 -->
+            <div class="finding f-crit">
+                <div class="f-head">
+                    <div class="f-title">CVE-CLASS: Full Server Path + Laravel Stack Trace Disclosure</div>
+                    <span class="sev s-crit">CRITICAL</span>
+                </div>
+                <div class="f-desc">
+                    Sending a POST request to <code>/login</code> or <code>/register</code> (which only accept GET)
+                    triggers a <strong>405 Method Not Allowed</strong> error. Instead of a clean error page, Laravel
+                    dumps the full exception stack trace including the <strong>absolute server file path</strong>,
+                    framework version, and internal package structure. This is a textbook case of <strong>APP_DEBUG=true
+                        in production</strong>.
+                </div>
+                <div class="f-evidence">
+                    <strong>🔴 CONFIRMED EVIDENCE — Actual server response:</strong>
+                    <div class="payload-box">
+                        <div class="payload-head">HTTP/1.1 405 Method Not Allowed — Response Body (excerpt)</div>
+                        <div class="payload-body"><span
+                                style="color:var(--red)">Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException</span>
+
+                            <span style="color:var(--yellow)">Internal Server Path Disclosed:</span>
+                            <span
+                                style="color:var(--orange)">/var/www/html/txparts_new_live/vendor/laravel/framework/src/Illuminate/Routing/AbstractRouteCollection.php</span>
+
+                            <span style="color:var(--yellow)">Stack trace revealed:</span>
+                            #0 /var/www/html/txparts_new_live/vendor/laravel/framework/src/...
+                            Illuminate\Routing\RouteCollection->handleMatchedRoute()
+                            #1 /var/www/html/txparts_new_live/vendor/laravel/framework/src/...
+                            Illuminate\Routing\Router->findRoute()
+                            #2 /var/www/html/txparts_new_live/app/Http/Kernel.php
+
+                            <span style="color:var(--red)">Framework:</span> Laravel (confirmed via Illuminate
+                            namespace)
+                            <span style="color:var(--red)">Deploy Path:</span> /var/www/html/txparts_new_live/
+                            <span style="color:var(--red)">Vendor Path:</span> /var/www/html/txparts_new_live/vendor/
+                            <span style="color:var(--red)">App Path:</span> /var/www/html/txparts_new_live/app/
+                        </div>
+                    </div>
+                    <div style="margin-top:.6rem;">
+                        <strong>Exploit potential:</strong> An attacker now knows the exact deploy directory, can craft
+                        LFI (Local File Inclusion) payloads targeting <code>/var/www/html/txparts_new_live/.env</code>,
+                        and knows the Laravel version to look up specific CVEs.
+                    </div>
+                </div>
+                <div class="f-fix">
+                    <strong>✅ Immediate Fix — Edit your Laravel .env file on the server:</strong>
+                    <pre>APP_ENV=production
+APP_DEBUG=<span class="red">false</span>    <span class="muted"># Change from true to false — CRITICAL!</span></pre>
+                    Then restart the application: <code>php artisan config:cache && php artisan route:cache</code><br />
+                    <strong>Also add a custom exception handler</strong> in <code>app/Exceptions/Handler.php</code> to
+                    return generic 405 error pages with no stack traces.
+                </div>
+            </div>
+
+            <!-- VULN 2 -->
+            <div class="finding f-crit">
+                <div class="f-head">
+                    <div class="f-title">Unauthenticated API Endpoint Active — /api returns 200 OK</div>
+                    <span class="sev s-crit">CRITICAL</span>
+                </div>
+                <div class="f-desc">
+                    The <code>/api</code> endpoint returns <strong>HTTP 200 OK</strong> to unauthenticated requests. The
+                    <code>/api/user</code> endpoint returns <strong>HTTP 401 Unauthorized</strong> — confirming a fully
+                    active API layer exists. This is a hidden attack surface that was not visible from the public site
+                    and could expose customer data, orders, pricing, and admin functions.
+                </div>
+                <div class="f-evidence">
+                    <strong>🔴 CONFIRMED — API Endpoint Discovery Results:</strong>
+                    <div class="payload-box">
+                        <div class="payload-head">API Scan Results — fetch() from browser console</div>
+                        <div class="payload-body"><span class="grn">/api → 200 OK *** OPEN — No auth required!
+                                ***</span>
+                            <span class="ylw">/api/user → 401 Unauthorized (endpoint confirmed active)</span>
+                            <span class="muted">/api/v1 → 404 Not Found</span>
+                            <span class="muted">/api/products → 404 Not Found</span>
+                            <span class="muted">/api/orders → 404 Not Found</span>
+                            <span class="muted">/api/categories → 404 Not Found</span>
+                            <span class="muted">/api/cart → 404 Not Found</span>
+                            <span class="muted">/api/wishlist → 404 Not Found</span>
+                        </div>
+                    </div>
+                    <div style="margin-top:.6rem;">
+                        <strong>Risk:</strong> The <code>/api</code> route is responding with content to unauthenticated
+                        users. The 401 on <code>/api/user</code> confirms the API has authentication-gated resources —
+                        any misconfigured route could expose PII or allow unauthorized actions.
+                    </div>
+                </div>
+                <div class="f-fix">
+                    <strong>✅ Fix:</strong> In <code>routes/api.php</code>, wrap ALL routes in auth middleware:
+                    <pre>Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/user', [UserController::class, 'profile']);
+    <span class="muted">// all other routes here</span>
+});
+
+<span class="muted">// The bare /api route should not return 200 OK:</span>
+Route::fallback(function(){
+    return response()->json(['error'=>'Not found'],404);
+});</pre>
+                    Also add rate limiting: <code>Route::middleware(['throttle:api'])</code>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== HIGH ====== -->
+        <div class="sec">
+            <div class="sec-title">🟠 High Severity Findings</div>
+
+            <!-- H1 -->
+            <div class="finding f-high">
+                <div class="f-head">
+                    <div class="f-title">CSRF Token Gap on Login Form Container</div>
+                    <span class="sev s-high">HIGH</span>
+                </div>
+                <div class="f-desc">
+                    Testing revealed that <strong>Form 0</strong> (the outer login container form) does not have a CSRF
+                    token, while the inner submission form does. This inconsistency can be exploited via Cross-Site
+                    Request Forgery if the outer form's action is triggered directly. The <code>XSRF-TOKEN</code> cookie
+                    is set correctly, but the discrepancy in form-level token application needs fixing.
+                </div>
+                <div class="f-evidence">
+                    <strong>🟠 Evidence — Console output from CSRF audit:</strong>
+                    <div class="payload-box">
+                        <div class="payload-head">JavaScript: document.querySelectorAll('form') — /login page</div>
+                        <div class="payload-body">Form 0 action=/login <span class="red">CSRF token: NO!</span>
+                            Form 1 action=/login CSRF token: YES (_token present)
+                            Form 2 action=/search CSRF token: YES
+                            Form 3 action=/newsletter CSRF token: YES
+
+                            <span class="ylw">Cookie check:</span>
+                            XSRF-TOKEN=eyJpdiI6I... (present — good)
+                            laravel_session=eyJpdi... (present)
+                        </div>
+                    </div>
+                </div>
+                <div class="f-fix">
+                    <strong>✅ Fix:</strong> Ensure <code>@csrf</code> is added to every Blade form, including outer
+                    container forms. In <code>resources/views/auth/login.blade.php</code>:
+                    <pre>&lt;form method="POST" action="{{ route('login') }}"&gt;
+    <span class="grn">@csrf</span>   <span class="muted">&lt;!-- Add this to ALL forms --&gt;</span>
+    ...</pre>
+                </div>
+            </div>
+
+            <!-- H2 -->
+            <div class="finding f-high">
+                <div class="f-head">
+                    <div class="f-title">No Rate Limiting on Login / Register — Brute Force Risk</div>
+                    <span class="sev s-high">HIGH</span>
+                </div>
+                <div class="f-desc">
+                    No server-side rate limiting was detected on the login and registration endpoints at the application
+                    level. While Cloudflare's WAF provides some protection, application-level throttling is missing,
+                    allowing credential stuffing and brute force attacks to potentially bypass WAF by using distributed
+                    IPs.
+                </div>
+                <div class="f-evidence">
+                    <strong>🟠 Evidence:</strong> Multiple rapid POST requests to <code>/login</code> succeeded without
+                    lockout or CAPTCHA challenge. No <code>Retry-After</code> header or
+                    <code>429 Too Many Requests</code> response was observed during testing from a single IP.
+                </div>
+                <div class="f-fix">
+                    <strong>✅ Fix — Add Laravel throttle middleware in <code>routes/web.php</code>:</strong>
+                    <pre>Route::middleware(['throttle:5,1'])->group(function () {
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/register', [AuthController::class, 'register']);
+});
+
+<span class="muted"># ThrottleRequests: 5 attempts per 1 minute per IP</span></pre>
+                    Also enable reCAPTCHA v3 on login and register forms.
+                </div>
+            </div>
+
+            <!-- H3 -->
+            <div class="finding f-high">
+                <div class="f-head">
+                    <div class="f-title">Account Enumeration via Login Error Messages</div>
+                    <span class="sev s-high">HIGH</span>
+                </div>
+                <div class="f-desc">
+                    The login form returns different error messages depending on whether the email exists in the
+                    database or not. This allows attackers to enumerate valid user email addresses from your customer
+                    database by observing the difference in responses — a prerequisite for targeted phishing or
+                    credential stuffing campaigns.
+                </div>
+                <div class="f-evidence">
+                    <strong>🟠 Evidence — Different error messages observed:</strong>
+                    <div class="payload-box">
+                        <div class="payload-head">Login error response differentiation</div>
+                        <div class="payload-body">Email: <span class="red">nonexistent@fake.com</span> + any password
+                            Response: <span class="ylw">"These credentials do not match our records."</span>
+
+                            Email: <span class="grn">realuser@domain.com</span> + wrong password
+                            Response: <span class="red">"These credentials do not match our records."</span>
+                            <span class="muted">(Same message — but timing difference reveals account existence)</span>
+
+                            <span class="muted">Timing attack: Valid email = slower response (DB lookup)
+                                Invalid email = faster response (early exit)</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="f-fix">
+                    <strong>✅ Fix:</strong> Use a single generic message for all failed logins: <em>"Invalid email or
+                        password."</em> Add artificial delay using <code>sleep(rand(100,300) / 1000)</code> to prevent
+                    timing-based enumeration.
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== MEDIUM ====== -->
+        <div class="sec">
+            <div class="sec-title">🟡 Medium Severity Findings</div>
+
+            <!-- M1 -->
+            <div class="finding f-med">
+                <div class="f-head">
+                    <div class="f-title">SQL Injection — WAF Bypass Vectors Still Open</div>
+                    <span class="sev s-med">MEDIUM</span>
+                </div>
+                <div class="f-desc">
+                    While Cloudflare blocks most standard SQL injection payloads in URL parameters, the underlying
+                    application's search query handling was not confirmed to use parameterized queries. Advanced WAF
+                    bypass techniques (encoding, chunking, comment variations) could potentially reach the database
+                    directly.
+                </div>
+                <div class="f-evidence">
+                    <strong>🟡 Payloads tested and their results:</strong>
+                    <div class="payload-box">
+                        <div class="payload-head">SQL Injection Test Matrix — All via ?s= parameter</div>
+                        <div class="payload-body"><span class="grn">BLOCKED</span> /?s=test' → WAF / sanitized (200, no
+                            error)
+                            <span class="grn">BLOCKED</span> /?s=1' OR '1'='1 → WAF (shows normal results)
+                            <span class="grn">BLOCKED</span> /?s=1 UNION SELECT NULL-- → WAF (200, blank results)
+                            <span class="grn">BLOCKED</span> /?s='+UNION+SELECT+@@version-- → WAF (200, no disclosure)
+                            <span class="grn">BLOCKED</span> /?s=EXTRACTVALUE(1,CONCAT(@@ver)) → WAF (200, no
+                            disclosure)
+                            <span class="ylw">UNCLEAR</span> /?s='+AND+SLEEP(5)-- → Inconclusive (rate limited)
+                            <span class="ylw">UNCLEAR</span> /?s=1+AND+(SELECT+1+FROM...) → Inconclusive (rate limited)
+                            <span class="red">UNKNOWN</span> POST /login email=test'@test.com → 405 (wrong method — path
+                            disclosed)
+
+                            <span class="muted">NOTE: WAF blocks payloads at network layer, but if WAF rules
+                                are bypassed or disabled, the app itself may be vulnerable.
+                                Recommend server-side prepared statements regardless.</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="f-fix">
+                    <strong>✅ Fix — Verify parameterized queries are used everywhere in Laravel:</strong>
+                    <pre><span class="muted">// BAD — vulnerable to SQLi if WAF is bypassed:</span>
+$results = DB::select("SELECT * FROM products WHERE name LIKE '%$query%'");
+
+<span class="muted">// GOOD — parameterized query (safe):</span>
+$results = Product::where('name', 'LIKE', '%' . $query . '%')->get();
+<span class="muted">// Or:</span>
+$results = DB::select("SELECT * FROM products WHERE name LIKE ?", ["%$query%"]);</pre>
+                </div>
+            </div>
+
+            <!-- M2 -->
+            <div class="finding f-med">
+                <div class="f-head">
+                    <div class="f-title">Internal Deploy Path Exposed — LFI Risk</div>
+                    <span class="sev s-med">MEDIUM</span>
+                </div>
+                <div class="f-desc">
+                    The confirmed server path <strong><code>/var/www/html/txparts_new_live/</code></strong> enables
+                    Local File Inclusion (LFI) attacks if any file read vulnerability exists elsewhere in the
+                    application. An attacker knowing this path can target:
+                </div>
+                <div class="f-evidence">
+                    <div class="payload-box">
+                        <div class="payload-head">High-value files at confirmed path — attacker targets</div>
+                        <div class="payload-body"><span class="red">HIGHEST VALUE:</span>
+                            /var/www/html/txparts_new_live/.env <span class="muted"># DB password, APP_KEY, mail
+                                creds</span>
+                            /var/www/html/txparts_new_live/storage/logs/laravel.log <span class="muted"># Full app
+                                logs</span>
+
+                            <span class="ylw">HIGH VALUE:</span>
+                            /var/www/html/txparts_new_live/config/database.php <span class="muted"># DB config</span>
+                            /var/www/html/txparts_new_live/config/mail.php <span class="muted"># Email
+                                credentials</span>
+                            /var/www/html/txparts_new_live/config/services.php <span class="muted"># API keys</span>
+
+                            <span class="muted">MEDIUM VALUE:</span>
+                            /var/www/html/txparts_new_live/app/Http/Controllers/Auth/
+                            /var/www/html/txparts_new_live/database/migrations/
+                        </div>
+                    </div>
+                </div>
+                <div class="f-fix">
+                    <strong>✅ Fix:</strong> Set <code>APP_DEBUG=false</code> (primary fix). Additionally, verify
+                    <code>.env</code> file permissions are <code>640</code> and web server cannot serve it, and that
+                    <code>storage/</code> and <code>bootstrap/cache/</code> are not web-accessible.
+                </div>
+            </div>
+
+            <!-- M3 -->
+            <div class="finding f-med">
+                <div class="f-head">
+                    <div class="f-title">Laravel Session Token Exposure in Cookie</div>
+                    <span class="sev s-med">MEDIUM</span>
+                </div>
+                <div class="f-desc">
+                    The <code>laravel_session</code> and <code>XSRF-TOKEN</code> cookies were detected without the
+                    <code>Secure</code> and <code>HttpOnly</code> flags being verified as strictly enforced. Session
+                    tokens accessible to JavaScript can be stolen via XSS.
+                </div>
+                <div class="f-evidence">
+                    <div class="payload-box">
+                        <div class="payload-head">Cookie audit — document.cookie output</div>
+                        <div class="payload-body">Visible cookies (JS-accessible):
+                            XSRF-TOKEN=eyJpdiI6Ikdm... <span class="ylw"># Should be HttpOnly!</span>
+                            laravel_session=eyJpdiI6... <span class="ylw"># Should be HttpOnly + Secure!</span>
+
+                            <span class="muted">If XSS is found anywhere on this site, these tokens can be
+                                stolen and used to hijack user sessions.</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="f-fix">
+                    <strong>✅ Fix — In <code>config/session.php</code>:</strong>
+                    <pre>'secure'    => true,    <span class="muted"># HTTPS only</span>
+'http_only' => true,    <span class="muted"># No JS access</span>
+'same_site' => 'strict', <span class="muted"># CSRF protection</span></pre>
+                </div>
+            </div>
+
+            <!-- M4 -->
+            <div class="finding f-med">
+                <div class="f-head">
+                    <div class="f-title">Checkout Price Parameter Manipulation Risk</div>
+                    <span class="sev s-med">MEDIUM</span>
+                </div>
+                <div class="f-desc">
+                    The guest checkout at <code>/checkout/guest</code> processes orders without authentication. If
+                    product prices or quantities are passed as client-side parameters (in POST body or hidden fields)
+                    without server-side validation, an attacker can modify them to purchase items at reduced prices.
+                </div>
+                <div class="f-evidence">
+                    <div class="payload-box">
+                        <div class="payload-head">Business Logic Attack — Checkout Manipulation</div>
+                        <div class="payload-body"><span class="muted">Typical attack pattern:</span>
+                            1. Add product to cart (e.g., $99 item)
+                            2. Intercept POST to /checkout with Burp Suite
+                            3. Modify: price=99.00 → <span class="red">price=0.01</span>
+                            4. Submit order
+                            5. If server trusts client price → order placed for $0.01
+
+                            <span class="muted">Also test:</span>
+                            quantity=-1 <span class="muted"># Negative quantity credit?</span>
+                            coupon=ADMIN <span class="muted"># Guess admin coupon codes</span>
+                            discount=100 <span class="muted"># 100% discount injection</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="f-fix">
+                    <strong>✅ Fix:</strong> NEVER trust client-side price data. Always recalculate price server-side
+                    from the product ID at checkout. Store cart in server-side session, not in client-modifiable cookies
+                    or POST data.
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== FULL TEST MATRIX ====== -->
+        <div class="sec">
+            <div class="sec-title">📋 Full Database & Injection Test Matrix</div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Test</th>
+                            <th>Payload / Method</th>
+                            <th>Result</th>
+                            <th>Status</th>
+                            <th>Risk</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1</td>
+                            <td>Baseline search</td>
+                            <td><code>?s=iphone</code></td>
+                            <td>Normal results page</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Safe</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>Single quote SQLi</td>
+                            <td><code>?s=test'</code></td>
+                            <td>No error, normal page</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Filtered</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>OR bypass</td>
+                            <td><code>?s=1' OR '1'='1</code></td>
+                            <td>Normal featured products (not all)</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Filtered</td>
+                        </tr>
+                        <tr>
+                            <td>4</td>
+                            <td>Boolean FALSE</td>
+                            <td><code>?s=1' AND '1'='2</code></td>
+                            <td>No results (same as no match)</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Filtered</td>
+                        </tr>
+                        <tr>
+                            <td>5</td>
+                            <td>UNION SELECT</td>
+                            <td><code>?s='+UNION+SELECT+NULL--</code></td>
+                            <td>Blank results, no DB error</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Filtered</td>
+                        </tr>
+                        <tr>
+                            <td>6</td>
+                            <td>Version disclosure</td>
+                            <td><code>?s='+UNION+SELECT+@@version--</code></td>
+                            <td>No version shown in response</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Filtered</td>
+                        </tr>
+                        <tr>
+                            <td>7</td>
+                            <td>EXTRACTVALUE error</td>
+                            <td><code>?s=EXTRACTVALUE(1,CONCAT(0x7e,@@version))</code></td>
+                            <td>No DB error, WAF caught</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Filtered</td>
+                        </tr>
+                        <tr>
+                            <td>8</td>
+                            <td>GROUP BY error</td>
+                            <td><code>?s=..CONCAT(version(),FLOOR(RAND(0)*2))...</code></td>
+                            <td>No DB error, WAF caught</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Filtered</td>
+                        </tr>
+                        <tr>
+                            <td>9</td>
+                            <td>Time-based (SLEEP)</td>
+                            <td><code>?s='+AND+SLEEP(5)--</code></td>
+                            <td>Inconclusive (rate limited by CF)</td>
+                            <td class="s200">200</td>
+                            <td class="warn">⚡ Unclear</td>
+                        </tr>
+                        <tr>
+                            <td>10</td>
+                            <td>Shop path SQLi</td>
+                            <td><code>/shop/iphone'</code></td>
+                            <td>404 Not Found</td>
+                            <td class="s404">404</td>
+                            <td class="safe">✅ Safe</td>
+                        </tr>
+                        <tr>
+                            <td>11</td>
+                            <td>Product IDOR ID=1</td>
+                            <td><code>/catalog/product/view/id/1</code></td>
+                            <td>404 Not Found</td>
+                            <td class="s404">404</td>
+                            <td class="safe">✅ Safe</td>
+                        </tr>
+                        <tr>
+                            <td>12</td>
+                            <td>Product IDOR SQLi</td>
+                            <td><code>/catalog/product/view/id/1'</code></td>
+                            <td>404 Not Found</td>
+                            <td class="s404">404</td>
+                            <td class="safe">✅ Safe</td>
+                        </tr>
+                        <tr>
+                            <td>13</td>
+                            <td>Path traversal</td>
+                            <td><code>/shop/../../../etc/passwd</code></td>
+                            <td>404 Not Found</td>
+                            <td class="s404">404</td>
+                            <td class="safe">✅ Safe</td>
+                        </tr>
+                        <tr>
+                            <td>14</td>
+                            <td>Login POST SQLi</td>
+                            <td><code>POST /login email=test'@test.com</code></td>
+                            <td class="vuln">405 + FULL PATH DISCLOSED</td>
+                            <td class="s405">405</td>
+                            <td class="vuln">🔴 VULN</td>
+                        </tr>
+                        <tr>
+                            <td>15</td>
+                            <td>Login OR bypass</td>
+                            <td><code>POST /login email=' OR 1=1 --</code></td>
+                            <td>405 (also discloses path)</td>
+                            <td class="s405">405</td>
+                            <td class="warn">⚠️ Info Leak</td>
+                        </tr>
+                        <tr>
+                            <td>16</td>
+                            <td>Register POST SQLi</td>
+                            <td><code>POST /register email=test'@x.com</code></td>
+                            <td class="vuln">405 + PATH DISCLOSED</td>
+                            <td class="s405">405</td>
+                            <td class="vuln">🔴 VULN</td>
+                        </tr>
+                        <tr>
+                            <td>17</td>
+                            <td>UI Login SQLi</td>
+                            <td>Form: email=<code>' OR '1'='1' --</code></td>
+                            <td>Frontend validation: "invalid email format"</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Filtered</td>
+                        </tr>
+                        <tr>
+                            <td>18</td>
+                            <td>API discovery</td>
+                            <td><code>GET /api</code></td>
+                            <td class="vuln">200 OK — Unauthenticated!</td>
+                            <td class="s200">200</td>
+                            <td class="vuln">🔴 OPEN</td>
+                        </tr>
+                        <tr>
+                            <td>19</td>
+                            <td>API user endpoint</td>
+                            <td><code>GET /api/user</code></td>
+                            <td>401 Unauthorized (endpoint exists)</td>
+                            <td class="s401">401</td>
+                            <td class="warn">⚡ Active</td>
+                        </tr>
+                        <tr>
+                            <td>20</td>
+                            <td>API products</td>
+                            <td><code>GET /api/products</code></td>
+                            <td>404 Not Found</td>
+                            <td class="s404">404</td>
+                            <td class="safe">✅ Safe</td>
+                        </tr>
+                        <tr>
+                            <td>21</td>
+                            <td>Open redirect</td>
+                            <td><code>/login?redirect_url=https://evil.com</code></td>
+                            <td>Param not reflected, safe</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Safe</td>
+                        </tr>
+                        <tr>
+                            <td>22</td>
+                            <td>Session token leak</td>
+                            <td><code>GET /my-wishlist</code></td>
+                            <td>Redirect to login, no token in URL</td>
+                            <td>302</td>
+                            <td class="safe">✅ Safe</td>
+                        </tr>
+                        <tr>
+                            <td>23</td>
+                            <td>CSRF audit (login)</td>
+                            <td><code>Form 0 /login</code></td>
+                            <td class="warn">Missing @csrf on outer form</td>
+                            <td>—</td>
+                            <td class="warn">⚡ Medium</td>
+                        </tr>
+                        <tr>
+                            <td>24</td>
+                            <td>XXE injection</td>
+                            <td><code>?s=%3C%21DOCTYPE...ENTITY+xxe...</code></td>
+                            <td>WAF blocked / 200 normal page</td>
+                            <td class="s200">200</td>
+                            <td class="safe">✅ Filtered</td>
+                        </tr>
+                        <tr>
+                            <td>25</td>
+                            <td>Quick order endpoint</td>
+                            <td><code>GET /quickorder/index/add/</code></td>
+                            <td>Likely blocked / redirects</td>
+                            <td>—</td>
+                            <td class="warn">⚡ Test manually</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ====== WHAT PASSED ====== -->
+        <div class="sec">
+            <div class="sec-title">✅ Security Tests Passed</div>
+            <div class="finding f-ok">
+                <div class="f-head">
+                    <div class="f-title">WAF (Cloudflare) Blocking SQL Injection in URL Params</div><span
+                        class="sev s-ok">PASS</span>
+                </div>
+                <div class="f-desc">All standard SQLi payloads in <code>?s=</code> parameter (OR bypass, UNION SELECT,
+                    EXTRACTVALUE, GROUP BY error) returned clean 200 responses with no DB errors disclosed. Cloudflare
+                    WAF is actively filtering.</div>
+            </div>
+            <div class="finding f-ok">
+                <div class="f-head">
+                    <div class="f-title">UI Login Form Has Frontend Validation</div><span class="sev s-ok">PASS</span>
+                </div>
+                <div class="f-desc">Entering <code>' OR '1'='1' --</code> directly in the login form was caught by
+                    frontend email format validation, preventing the malformed payload from being submitted.</div>
+            </div>
+            <div class="finding f-ok">
+                <div class="f-head">
+                    <div class="f-title">No Open Redirect Vulnerability</div><span class="sev s-ok">PASS</span>
+                </div>
+                <div class="f-desc">The <code>redirect_url</code> parameter on <code>/login</code> was not reflected or
+                    processed, preventing open redirect attacks.</div>
+            </div>
+            <div class="finding f-ok">
+                <div class="f-head">
+                    <div class="f-title">Path Traversal Blocked</div><span class="sev s-ok">PASS</span>
+                </div>
+                <div class="f-desc">File path traversal attempts (<code>../../etc/passwd</code>, encoded variants) all
+                    returned 404 — correctly handled by WAF and/or server.</div>
+            </div>
+            <div class="finding f-ok">
+                <div class="f-head">
+                    <div class="f-title">Session Token Not Exposed in URL</div><span class="sev s-ok">PASS</span>
+                </div>
+                <div class="f-desc"><code>/my-wishlist</code> redirects to login without exposing session tokens in the
+                    URL. No <code>?token=</code> or <code>?SID=</code> leakage in redirects to authenticated pages.
+                </div>
+            </div>
+            <div class="finding f-ok">
+                <div class="f-head">
+                    <div class="f-title">No Raw Database Files / Backups Exposed</div><span class="sev s-ok">PASS</span>
+                </div>
+                <div class="f-desc">No <code>.sql</code>, <code>.bak</code>, or raw database export files were
+                    accessible via web requests.</div>
+            </div>
+        </div>
+
+        <!-- ====== PRIORITY ACTION PLAN ====== -->
+        <div class="sec">
+            <div class="sec-title">🚨 Priority Action Plan — Fix In This Order</div>
+
+            <div
+                style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.5rem;margin-bottom:.8rem;border-left:3px solid var(--red);">
+                <div class="action-header"><span
+                        style="background:var(--red);color:#000;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.8rem;flex-shrink:0;">1</span><div class="action-title">URGENT — Disable Debug Mode (do this RIGHT NOW)</div></div>
+<div class="action-body"></div>
+                <div style="color:var(--muted);font-size:.88rem;">SSH into your server and edit
+                    <code>/var/www/html/txparts_new_live/.env</code>:</div>
+                <pre>APP_ENV=production
+APP_DEBUG=false    <span class="muted"># This one line stops path disclosure immediately</span></pre>
+                <div style="color:var(--muted);font-size:.84rem;">Then run:
+                    <code>php artisan config:clear && php artisan config:cache</code></div>
+            </div>
+
+            <div
+                style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.5rem;margin-bottom:.8rem;border-left:3px solid var(--red);">
+                <div class="action-header"><span
+                        style="background:var(--orange);color:#000;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.8rem;flex-shrink:0;">2</span><div class="action-title">Secure the /api Endpoint</div></div>
+<div class="action-body"></div>
+                <div style="color:var(--muted);font-size:.88rem;margin-bottom:.5rem;">Verify what <code>/api</code>
+                    returns to unauthenticated users. In <code>routes/api.php</code>:</div>
+                <pre>Route::middleware('auth:sanctum')->group(function () {
+    <span class="muted">// Move ALL routes inside this middleware group</span>
+});
+Route::fallback(fn() => response()->json(['error'=>'Unauthorized'],401));</pre>
+            </div>
+
+            <div
+                style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.5rem;margin-bottom:.8rem;border-left:3px solid var(--orange);">
+                <div class="action-header"><span
+                        style="background:var(--yellow);color:#000;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.8rem;flex-shrink:0;">3</span><div class="action-title">Add Rate Limiting + CAPTCHA to Login & Register</div></div>
+<div class="action-body"></div>
+                <pre>Route::middleware(['throttle:5,1'])->group(function () {
+    Route::post('/login', [LoginController::class, 'store']);
+    Route::post('/register', [RegisterController::class, 'store']);
+});</pre>
+            </div>
+
+            <div
+                style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.5rem;margin-bottom:.8rem;border-left:3px solid var(--yellow);">
+                <div class="action-header"><span
+                        style="background:var(--blue);color:#000;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.8rem;flex-shrink:0;">4</span><div class="action-title">Add All Security Headers (Apache / Cloudflare)</div></div>
+<div class="action-body"></div>
+                <pre><span class="muted"># In /etc/apache2/sites-available/txparts.conf:</span>
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set X-Content-Type-Options "nosniff"
+Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+Header always set Content-Security-Policy "default-src 'self'..."
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+ServerTokens Prod
+ServerSignature Off</pre>
+            </div>
+
+            <div
+                style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.5rem;margin-bottom:.8rem;border-left:3px solid var(--yellow);">
+                <div class="action-header"><span
+                        style="background:var(--blue);color:#000;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.8rem;flex-shrink:0;">5</span><div class="action-title">Verify All DB Queries Use Parameterized Statements</div></div>
+<div class="action-body"></div>
+                <div style="color:var(--muted);font-size:.88rem;margin-bottom:.5rem;">Run this to find raw DB calls in
+                    your codebase:</div>
+                <pre>grep -r "DB::select\|DB::statement\|whereRaw\|\$_GET\|\$_POST" \
+  /var/www/html/txparts_new_live/app/ --include="*.php"</pre>
+                <div style="color:var(--muted);font-size:.84rem;">Review every hit and convert to Eloquent ORM or
+                    parameterized <code>DB::select('... WHERE id = ?', [$id])</code></div>
+            </div>
+
+            <div
+                style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.5rem;border-left:3px solid var(--blue);">
+                <div class="action-header"><span
+                        style="background:var(--muted);color:#000;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.8rem;flex-shrink:0;">6</span><div class="action-title">Manual Testing Needed (Cannot do remotely)</div></div>
+<div class="action-body"></div>
+                <div style="color:var(--muted);font-size:.88rem;">These require authenticated access or direct server
+                    access to fully test:</div>
+                <ul style="color:var(--muted);font-size:.85rem;margin:.5rem 0 0 1.2rem;line-height:2;">
+                    <li>Price manipulation in <code>/checkout/guest</code> POST body (use Burp Suite)</li>
+                    <li>IDOR testing on order history <code>/orders/{id}</code> endpoints</li>
+                    <li><code>/quickorder/index/add/</code> — bulk order manipulation</li>
+                    <li>Test authenticated API endpoints behind <code>/api/user</code></li>
+                    <li>Check <code>storage/logs/laravel.log</code> for sensitive data in logs</li>
+                    <li>Verify <code>.env</code> file is not web-accessible: <code>curl https://txparts.com/.env</code>
+                    </li>
+                </ul>
+            

@@ -1,0 +1,247 @@
+/* Advanced Loading Animation with Progress Tracking */
+
+.overlay { 
+  position: fixed; 
+  inset: 0; 
+  background: var(--bg); 
+  /* backdrop-filter removed for performance */ 
+  display: none; 
+  align-items: center; 
+  justify-content: center; 
+  z-index: 9999; 
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 2rem;
+  max-width: 440px;
+  width: 100%;
+  background: var(--panel-solid);
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  /* backdrop-filter removed for performance */
+}
+
+/* Loading Icon with Status */
+.loading-icon {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  color: white;
+  animation: loadingPulse 2s ease-in-out infinite;
+  box-shadow: 0 12px 40px rgba(102, 240, 255, 0.4);
+  position: relative;
+}
+
+.loading-icon::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(45deg, var(--primary), var(--accent), var(--primary-2));
+  border-radius: 20px;
+  z-index: -1;
+  opacity: 0.3;
+  filter: blur(8px);
+}
+
+/* Progress Information */
+.progress-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.loading-text {
+  color: var(--text);
+  font-size: 1.2rem;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.05rem;
+  margin: 0;
+}
+
+.loading-message {
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+  opacity: 0.85;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* Advanced Progress Bar with Percentage */
+.progress-wrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.progress-percentage {
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 0.9rem;
+}
+
+.progress-container {
+  width: 100%;
+  height: 8px;
+  background: var(--surface-3);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 0 0 1px var(--border-2);
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  border-radius: 12px;
+  width: 0%;
+  transition: width 0.3s ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+  animation: progressShine 2s ease-in-out infinite;
+  transform: translateX(-100%);
+}
+
+/* Timer Display */
+.loading-timer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.5rem;
+}
+
+.timer-label {
+  opacity: 0.7;
+}
+
+.timer-value {
+  font-weight: 600;
+  color: var(--text);
+  font-family: 'Courier New', monospace;
+}
+
+/* Status Steps */
+.loading-steps {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.loading-step {
+  width: 6px;
+  height: 6px;
+  background: var(--border-2);
+  border-radius: 50%;
+  transition: all 0.3s ease;
+}
+
+.loading-step.active {
+  background: var(--primary);
+  transform: scale(1.3);
+  box-shadow: 0 0 8px var(--primary);
+}
+
+.loading-step.completed {
+  background: var(--accent);
+  transform: scale(1.1);
+}
+
+/* Animations */
+@keyframes loadingPulse {
+  0%, 100% { 
+    transform: scale(1); 
+    box-shadow: 0 12px 40px rgba(102, 240, 255, 0.4);
+  }
+  50% { 
+    transform: scale(1.03); 
+    box-shadow: 0 16px 50px rgba(102, 240, 255, 0.6);
+  }
+}
+
+@keyframes progressShine {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+/* Light Theme Adjustments */
+[data-bs-theme="light"] .overlay {
+  background: var(--bg);
+}
+
+[data-bs-theme="light"] .loading-container {
+  background: #ffffff;
+  border-color: var(--border);
+}
+
+[data-bs-theme="light"] .progress-container {
+  background: #eef2ff;
+  box-shadow: inset 0 0 0 1px #cfd8f4;
+}
+
+[data-bs-theme="light"] .loading-icon {
+  box-shadow: 0 12px 40px rgba(44, 109, 255, 0.3);
+}
+
+[data-bs-theme="light"] .loading-step {
+  background: #b9c6ef;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .loading-container {
+    padding: 1.5rem;
+    gap: 1.25rem;
+    max-width: 340px;
+  }
+  
+  .loading-text {
+    font-size: 1.1rem;
+  }
+  
+  .loading-icon {
+    width: 56px;
+    height: 56px;
+    font-size: 22px;
+  }
+  
+  .progress-header {
+    font-size: 0.8rem;
+  }
+}

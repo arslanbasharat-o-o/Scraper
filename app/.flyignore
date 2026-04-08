@@ -1,0 +1,80 @@
+# Fly.io deployment ignore file
+# Files and directories to exclude from deployment
+
+# Development
+.venv/
+venv/
+ENV/
+env/
+.env.local
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Database (will be recreated or use volume)
+*.db
+*.sqlite
+*.sqlite3
+mobilesentrix.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation (optional - uncomment to include)
+# FILTERS_TECHNICAL_SUMMARY.md
+# FILTER_TEST_CHECKLIST.md
+# IMAGE_CONVERTER_FEATURES.md
+# PERFORMANCE_OPTIMIZATIONS.md
+# DEPLOYMENT_GUIDE.md
+
+# Testing
+tests/
+test_*.py
+*_test.py
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Mise configuration (development only)
+mise.toml
+.mise.toml
+
+# README source files (keep README.md)
+# README.draft.md
