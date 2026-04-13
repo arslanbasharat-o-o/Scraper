@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/arslanbasharat-o-o/Scraper/tree/main/docs
+    about: Read setup, optimization, and deployment guides before filing issues.
+  - name: Discussions
+    url: https://github.com/arslanbasharat-o-o/Scraper/discussions
+    about: Ask open-ended questions or request implementation advice.

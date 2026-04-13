@@ -1,0 +1,490 @@
+/* =============================================
+   COMPONENTS.CSS - UI Components
+   ============================================= */
+
+/* =============================================
+   TOAST NOTIFICATIONS
+   ============================================= */
+
+.toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+    max-width: 340px;
+    pointer-events: none;
+}
+
+.toast-container>* {
+    pointer-events: auto;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px -16px rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    transform: translateZ(0);
+}
+
+.toast-success {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95));
+}
+
+.toast-error {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+}
+
+.toast-warning {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.95), rgba(217, 119, 6, 0.95));
+}
+
+.toast-info {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.95), rgba(14, 116, 144, 0.95));
+}
+
+.toast-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.4);
+    border-radius: 0 0 10px 10px;
+}
+
+/* =============================================
+   CONFIRMATION MODAL
+   ============================================= */
+
+.confirm-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.confirm-box {
+    background: white;
+    border-radius: 18px;
+    padding: 24px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 25px 60px rgba(2, 6, 23, 0.35);
+    transform: translateZ(0);
+}
+
+/* =============================================
+   BUTTONS
+   ============================================= */
+
+.btn-hover {
+    transition: transform 0.15s ease-out;
+}
+
+.btn-hover:hover {
+    transform: translateY(-2px);
+}
+
+.btn-hover:active {
+    transform: translateY(0);
+}
+
+/* Ripple Effect */
+.ripple {
+    position: relative;
+    overflow: hidden;
+}
+
+.ripple::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.3s, height 0.3s;
+}
+
+.ripple:active::after {
+    width: 200%;
+    height: 200%;
+}
+
+/* =============================================
+   KEYBOARD SHORTCUT HINTS
+   ============================================= */
+
+.kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 500;
+    background: #f0fdfa;
+    border: 1px solid #bae6fd;
+    border-radius: 4px;
+    box-shadow: 0 1px 0 #e2e8f0;
+    color: #0f766e;
+    font-family: ui-monospace, monospace;
+}
+
+/* =============================================
+   FILTER BUTTONS
+   ============================================= */
+
+.filter-btn {
+    cursor: pointer;
+    user-select: none;
+    transform: translateZ(0);
+    border: 1px solid transparent;
+    transition:
+        background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+        color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+        border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+        transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.filter-btn:hover {
+    transform: translateY(-1px);
+    border-color: rgba(148, 163, 184, 0.3);
+}
+
+.filter-btn.active {
+    background-color: var(--color-brand-600);
+    color: white;
+    box-shadow: 0 8px 18px -12px rgba(8, 145, 178, 0.65);
+    border-color: rgba(14, 165, 233, 0.5);
+}
+
+/* =============================================
+   GRID BUTTONS
+   ============================================= */
+
+.grid-btn {
+    cursor: pointer;
+    user-select: none;
+    transition:
+        background-color 0.16s ease,
+        color 0.16s ease,
+        transform 0.16s ease;
+}
+
+.grid-btn:hover {
+    transform: translateY(-1px);
+}
+
+.grid-btn.active {
+    background-color: #f1f5f9;
+    color: #475569;
+}
+
+/* Jobs list polish */
+#jobs-list {
+    scrollbar-gutter: stable both-edges;
+}
+
+#jobs-list > div {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    transition:
+        transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+        border-color 0.2s ease,
+        box-shadow 0.25s ease,
+        background-color 0.2s ease;
+}
+
+#jobs-list > div:hover {
+    transform: translateY(-1px);
+}
+
+#jobs-list > div .h-1 > div {
+    transition: width 0.32s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s ease;
+}
+
+/* Logs rendering polish */
+#server-logs {
+    scroll-behavior: smooth;
+    scrollbar-gutter: stable;
+}
+
+/* =============================================
+   CONFETTI
+   ============================================= */
+
+.confetti {
+    position: fixed;
+    width: 10px;
+    height: 10px;
+    top: -10px;
+    z-index: 99999;
+    pointer-events: none;
+}
+
+.confetti-piece {
+    animation: confetti-fall 3s ease-out forwards;
+    will-change: transform, opacity;
+}
+
+/* =============================================
+   SERVER LOGS - Enhanced Design
+   ============================================= */
+
+/* Enhanced Log Entries */
+.log-entry-enhanced {
+    background: rgba(248, 250, 252, 0.5);
+    border-left: 3px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    transition: all 0.2s ease;
+}
+
+.log-entry-enhanced:hover {
+    background: rgba(241, 245, 249, 0.8);
+    border-left-color: #94a3b8;
+    transform: translateX(2px);
+}
+
+.log-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.log-icon {
+    font-size: 18px;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.log-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.log-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #1e293b;
+    line-height: 1.4;
+    margin-bottom: 2px;
+}
+
+.log-detail {
+    font-size: 11px;
+    color: #64748b;
+    line-height: 1.3;
+    margin-top: 3px;
+}
+
+.log-metadata {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.log-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.22);
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #0e7490;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.log-time-badge {
+    font-size: 10px;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, monospace;
+    background: rgba(148, 163, 184, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    align-self: flex-start;
+}
+
+/* Log Level Colors */
+.log-entry-enhanced.log-info {
+    border-left-color: #0ea5e9;
+}
+
+.log-entry-enhanced.log-warning {
+    border-left-color: #f59e0b;
+    background: rgba(254, 243, 199, 0.3);
+}
+
+.log-entry-enhanced.log-warning:hover {
+    background: rgba(254, 243, 199, 0.5);
+}
+
+.log-entry-enhanced.log-error {
+    border-left-color: #ef4444;
+    background: rgba(254, 226, 226, 0.3);
+}
+
+.log-entry-enhanced.log-error:hover {
+    background: rgba(254, 226, 226, 0.5);
+}
+
+.log-entry-enhanced.log-success {
+    border-left-color: #10b981;
+    background: rgba(209, 250, 229, 0.3);
+}
+
+.log-entry-enhanced.log-success:hover {
+    background: rgba(209, 250, 229, 0.5);
+}
+
+/* Dark Mode Support */
+.dark .log-entry-enhanced {
+    background: rgba(30, 41, 59, 0.5);
+    border-left-color: #475569;
+}
+
+.dark .log-entry-enhanced:hover {
+    background: rgba(51, 65, 85, 0.6);
+    border-left-color: #64748b;
+}
+
+.dark .log-title {
+    color: #f1f5f9;
+}
+
+.dark .log-detail {
+    color: #94a3b8;
+}
+
+.dark .log-badge {
+    background: rgba(6, 182, 212, 0.2);
+    border-color: rgba(6, 182, 212, 0.32);
+    color: #67e8f9;
+}
+
+.dark .log-time-badge {
+    background: rgba(71, 85, 105, 0.4);
+    color: #94a3b8;
+}
+
+.dark .log-entry-enhanced.log-warning {
+    background: rgba(120, 53, 15, 0.2);
+}
+
+.dark .log-entry-enhanced.log-warning:hover {
+    background: rgba(120, 53, 15, 0.3);
+}
+
+.dark .log-entry-enhanced.log-error {
+    background: rgba(127, 29, 29, 0.2);
+}
+
+.dark .log-entry-enhanced.log-error:hover {
+    background: rgba(127, 29, 29, 0.3);
+}
+
+.dark .log-entry-enhanced.log-success {
+    background: rgba(6, 78, 59, 0.2);
+}
+
+.dark .log-entry-enhanced.log-success:hover {
+    background: rgba(6, 78, 59, 0.3);
+}
+
+/* Empty State */
+.log-empty {
+    text-align: center;
+    padding: 20px;
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+/* OLD LOG STYLES - Keeping for backward compatibility */
+.log-entry {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 6px 0;
+    border-bottom: 1px dashed rgba(148, 163, 184, 0.4);
+    line-height: 1.3;
+}
+
+.log-entry:last-child {
+    border-bottom: 0;
+}
+
+.log-time {
+    min-width: 64px;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+}
+
+.log-level {
+    min-width: 54px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.log-source {
+    min-width: 70px;
+    color: #64748b;
+    text-transform: lowercase;
+}
+
+.log-message {
+    flex: 1;
+    word-break: break-word;
+}
+
+.log-info .log-level {
+    color: #0ea5e9;
+}
+
+.log-warning .log-level {
+    color: #f59e0b;
+}
+
+.log-error .log-level {
+    color: #ef4444;
+}
+
+.log-success .log-level {
+    color: #10b981;
+}
+
+.dark .log-entry {
+    border-bottom: 1px dashed rgba(71, 85, 105, 0.6);
+}
+
+.dark .log-time {
+    color: #64748b;
+}
+
+.dark .log-source {
+    color: #94a3b8;
+}

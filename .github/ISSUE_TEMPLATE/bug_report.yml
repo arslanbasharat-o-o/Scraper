@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a reproducible defect
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please provide enough detail to reproduce the issue quickly.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One-line description of the bug
+      placeholder: Scrape job never leaves queued status
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact sequence of actions/inputs
+      placeholder: |
+        1. Start server with `npm start`
+        2. POST /scrape with URL ...
+        3. Open /jobs/:id
+        4. Observe ...
+      render: bash
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: Job should complete within 2 minutes and expose ZIP URL
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: Job remains running for 45 minutes and exits with timeout
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste log lines and stack traces
+      render: text
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Local (Node + Python)
+        - Docker
+        - Railway
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: node_version
+    attributes:
+      label: Node.js version
+      placeholder: v20.18.0
+  - type: input
+    id: python_version
+    attributes:
+      label: Python version
+      placeholder: Python 3.12.8
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I confirmed this issue is not already reported.
+          required: true
+        - label: I tested with the latest `main` branch.
+          required: true

@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>MobileSentrix & XCellParts Image Scraper v2.0</title>
+    <meta id="meta-description" name="description" content="Fast image scraping for mobile parts from MobileSentrix and XCellParts." />
+    <meta id="meta-keywords" name="keywords" content="mobile parts, image scraper, xcellparts, mobilesentrix, ecommerce" />
+    <meta id="meta-robots" name="robots" content="index,follow" />
+    <meta id="meta-og-title" property="og:title" content="MobileSentrix & XCellParts Image Scraper" />
+    <meta id="meta-og-description" property="og:description" content="Scrape and organize mobile parts images quickly." />
+    <meta id="meta-og-image" property="og:image" content="" />
+    <meta id="meta-og-site-name" property="og:site_name" content="MobileSentrix & XCellParts Image Scraper" />
+    <meta property="og:type" content="website" />
+    <meta id="meta-twitter-card" name="twitter:card" content="summary_large_image" />
+    <meta id="meta-twitter-title" name="twitter:title" content="MobileSentrix & XCellParts Image Scraper" />
+    <meta id="meta-twitter-description" name="twitter:description" content="Scrape and organize mobile parts images quickly." />
+    <meta id="meta-twitter-image" name="twitter:image" content="" />
+    <link id="meta-canonical" rel="canonical" href="" />
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📸</text></svg>" />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap"
+        rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Manrope', 'system-ui', 'sans-serif'],
+                        display: ['Space Grotesk', 'Manrope', 'sans-serif']
+                    },
+                    colors: {
+                        brand: {
+                            50: '#ecfeff',
+                            100: '#cffafe',
+                            400: '#22d3ee',
+                            500: '#06b6d4',
+                            600: '#0891b2',
+                            700: '#0e7490',
+                            800: '#155e75',
+                            900: '#164e63'
+                        },
+                        accent: {
+                            teal: '#14b8a6',
+                            cyan: '#06b6d4',
+                            sky: '#0ea5e9',
+                            amber: '#f59e0b'
+                        }
+                    },
+                    backgroundImage: {
+                        'gradient-brand': 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
+                        'gradient-accent': 'linear-gradient(135deg, #14b8a6 0%, #06b6d4 100%)',
+                        'gradient-dark': 'linear-gradient(135deg, #082f49 0%, #0f172a 100%)'
+                    },
+                    boxShadow: {
+                        'brand': '0 4px 14px 0 rgba(6, 182, 212, 0.35)',
+                        'brand-lg': '0 12px 40px -12px rgba(14, 116, 144, 0.45)',
+                        'glow': '0 0 20px rgba(6, 182, 212, 0.35)',
+                        'glow-brand': '0 0 28px rgba(14, 165, 233, 0.45)'
+                    }
+                }
+            }
+        }
+    </script>
+    <script>
+        (async () => {
+            function setMeta(id, value) {
+                const el = document.getElementById(id);
+                if (el && typeof value === 'string' && value.trim()) {
+                    el.setAttribute('content', value.trim());
+                }
+            }
+            try {
+                const res = await fetch('/seo');
+                if (!res.ok) return;
+                const seo = await res.json();
+                if (seo.title) document.title = seo.title;
+                setMeta('meta-description', seo.description);
+                setMeta('meta-keywords', seo.keywords);
+                setMeta('meta-robots', seo.robots);
+                setMeta('meta-og-title', seo.og_title);
+                setMeta('meta-og-description', seo.og_description);
+                setMeta('meta-og-image', seo.og_image);
+                setMeta('meta-og-site-name', seo.site_name);
+                setMeta('meta-twitter-card', seo.twitter_card);
+                setMeta('meta-twitter-title', seo.twitter_title || seo.og_title || seo.title);
+                setMeta('meta-twitter-description', seo.twitter_description || seo.og_description || seo.description);
+                setMeta('meta-twitter-image', seo.twitter_image || seo.og_image);
+
+                const canonical = document.getElementById('meta-canonical');
+                if (canonical && typeof seo.canonical_url === 'string' && seo.canonical_url.trim()) {
+                    canonical.setAttribute('href', seo.canonical_url.trim());
+                }
+            } catch (_) {
+                // silent: SEO hydration is optional
+            }
+        })();
+    </script>
+    <!-- Modular CSS -->
+    <link rel="stylesheet" href="css/main.css?v=2.0.4" />
+    <link rel="stylesheet" href="css/animations.css?v=2.0.4" />
+    <link rel="stylesheet" href="css/components.css?v=2.0.4" />
+    <link rel="stylesheet" href="css/dark-mode.css?v=2.0.4" />
+    <link rel="stylesheet" href="css/gallery.css?v=2.0.4" />
+    <link rel="stylesheet" href="css/terminal-logs.css?v=2.0.4" />
+</head>
+
+<body class="min-h-screen font-sans text-slate-900 app-shell">
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Confetti Container -->
+    <div id="confetti-container"
+        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 99999;">
+    </div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div id="shortcuts-modal" class="confirm-modal hidden">
+        <div class="confirm-box animate-bounceIn max-w-md">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900 dark:text-white">⌨️ Keyboard Shortcuts</h3>
+                <button onclick="document.getElementById('shortcuts-modal').classList.add('hidden')"
+                    class="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+                <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Start new scrape</span>
+                    <span class="kbd">Enter</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Toggle dark mode</span>
+                    <span class="kbd">D</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Toggle sounds</span>
+                    <span class="kbd">S</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Download ZIP</span>
+                    <span class="kbd">Z</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Refresh / Reset jobs</span>
+                    <span class="kbd">R</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Copy all image URLs</span>
+                    <span class="kbd">C</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Toggle bulk import</span>
+                    <span class="kbd">B</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Cycle grid size</span>
+                    <span class="kbd">G</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Focus search</span>
+                    <span class="kbd">F</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Start slideshow</span>
+                    <span class="kbd">P</span>
+                </div>
+                <div class="flex justify-between items-center py-2">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Close modal/nav images</span>
+                    <span class="kbd">Esc/←/→</span>
+                </div>
+            </div>
+            <p class="text-xs text-slate-400 mt-4 text-center">Press <span class="kbd">?</span> to toggle this help</p>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="confirm-modal hidden">
+        <div class="confirm-box animate-bounceIn">
+            <div class="flex items-center gap-3 mb-4">
+                <div id="confirm-icon" class="w-12 h-12 rounded-full flex items-center justify-center"></div>
+                <div>
+                    <h3 id="confirm-title" class="text-lg font-bold text-slate-900 dark:text-white"></h3>
+                    <p id="confirm-message" class="text-sm text-slate-500 dark:text-slate-400"></p>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3">
+                <button onclick="window.appFunctions.closeConfirm(false)"
+                    class="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all">Cancel</button>
+                <button id="confirm-btn" onclick="window.appFunctions.closeConfirm(true)"
+                    class="px-4 py-2 text-sm font-medium text-white rounded-lg transition-all">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Navigation -->
+    <nav id="app-nav"
+        class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center gap-3">
+                    <div
+                        class="w-10 h-10 bg-gradient-to-br from-brand-500 to-brand-700 rounded-xl flex items-center justify-center">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span>MobileSentrix</span>
+                            <span class="v2-badge">v2.0</span>
+                        </h1>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">& XCellParts Scraper</p>
+                    </div>
+                </div>
+                <div id="nav-actions" class="flex items-center gap-4">
+                    <!-- Sound Toggle -->
+                    <button id="sound-toggle" onclick="window.appFunctions.toggleSound()"
+                        class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
+                        title="Toggle sounds (S)">
+                        <svg id="sound-on-icon" class="w-5 h-5 text-slate-600 dark:text-slate-300" fill="none"
+                            stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        </svg>
+                        <svg id="sound-off-icon" class="w-5 h-5 text-slate-400 hidden" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                        </svg>
+                    </button>
+
+                    <!-- Dark Mode Toggle -->
+                    <button id="theme-toggle" onclick="window.appFunctions.toggleDarkMode()"
+                        class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
+                        title="Toggle dark mode (D)">
+                        <svg id="sun-icon" class="w-5 h-5 text-yellow-400 hidden" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
+                        <svg id="moon-icon" class="w-5 h-5 text-slate-600 dark:text-slate-300" fill="none"
+                            stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                        </svg>
+                    </button>
+
+                    <!-- Keyboard Shortcuts Help -->
+                    <button onclick="window.appFunctions.showShortcuts()"
+                        class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
+                        title="Keyboard shortcuts (?)">
+                        <svg class="w-5 h-5 text-slate-600 dark:text-slate-300" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </button>
+
+                    <button onclick="window.appFunctions.resetJobs()"
+                        class="flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-full text-sm font-medium transition-all cursor-pointer"
+                        title="Reset all jobs (R)">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>Reset</span>
+                    </button>
+
+                    <button id="pause-resume-btn" onclick="window.appFunctions.togglePauseAll()"
+                        class="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded-full text-sm font-medium transition-all cursor-pointer"
+                        title="Pause all jobs (P)">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span id="pause-resume-text">Pause All</span>
+                    </button>
+
+                    <div id="global-status"
+                        class="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-full text-sm font-medium">
+                        <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                        <span>Ready</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 app-main">
+
+        <!-- Total Images Banner with Stats -->
+        <div
+            class="bg-white dark:bg-slate-800 rounded-2xl p-6 mb-8 shadow-lg border border-slate-200 dark:border-slate-700">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-8">
+                    <div>
+                        <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Total Images</p>
+                        <p id="stat-total-images"
+                            class="text-4xl font-bold mt-1 animate-countUp text-slate-900 dark:text-white">0</p>
+                    </div>
+                    <div class="hidden sm:block h-12 w-px bg-slate-200 dark:bg-slate-600"></div>
+                    <div class="hidden sm:flex items-center gap-6">
+                        <div class="text-center">
+                            <p id="stat-completed-count"
+                                class="text-2xl font-bold text-emerald-500 dark:text-emerald-400">0</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Completed</p>
+                        </div>
+                        <div class="text-center">
+                            <p id="stat-running-count" class="text-2xl font-bold text-blue-500 dark:text-blue-400">0</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Running</p>
+                        </div>
+                        <div class="text-center">
+                            <p id="stat-failed-count" class="text-2xl font-bold text-red-500 dark:text-red-400">0</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Failed</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <p class="text-sm text-slate-500 dark:text-slate-400">Total Jobs</p>
+                        <p id="stat-total-jobs" class="text-2xl font-bold text-slate-900 dark:text-white">0</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="window.appFunctions.exportJobs()"
+                            class="p-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-all"
+                            title="Export Jobs">
+                            <svg class="w-5 h-5 text-slate-600 dark:text-slate-300" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                        </button>
+                        <button onclick="document.getElementById('import-file').click()"
+                            class="p-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-all"
+                            title="Import Jobs">
+                            <svg class="w-5 h-5 text-slate-600 dark:text-slate-300" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                        </button>
+                        <input type="file" id="import-file" accept=".json"
+                            onchange="window.appFunctions.importJobs(event)" class="hidden">
+                    </div>
+                </div>
+            </div>
+            <!-- Success Rate Bar -->
+            <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
+                    <span>Success Rate</span>
+                    <span id="success-rate">0%</span>
+                </div>
+                <div class="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                    <div id="success-rate-bar"
+                        class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all"
+                        style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- URL Input Section -->
+        <div
+            class="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Start New Scrape</h2>
+                <div class="flex items-center gap-3">
+                    <button onclick="window.appFunctions.toggleBulkMode()" id="bulk-toggle"
+                        class="text-xs text-slate-500 dark:text-slate-400 hover:text-brand-600 flex items-center gap-1 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                        </svg>
+                        Bulk Import
+                    </button>
+                    <span class="text-xs text-slate-400 hidden sm:block">Press <span class="kbd">Enter</span> to
+                        start</span>
+                </div>
+            </div>
+
+            <!-- Single URL Input -->
+            <div id="single-url-mode" class="flex flex-col sm:flex-row gap-3">
+                <input type="text" id="url-input"
+                    placeholder="Paste a category URL OR type a model (e.g. iPhone 15 Pro Max)"
+                    class="flex-1 px-4 py-3 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all" />
+                <button id="start-btn" onclick="window.appFunctions.startScrape()"
+                    class="px-6 py-3 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-500/25">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span id="btn-text">Start Scrape</span>
+                </button>
+            </div>
+
+            <!-- Bulk URL Input -->
+            <div id="bulk-url-mode" class="hidden">
+                <textarea id="bulk-urls" rows="4"
+                    placeholder="Paste multiple URLs, one per line...&#10;https://example.com/category/iphone-15/"
+                    class="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all resize-none font-mono"></textarea>
+                <div class="flex items-center justify-between mt-3">
+                    <span id="bulk-url-count" class="text-xs text-slate-500 dark:text-slate-400">0 URLs detected</span>
+                    <button onclick="window.appFunctions.startBulkScrape()"
+                        class="px-6 py-3 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-500/25">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                        Start All Jobs
+                    </button>
+                </div>
+            </div>
+
+            <div id="warning-banner"
+                class="hidden mt-4 p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-xl flex items-start gap-3">
+                <svg class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div>
+                    <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">Maximum concurrent jobs reached
+                    </p>
+                    <p class="text-xs text-amber-700 dark:text-amber-300 mt-0.5">Wait for a running job to complete
+                        before starting a new
+                        one.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Two Column Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+
+            <!-- Jobs Sidebar -->
+            <div class="lg:col-span-1">
+                <div class="sticky top-24 space-y-6">
+                    <div
+                        class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                        <div class="p-4 border-b border-slate-200 dark:border-slate-700">
+                            <div class="flex items-center justify-between mb-3">
+                                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Jobs</h2>
+                                <span id="job-count" class="text-xs font-medium text-slate-400">0 jobs</span>
+                            </div>
+                            <!-- Job Search -->
+                            <div class="relative mb-3">
+                                <input type="text" id="job-search" placeholder="Search jobs..."
+                                    oninput="window.appFunctions.searchJobs(this.value)"
+                                    class="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all">
+                                <svg class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                            </div>
+                            <div class="flex gap-2 flex-wrap">
+                                <button onclick="window.appFunctions.filterJobs('all')"
+                                    class="filter-btn active px-3 py-1 text-xs font-medium rounded-full transition-all"
+                                    data-filter="all">All</button>
+                                <button onclick="window.appFunctions.filterJobs('running')"
+                                    class="filter-btn px-3 py-1 text-xs font-medium rounded-full transition-all"
+                                    data-filter="running">Running</button>
+                                <button onclick="window.appFunctions.filterJobs('completed')"
+                                    class="filter-btn px-3 py-1 text-xs font-medium rounded-full transition-all"
+                                    data-filter="completed">Done</button>
+                                <button onclick="window.appFunctions.filterJobs('failed')"
+                                    class="filter-btn px-3 py-1 text-xs font-medium rounded-full transition-all"
+                                    data-filter="failed">Failed</button>
+                            </div>
+                        </div>
+                        <div id="jobs-list" class="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+                            <div class="text-center py-8 text-slate-400">
+                                <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                                <p class="text-sm">No jobs yet</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Server Logs Panel -->
+                    <div
+                        class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                        <div
+                            class="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-50/80 dark:bg-slate-900/70">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 bg-brand-500 rounded-full animate-pulse"></span>
+                                <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 font-mono">SYSTEM.LOG</h3>
+                            </div>
+                            <button onclick="window.appFunctions.clearLogUI()"
+                                class="text-xs text-slate-500 dark:text-slate-400 hover:text-brand-600 transition-all font-mono">
+                                [CLEAR]
+                            </button>
+                        </div>
+                        <div id="server-logs"
+                            class="p-4 max-h-[40vh] overflow-y-auto text-xs font-mono text-slate-600 dark:text-slate-300">
+                            <div class="log-empty">System ready. Waiting for events...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gallery Section -->
+            <div class="lg:col-span-3">
+                <div
+                    class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                    <div class="p-6 border-b border-slate-200 dark:border-slate-700">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div>
+                                <h2 id="gallery-title" class="text-xl font-bold text-slate-900 dark:text-white break-words" title="Product name">Select a
+                                    job</h2>
+                                <p id="gallery-subtitle" class="text-sm text-slate-500 dark:text-slate-400 mt-1">Click
+                                    on a job to view
+                                    images</p>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <!-- Selection Controls -->
+                                <div id="selection-controls"
+                                    class="hidden flex items-center gap-2 mr-2 border-r border-slate-200 dark:border-slate-600 pr-3">
+                                    <label class="flex items-center gap-2 cursor-pointer group">
+                                        <input type="checkbox" id="select-all-images"
+                                            onchange="window.appFunctions.toggleSelectAll()"
+                                            class="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 focus:ring-offset-0 cursor-pointer">
+                                        <span
+                                            class="text-xs text-slate-600 dark:text-slate-300 group-hover:text-brand-600">Select
+                                            All</span>
+                                    </label>
+                                    <button id="delete-selected-btn"
+                                        onclick="window.appFunctions.deleteSelectedImages()" disabled
+                                        class="px-3 py-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-medium transition-all flex items-center gap-1.5">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                        <span id="delete-count">Delete (0)</span>
+                                    </button>
+                                </div>
+                                <span id="image-count" class="text-sm text-slate-500 dark:text-slate-400 font-medium">0
+                                    images</span>
+                                <button id="zip-btn" onclick="window.appFunctions.downloadZip()" disabled
+                                    class="px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    Download ZIP
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Search and Grid Tools -->
+                        <div id="gallery-tools"
+                            class="hidden mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                            <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                                <div class="relative flex-1 max-w-xs">
+                                    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                    <input type="text" id="image-search" placeholder="Search images..."
+                                        oninput="window.appFunctions.filterImages()"
+                                        class="w-full pl-10 pr-10 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+                                    <button onclick="window.appFunctions.clearSearch()" id="clear-search-btn"
+                                        class="hidden absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-all"
+                                        title="Clear Search">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <!-- Quick Actions -->
+                                    <button onclick="window.appFunctions.copyAllUrls()"
+                                        class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all"
+                                        title="Copy all image URLs (C)">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                                        </svg>
+                                    </button>
+                                    <button onclick="window.appFunctions.refreshCurrentJob()"
+                                        class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all"
+                                        title="Refresh images">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    </button>
+                                    <button onclick="window.appFunctions.startSlideshow()"
+                                        class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all"
+                                        title="Slideshow (P)">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </button>
+                                    <button onclick="window.appFunctions.openRandomImage()"
+                                        class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all"
+                                        title="Random image">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                                        </svg>
+                                    </button>
+                                    <div class="h-5 w-px bg-slate-200 dark:bg-slate-600"></div>
+                                    <!-- Grid Size Toggle -->
+                                    <div
+                                        class="flex items-center border border-slate-200 dark:border-slate-600 rounded-lg overflow-hidden">
+                                        <button onclick="window.appFunctions.setGridSize('small')" id="grid-small"
+                                            class="grid-btn p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                                            title="Small Grid">
+                                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                <rect x="3" y="3" width="4" height="4" rx="1" />
+                                                <rect x="10" y="3" width="4" height="4" rx="1" />
+                                                <rect x="17" y="3" width="4" height="4" rx="1" />
+                                                <rect x="3" y="10" width="4" height="4" rx="1" />
+                                                <rect x="10" y="10" width="4" height="4" rx="1" />
+                                                <rect x="17" y="10" width="4" height="4" rx="1" />
+                                                <rect x="3" y="17" width="4" height="4" rx="1" />
+                                                <rect x="10" y="17" width="4" height="4" rx="1" />
+                                                <rect x="17" y="17" width="4" height="4" rx="1" />
+                                            </svg>
+                                        </button>
+                                        <button onclick="window.appFunctions.setGridSize('medium')" id="grid-medium"
+                                            class="grid-btn p-2 text-slate-600 bg-slate-100 dark:bg-slate-700 dark:text-slate-300 transition-all"
+                                            title="Medium Grid">
+                                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                <rect x="3" y="3" width="7" height="7" rx="1" />
+                                                <rect x="14" y="3" width="7" height="7" rx="1" />
+                                                <rect x="3" y="14" width="7" height="7" rx="1" />
+                                                <rect x="14" y="14" width="7" height="7" rx="1" />
+                                            </svg>
+                                        </button>
+                                        <button onclick="window.appFunctions.setGridSize('large')" id="grid-large"
+                                            class="grid-btn p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                                            title="Large Grid">
+                                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                <rect x="3" y="3" width="8" height="18" rx="1" />
+                                                <rect x="13" y="3" width="8" height="18" rx="1" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="gallery" class="p-6 min-h-[400px]">
+                        <div class="flex flex-col items-center justify-center py-16 text-slate-400">
+                            <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <p class="text-sm font-medium">No images to display</p>
+                            <p class="text-xs mt-1">Select a job from the sidebar</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Image Modal -->
+    <div id="modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/90 backdrop-blur-sm" onclick="window.appFunctions.closeModal()"></div>
+        <div
+            class="absolute inset-2 md:inset-4 lg:inset-8 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-fadeIn">
+            <!-- Modal Header -->
+            <div
+                class="flex items-start justify-between p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                <div class="flex-1 min-w-0 mr-4">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span id="modal-counter"
+                            class="px-2 py-0.5 bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 text-xs font-bold rounded-full">1/1</span>
+                        <h3 id="modal-title" class="font-semibold text-slate-900 dark:text-white">Image Preview</h3>
+                    </div>
+                    <p id="modal-subtitle" class="text-sm text-slate-600 dark:text-slate-400 break-all leading-relaxed"
+                        style="word-break: break-word;"></p>
+                    <div id="modal-info"
+                        class="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span id="modal-dimensions" class="flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                            </svg>
+                            <span>Loading...</span>
+                        </span>
+                        <span class="hidden sm:flex items-center gap-1 text-slate-400">
+                            <kbd
+                                class="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[10px] font-mono">←</kbd>
+                            <kbd
+                                class="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[10px] font-mono">→</kbd>
+                            Navigate
+                        </span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1 flex-shrink-0">
+                    <!-- Zoom Controls -->
+                    <div
+                        class="flex items-center border border-slate-200 dark:border-slate-600 rounded-lg overflow-hidden">
+                        <button onclick="window.appFunctions.zoomOut()"
+                            class="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                            title="Zoom Out (-)">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                            </svg>
+                        </button>
+                        <span id="zoom-level"
+                            class="px-2 text-xs text-slate-600 dark:text-slate-300 min-w-[45px] text-center font-medium">100%</span>
+                        <button onclick="window.appFunctions.zoomIn()"
+                            class="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                            title="Zoom In (+)">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                            </svg>
+                        </button>
+                        <button onclick="window.appFunctions.resetZoom()"
+                            class="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all border-l border-slate-200 dark:border-slate-600"
+                            title="Reset Zoom (0)">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                    </div>
+                    <!-- Copy Filename Button -->
+                    <button onclick="window.appFunctions.copyCurrentFilename()"
+                        class="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-lg transition-all"
+                        title="Copy Filename">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                        </svg>
+                    </button>
+                    <!-- Download Button -->
+                    <a id="modal-download" href="#" download
+                        class="px-3 py-2 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-all flex items-center gap-2 shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download
+                    </a>
+                    <button onclick="window.appFunctions.closeModal()"
+                        class="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all ml-1"
+                        title="Close (ESC)">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <!-- Image Container -->
+            <div class="flex-1 relative bg-slate-100 dark:bg-slate-900 flex items-center justify-center p-4 overflow-auto"
+                id="modal-image-container">
+                <!-- Navigation Buttons -->
+                <button onclick="window.appFunctions.prevImage()"
+                    class="absolute left-2 md:left-4 p-3 md:p-4 bg-white/95 dark:bg-slate-700/95 hover:bg-brand-50 dark:hover:bg-brand-900/50 hover:scale-110 rounded-full shadow-xl transition-all z-10 group"
+                    title="Previous (←)">
+                    <svg class="w-5 h-5 md:w-6 md:h-6 text-slate-700 dark:text-white group-hover:text-brand-600"
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <!-- Main Image -->
+                <img id="modal-image" src="" alt=""
+                    class="max-w-full max-h-full object-contain rounded-xl shadow-2xl transition-transform ring-1 ring-black/5"
+                    style="transform-origin: center center;" onload="window.appFunctions.updateImageDimensions(this)" />
+                <button onclick="window.appFunctions.nextImage()"
+                    class="absolute right-2 md:right-4 p-3 md:p-4 bg-white/95 dark:bg-slate-700/95 hover:bg-brand-50 dark:hover:bg-brand-900/50 hover:scale-110 rounded-full shadow-xl transition-all z-10 group"
+                    title="Next (→)">
+                    <svg class="w-5 h-5 md:w-6 md:h-6 text-slate-700 dark:text-white group-hover:text-brand-600"
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                </button>
+            </div>
+            <!-- Thumbnail Strip -->
+            <div
+                class="p-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                <div id="modal-thumbnails" class="flex gap-2 overflow-x-auto pb-1 scroll-smooth"
+                    style="scrollbar-width: thin;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <p class="text-sm text-slate-500 dark:text-slate-400">&copy; 2025 MobileSentrix & XCellParts Image
+                    Scraper</p>
+                <p class="text-sm text-slate-400 dark:text-slate-500">Made with ❤️ by <span
+                        class="font-medium text-slate-600 dark:text-slate-300">Arslan and Jamin</span>
+                    for <span class="font-medium text-brand-600">TXparts</span> • UI v2.0</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Modular JavaScript -->
+    <script type="module" src="js/main.js?v=2.0.4"></script>
+</body>
+
+</html>

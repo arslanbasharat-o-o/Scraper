@@ -1,0 +1,8 @@
+# Default code owners
+* @arslanbasharat-o-o
+
+# GitHub workflows and templates
+/.github/ @arslanbasharat-o-o
+
+# Documentation
+/docs/ @arslanbasharat-o-o
