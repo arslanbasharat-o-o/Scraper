@@ -373,33 +373,10 @@ def extract_product_from_listing(product_elem, base_url: str) -> Optional[Item]:
         print(f"[xcell] Failed to parse product element: {e}")
         return None
 
-def scrape_category_page(session, url: str, rules: dict, logger=None) -> List[Item]:
-    """
-    Scrape a single category page from xcellparts.com
-    
-    Args:
-        session: HTTP session
-        url: Category page URL
-        rules: Discount rules (percent_off, absolute_off)
-        logger: Optional logger instance
-    
-    Returns:
-        List of Item objects
-    """
+def extract_items_from_category_soup(soup: BeautifulSoup, url: str, rules: dict, logger=None) -> List[Item]:
+    """Extract product listing items from an already-fetched category page."""
     items = []
-    
-    html = get_html(session, url)
-    if not html:
-        if logger:
-            logger.warning(f"[xcell] Failed to fetch HTML from {url}")
-        return items
-    
-    soup = parse_html_document(html)
-    if not soup:
-        if logger:
-            logger.warning(f"[xcell] Failed to parse HTML from {url}")
-        return items
-    
+
     # XCellParts uses WooCommerce structure
     # Products are in <ul class="products"> with <li class="product"> items
     product_containers = soup.select('ul.products li.product') or soup.select('.products .product')
@@ -419,6 +396,33 @@ def scrape_category_page(session, url: str, rules: dict, logger=None) -> List[It
             items.append(item)
     
     return items
+
+def scrape_category_page(session, url: str, rules: dict, logger=None) -> List[Item]:
+    """
+    Scrape a single category page from xcellparts.com
+    
+    Args:
+        session: HTTP session
+        url: Category page URL
+        rules: Discount rules (percent_off, absolute_off)
+        logger: Optional logger instance
+    
+    Returns:
+        List of Item objects
+    """
+    html = get_html(session, url)
+    if not html:
+        if logger:
+            logger.warning(f"[xcell] Failed to fetch HTML from {url}")
+        return []
+    
+    soup = parse_html_document(html)
+    if not soup:
+        if logger:
+            logger.warning(f"[xcell] Failed to parse HTML from {url}")
+        return []
+    
+    return extract_items_from_category_soup(soup, url, rules, logger)
 
 def find_next_page_url(soup, current_url: str) -> Optional[str]:
     """
@@ -464,26 +468,27 @@ def scrape_category_all_pages(session, url: str, rules: dict, max_pages: int = 2
     while current_url and page_num <= max_pages:
         if logger:
             logger.info(f"[xcell] Scraping page {page_num}/{max_pages}: {current_url}")
-        
-        # Scrape current page
-        page_items = scrape_category_page(session, current_url, rules, logger)
+
+        html = get_html(session, current_url)
+        if not html:
+            if logger:
+                logger.warning(f"[xcell] Failed to fetch HTML from {current_url}")
+            break
+
+        soup = parse_html_document(html)
+        if not soup:
+            if logger:
+                logger.warning(f"[xcell] Failed to parse HTML from {current_url}")
+            break
+
+        page_items = extract_items_from_category_soup(soup, current_url, rules, logger)
         all_items.extend(page_items)
         
         if not page_items:
             if logger:
                 logger.info(f"[xcell] No items found on page {page_num}, stopping pagination")
             break
-        
-        # Get HTML to find next page
-        html = get_html(session, current_url)
-        if not html:
-            break
-        
-        soup = parse_html_document(html)
-        if not soup:
-            if logger:
-                logger.warning(f"[xcell] Failed to parse pagination HTML from {current_url}")
-            break
+
         next_url = find_next_page_url(soup, current_url)
         
         if not next_url:

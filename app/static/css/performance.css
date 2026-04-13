@@ -1,4 +1,4 @@
-/* Performance Optimizations for MobileSentrix Tool */
+/* Performance Optimizations for Parts Extractor */
 
 /* Remove expensive backdrop filters and replace with solid backgrounds */
 .cy-card {

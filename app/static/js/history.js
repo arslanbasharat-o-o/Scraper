@@ -28,11 +28,17 @@
     historyMinItemsValue: $('historyMinItemsValue'),
     historySiteSelect: $('historySiteSelect'),
     historyClearFilters: $('historyClearFilters'),
-    historyResultSummary: $('historyResultSummary')
+    historyResultSummary: $('historyResultSummary'),
+    confirmModal: $('confirmModal'),
+    confirmModalTitle: $('confirmModalTitle'),
+    confirmModalMessage: $('confirmModalMessage'),
+    confirmCancelBtn: $('confirmCancelBtn'),
+    confirmConfirmBtn: $('confirmConfirmBtn')
   };
 
   let historyData = [];
   let filteredHistory = [];
+  let confirmResolver = null;
   const defaultFilterState = {
     search: '',
     startDate: null,
@@ -130,6 +136,80 @@
     }
   };
 
+  function resolveConfirmDialog(result) {
+    const resolver = confirmResolver;
+    confirmResolver = null;
+    if (elements.confirmModal) {
+      elements.confirmModal.classList.add('d-none');
+      elements.confirmModal.setAttribute('aria-hidden', 'true');
+    }
+    document.body.classList.remove('modal-open');
+    if (typeof resolver === 'function') resolver(Boolean(result));
+  }
+
+  function bindConfirmDialog() {
+    if (!elements.confirmModal || elements.confirmModal.dataset.bound === '1') return;
+    elements.confirmModal.dataset.bound = '1';
+
+    elements.confirmModal.addEventListener('click', event => {
+      if (event.target === elements.confirmModal) resolveConfirmDialog(false);
+    });
+
+    if (elements.confirmCancelBtn) {
+      elements.confirmCancelBtn.addEventListener('click', () => resolveConfirmDialog(false));
+    }
+
+    if (elements.confirmConfirmBtn) {
+      elements.confirmConfirmBtn.addEventListener('click', () => resolveConfirmDialog(true));
+    }
+
+    document.addEventListener('keydown', event => {
+      if (!confirmResolver || elements.confirmModal?.classList.contains('d-none')) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        resolveConfirmDialog(false);
+        return;
+      }
+      if (event.key === 'Enter' && event.target !== elements.confirmCancelBtn) {
+        event.preventDefault();
+        resolveConfirmDialog(true);
+      }
+    });
+  }
+
+  function showConfirmDialog({
+    title = 'Please confirm',
+    message = 'Are you sure you want to continue?',
+    confirmLabel = 'Continue',
+    cancelLabel = 'Cancel',
+    danger = false
+  } = {}) {
+    if (!elements.confirmModal || !elements.confirmModalTitle || !elements.confirmModalMessage || !elements.confirmConfirmBtn || !elements.confirmCancelBtn) {
+      return Promise.resolve(window.confirm(message));
+    }
+
+    bindConfirmDialog();
+
+    if (confirmResolver) resolveConfirmDialog(false);
+
+    elements.confirmModalTitle.textContent = title;
+    elements.confirmModalMessage.textContent = message;
+    elements.confirmConfirmBtn.textContent = confirmLabel;
+    elements.confirmCancelBtn.textContent = cancelLabel;
+    elements.confirmConfirmBtn.classList.toggle('btn-danger', danger);
+    elements.confirmConfirmBtn.classList.toggle('btn-export', !danger);
+    elements.confirmModal.classList.remove('d-none');
+    elements.confirmModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+
+    return new Promise(resolve => {
+      confirmResolver = resolve;
+      requestAnimationFrame(() => {
+        (danger ? elements.confirmConfirmBtn : elements.confirmCancelBtn).focus();
+      });
+    });
+  }
+
   function startHistoryClock() {
     const dateEl = elements.historyDateValue;
     const timeEl = elements.historyTimeValue;
@@ -157,8 +237,8 @@
       const timeText = timeFormatter.format(now);
       if (dateEl) dateEl.textContent = dateText;
       if (timeEl) timeEl.textContent = timeText;
-      if (elements.historyDateChip) elements.historyDateChip.title = `${dateText} • ${tzLabel}`;
-      if (elements.historyTimeChip) elements.historyTimeChip.title = `${timeText} • ${tzLabel}`;
+      if (elements.historyDateChip) elements.historyDateChip.title = `${dateText} | ${tzLabel}`;
+      if (elements.historyTimeChip) elements.historyTimeChip.title = `${timeText} | ${tzLabel}`;
     };
 
     const schedule = () => {
@@ -458,7 +538,7 @@
       <div class="history-header">
         <div>
           <h3 class="history-title">Fetch Session</h3>
-          <div class="history-timestamp">${utils.formatDate(entry.timestamp)} • ${utils.formatDuration(entry.timestamp)}</div>
+          <div class="history-timestamp">${utils.formatDate(entry.timestamp)} | ${utils.formatDuration(entry.timestamp)}</div>
         </div>
         <div class="history-actions">
           <button class="btn btn-sm btn-ghost" data-action="export" data-id="${entry.id}">Export XLSX</button>
@@ -600,7 +680,14 @@
       return;
     }
 
-    if (!confirm('Are you sure you want to delete this history entry?')) return;
+    const confirmed = await showConfirmDialog({
+      title: 'Delete this history entry?',
+      message: 'This permanently removes the selected scraping session from history.',
+      confirmLabel: 'Delete Entry',
+      cancelLabel: 'Keep Entry',
+      danger: true
+    });
+    if (!confirmed) return;
     
     try {
       utils.setLoading(true);
@@ -724,7 +811,7 @@
         <button class="btn btn-sm btn-ghost" id="historyModalExport" data-id="${entry.id}" style="white-space: nowrap; flex-shrink: 0;">Export XLSX</button>
       </div>
       <div style="color: var(--muted); font-size: 0.875rem; margin-bottom: 1.5rem;">
-        ${utils.formatDate(entry.timestamp)} • ${utils.formatDuration(entry.timestamp)}
+        ${utils.formatDate(entry.timestamp)} | ${utils.formatDuration(entry.timestamp)}
       </div>
       
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem;">
@@ -858,7 +945,7 @@
       
       const dateValue = this.dateInput ? this.dateInput.value : '';
       if (this.currentDays >= 99999) {
-        this.previewText.innerHTML = `<strong style="color: #dc3545;">⚠️ ALL HISTORY SESSIONS</strong> will be permanently deleted!`;
+        this.previewText.innerHTML = `<strong style="color: #dc3545;">ALL HISTORY SESSIONS</strong> will be permanently deleted!`;
       } else if (dateValue) {
         const date = new Date(dateValue);
         const formattedDate = date.toLocaleDateString('en-US', { 
@@ -873,11 +960,18 @@
     },
 
     async executeCleanup() {
-      const warningMsg = this.currentDays >= 99999
-        ? `🚨 CRITICAL WARNING: This will DELETE ALL HISTORY!\n\nThis action is IRREVERSIBLE and will permanently delete EVERY scraping session in your database.\n\nAre you ABSOLUTELY CERTAIN you want to proceed?`
-        : `⚠️ WARNING: This action cannot be undone!\n\nAre you absolutely sure you want to delete all sessions older than ${this.currentDays} days?`;
-      
-      if (!confirm(warningMsg)) {
+      const isDeleteAll = this.currentDays >= 99999;
+      const confirmed = await showConfirmDialog({
+        title: isDeleteAll ? 'Delete all history?' : 'Delete old history sessions?',
+        message: isDeleteAll
+          ? 'This permanently deletes every scraping session in your database. This action cannot be undone.'
+          : `This permanently deletes all sessions older than ${this.currentDays} days. This action cannot be undone.`,
+        confirmLabel: isDeleteAll ? 'Delete All History' : 'Delete Old Sessions',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
+
+      if (!confirmed) {
         return;
       }
 
@@ -895,8 +989,8 @@
         const result = await response.json();
         
         const message = this.currentDays >= 99999
-          ? `🗑️ All history deleted! Removed ${result.deleted_entries} session(s)`
-          : `✅ Successfully deleted ${result.deleted_entries} old session(s)`;
+          ? `All history deleted. Removed ${result.deleted_entries} session(s).`
+          : `Successfully deleted ${result.deleted_entries} old session(s).`;
         
         utils.showAlert('success', message);
         
@@ -909,7 +1003,7 @@
         updateMinItemsSlider();
       } catch (error) {
         console.error('Error cleaning up:', error);
-        utils.showAlert('danger', '❌ Failed to cleanup old entries');
+        utils.showAlert('danger', 'Failed to cleanup old entries');
       } finally {
         utils.setLoading(false);
       }

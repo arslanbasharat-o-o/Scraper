@@ -1,0 +1,201 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: PE
+      - generic [ref=e6]:
+        - heading "Parts Extractor" [level=1] [ref=e7]
+        - paragraph [ref=e8]: MobileSentrix · XCellParts · TXParts · Parts4Cells
+    - navigation [ref=e9]:
+      - link "Extractor" [ref=e10] [cursor=pointer]:
+        - /url: /
+      - link "History" [ref=e11] [cursor=pointer]:
+        - /url: /history
+      - link "Automation" [ref=e12] [cursor=pointer]:
+        - /url: /automation
+      - link "Images" [ref=e13] [cursor=pointer]:
+        - /url: /image-converter
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: Fri, 10 Apr 2026
+        - generic [ref=e17]: 1:38 am
+      - generic [ref=e18]:
+        - generic [ref=e19]: Light
+        - generic [ref=e20] [cursor=pointer]:
+          - checkbox [checked]
+        - generic [ref=e22]: Dark
+  - generic [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - generic [ref=e26]: Target URLs
+        - paragraph [ref=e27]: One URL per line — category or product page from any supported site
+      - generic [ref=e28]: 1 URL
+    - textbox "https://www.mobilesentrix.ca/replacement-parts/samsung/... https://xcellparts.com/product-category/... https://parts4cells.com/apple/..." [ref=e29]:
+      - /placeholder: "https://www.mobilesentrix.ca/replacement-parts/samsung/...\nhttps://xcellparts.com/product-category/...\nhttps://parts4cells.com/apple/..."
+      - text: https://xcellparts.com/product-category/moto/moto-g-series/g96-xt2531-2025/
+    - generic [ref=e30]:
+      - button "Fetch Data" [ref=e31] [cursor=pointer]:
+        - generic [ref=e32]: Fetch Data
+      - button "Filters >" [ref=e33] [cursor=pointer]:
+        - generic [ref=e34]: Filters
+        - generic [ref=e35]: ">"
+      - generic [ref=e38]: 3 items
+  - alert [ref=e66]:
+    - generic [ref=e67]: OK
+    - text: Fetched 3 items successfully.
+    - button "x" [ref=e68] [cursor=pointer]
+  - generic [ref=e70]:
+    - generic [ref=e71]:
+      - generic [ref=e72]:
+        - generic [ref=e73]: Run Comparison
+        - generic [ref=e74]: Compared against session xcell:1775690481575 from 09/04/2026, 04:21:21
+      - generic [ref=e75]: No differences detected
+    - generic [ref=e76]:
+      - generic [ref=e77]:
+        - generic [ref=e78]: Previous Items
+        - generic [ref=e79]: "3"
+      - generic [ref=e80]:
+        - generic [ref=e81]: Current Items
+        - generic [ref=e82]: "3"
+      - generic [ref=e83]:
+        - generic [ref=e84]: Added
+        - generic [ref=e85]: "0"
+      - generic [ref=e86]:
+        - generic [ref=e87]: Removed
+        - generic [ref=e88]: "0"
+      - generic [ref=e89]:
+        - generic [ref=e90]: Changed
+        - generic [ref=e91]: "0"
+      - generic [ref=e92]:
+        - generic [ref=e93]: Price Changes
+        - generic [ref=e94]: "0"
+      - generic [ref=e95]:
+        - generic [ref=e96]: Stock Changes
+        - generic [ref=e97]: "0"
+      - generic [ref=e98]:
+        - generic [ref=e99]: Title Changes
+        - generic [ref=e100]: "0"
+      - generic [ref=e101]:
+        - generic [ref=e102]: SKU Changes
+        - generic [ref=e103]: "0"
+      - generic [ref=e104]:
+        - generic [ref=e105]: Description Changes
+        - generic [ref=e106]: "0"
+  - generic [ref=e107]:
+    - generic [ref=e108]:
+      - generic [ref=e109]: 3 items
+      - textbox "Search title or URL..." [ref=e110]
+    - generic [ref=e111]:
+      - button "CSV" [ref=e112] [cursor=pointer]
+      - button "XLSX" [ref=e113] [cursor=pointer]
+      - button "Copy" [ref=e114] [cursor=pointer]
+      - button "Watchlist CSV" [disabled] [ref=e115]
+      - button "Clear" [ref=e116] [cursor=pointer]
+  - generic [ref=e117]:
+    - generic [ref=e118] [cursor=pointer]:
+      - checkbox "Show watchlist only (0 saved)" [ref=e119]
+      - generic [ref=e120]:
+        - text: Show watchlist only (
+        - strong [ref=e121]: "0"
+        - text: saved)
+    - button "View Watchlist" [disabled] [ref=e122]
+    - button "Clear watchlist" [disabled] [ref=e123]
+  - generic [ref=e39]:
+    - generic [ref=e40]:
+      - generic [ref=e41]:
+        - heading "Results" [level=2] [ref=e42]
+        - navigation [ref=e124]:
+          - generic [ref=e125] [cursor=pointer]:
+            - generic [ref=e126]: G96 Xt2531 2025
+            - generic [ref=e127]: XCellParts
+      - generic [ref=e43]:
+        - generic [ref=e44]: Per page
+        - combobox "Per page" [ref=e45] [cursor=pointer]:
+          - option "25" [selected]
+          - option "50"
+          - option "100"
+    - generic [ref=e46]:
+      - table [ref=e48]:
+        - rowgroup [ref=e49]:
+          - row "# Save Img Title Original Δ% Δ$ Final Link Source" [ref=e50]:
+            - columnheader "#" [ref=e51]
+            - columnheader "Save" [ref=e52]
+            - columnheader "Img" [ref=e53]
+            - columnheader "Title" [ref=e54]
+            - columnheader "Original" [ref=e55]
+            - columnheader "Δ%" [ref=e56]
+            - columnheader "Δ$" [ref=e57]
+            - columnheader "Final" [ref=e58]
+            - columnheader "Link" [ref=e59]
+            - columnheader "Source" [ref=e60]
+        - rowgroup [ref=e128]:
+          - 'row "1 Save LCD ASSEMBLY WITHOUT FRAME FOR MOTO G96 5G (XT2531/2025) LCD ASSEMBLY WITHOUT FRAME FOR MOTO G96 5G (XT2531/2025) Stock: 5 in stock $36.02 0.0% $0.00 $36.02 Open xcellparts.com" [ref=e129]':
+            - cell "1" [ref=e130]
+            - cell "Save" [ref=e131]:
+              - generic "Toggle watchlist" [ref=e132] [cursor=pointer]: Save
+            - cell "LCD ASSEMBLY WITHOUT FRAME FOR MOTO G96 5G (XT2531/2025)" [ref=e133]:
+              - img "LCD ASSEMBLY WITHOUT FRAME FOR MOTO G96 5G (XT2531/2025)" [ref=e134]
+            - 'cell "LCD ASSEMBLY WITHOUT FRAME FOR MOTO G96 5G (XT2531/2025) Stock: 5 in stock" [ref=e135]':
+              - generic [ref=e136]:
+                - generic [ref=e137]: LCD ASSEMBLY WITHOUT FRAME FOR MOTO G96 5G (XT2531/2025)
+                - generic [ref=e138]:
+                  - generic [ref=e139]: "Stock:"
+                  - generic [ref=e140]: 5 in stock
+            - cell "$36.02" [ref=e141]
+            - cell "0.0%" [ref=e142]
+            - cell "$0.00" [ref=e143]
+            - cell "$36.02" [ref=e144]:
+              - strong [ref=e145]: $36.02
+            - cell "Open" [ref=e146]:
+              - link "Open" [ref=e147] [cursor=pointer]:
+                - /url: https://xcellparts.com/product/lcd-assembly-without-frame-for-moto-g96-5g-xt2531-2025/
+            - cell "xcellparts.com" [ref=e148]:
+              - generic "xcellparts.com" [ref=e149]
+          - 'row "2 Save FRONT CAMERA FOR MOTO G STYLUS 5G (2025) / G56 / EDGE 60 FUSION FRONT CAMERA FOR MOTO G STYLUS 5G (2025) / G56 / EDGE 60 FUSION Stock: 3 in stock $4.06 0.0% $0.00 $4.06 Open xcellparts.com" [ref=e150]':
+            - cell "2" [ref=e151]
+            - cell "Save" [ref=e152]:
+              - generic "Toggle watchlist" [ref=e153] [cursor=pointer]: Save
+            - cell "FRONT CAMERA FOR MOTO G STYLUS 5G (2025) / G56 / EDGE 60 FUSION" [ref=e154]:
+              - img "FRONT CAMERA FOR MOTO G STYLUS 5G (2025) / G56 / EDGE 60 FUSION" [ref=e155]
+            - 'cell "FRONT CAMERA FOR MOTO G STYLUS 5G (2025) / G56 / EDGE 60 FUSION Stock: 3 in stock" [ref=e156]':
+              - generic [ref=e157]:
+                - generic [ref=e158]: FRONT CAMERA FOR MOTO G STYLUS 5G (2025) / G56 / EDGE 60 FUSION
+                - generic [ref=e159]:
+                  - generic [ref=e160]: "Stock:"
+                  - generic [ref=e161]: 3 in stock
+            - cell "$4.06" [ref=e162]
+            - cell "0.0%" [ref=e163]
+            - cell "$0.00" [ref=e164]
+            - cell "$4.06" [ref=e165]:
+              - strong [ref=e166]: $4.06
+            - cell "Open" [ref=e167]:
+              - link "Open" [ref=e168] [cursor=pointer]:
+                - /url: https://xcellparts.com/product/front-camera-for-moto-g-stylus-5g-2025-edge-60-fusion/
+            - cell "xcellparts.com" [ref=e169]:
+              - generic "xcellparts.com" [ref=e170]
+          - 'row "3 Save BACK CAMERA SET COMPATIBLE FOR MOTO G STYLUS 5G (XT2517 / 2025) BACK CAMERA SET COMPATIBLE FOR MOTO G STYLUS 5G (XT2517 / 2025) Stock: 3 in stock $9.10 0.0% $0.00 $9.00 Open xcellparts.com" [ref=e171]':
+            - cell "3" [ref=e172]
+            - cell "Save" [ref=e173]:
+              - generic "Toggle watchlist" [ref=e174] [cursor=pointer]: Save
+            - cell "BACK CAMERA SET COMPATIBLE FOR MOTO G STYLUS 5G (XT2517 / 2025)" [ref=e175]:
+              - img "BACK CAMERA SET COMPATIBLE FOR MOTO G STYLUS 5G (XT2517 / 2025)" [ref=e176]
+            - 'cell "BACK CAMERA SET COMPATIBLE FOR MOTO G STYLUS 5G (XT2517 / 2025) Stock: 3 in stock" [ref=e177]':
+              - generic [ref=e178]:
+                - generic [ref=e179]: BACK CAMERA SET COMPATIBLE FOR MOTO G STYLUS 5G (XT2517 / 2025)
+                - generic [ref=e180]:
+                  - generic [ref=e181]: "Stock:"
+                  - generic [ref=e182]: 3 in stock
+            - cell "$9.10" [ref=e183]
+            - cell "0.0%" [ref=e184]
+            - cell "$0.00" [ref=e185]
+            - cell "$9.00" [ref=e186]:
+              - strong [ref=e187]: $9.00
+            - cell "Open" [ref=e188]:
+              - link "Open" [ref=e189] [cursor=pointer]:
+                - /url: https://xcellparts.com/product/back-camera-set-compatible-for-moto-g-stylus-5g-xt2517-2025/
+            - cell "xcellparts.com" [ref=e190]:
+              - generic "xcellparts.com" [ref=e191]
+      - generic [ref=e192]:
+        - generic [ref=e193]: Page 1 of 1
+        - generic [ref=e194]:
+          - button "Prev" [disabled] [ref=e195]
+          - button "Next" [disabled] [ref=e196]

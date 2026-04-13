@@ -310,7 +310,7 @@ class ImageConverter {
               </div>
               <div class="stat-item">
                 <span class="stat-label">Size:</span>
-                <span class="stat-value">${result.image_info.width}×${result.image_info.height}</span>
+                <span class="stat-value">${result.image_info.width}x${result.image_info.height}</span>
               </div>
               <div class="stat-item">
                 <span class="stat-label">File Size:</span>
@@ -319,7 +319,7 @@ class ImageConverter {
             </div>
             <div class="mt-2">
               <a href="${downloadHref}" download="${result.filename || `converted_image_${index + 1}`}.${result.target_format.toLowerCase()}" class="download-btn">
-                📥 Download ${result.target_format}
+                Download ${result.target_format}
               </a>
             </div>
           </div>
@@ -329,7 +329,7 @@ class ImageConverter {
       div.innerHTML = `
         <div class="d-flex gap-3">
           <div class="flex-shrink-0" style="width: 120px; height: 120px; background: rgba(255,118,118,0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--danger);">
-            ❌
+            ERR
           </div>
           <div class="flex-grow-1">
             <h5 style="color: var(--danger); margin: 0 0 0.5rem 0;">Image ${index + 1} - Failed</h5>
@@ -464,16 +464,16 @@ class ImageConverter {
       const total = data.total_processed;
       
       if (successful === total) {
-        this.showAlert('success', `🎉 Successfully converted all ${total} images!`);
+        this.showAlert('success', `Successfully converted all ${total} images.`);
       } else if (successful > 0) {
-        this.showAlert('warning', `⚠️ Converted ${successful} of ${total} images. ${total - successful} failed.`);
+        this.showAlert('warning', `Converted ${successful} of ${total} images. ${total - successful} failed.`);
       } else {
-        this.showAlert('danger', `❌ Failed to convert any images. Check your inputs and try again.`);
+        this.showAlert('danger', 'Failed to convert any images. Check your inputs and try again.');
       }
 
     } catch (error) {
       console.error('Conversion error:', error);
-      this.showAlert('danger', '💥 Failed to convert images. Please try again.');
+      this.showAlert('danger', 'Failed to convert images. Please try again.');
     } finally {
       this.setLoading(false);
     }
@@ -622,7 +622,7 @@ class ImageConverter {
     this.savedPresets[presetName] = settings;
     localStorage.setItem('image_converter_presets', JSON.stringify(this.savedPresets));
     
-    this.showAlert('success', `✅ Preset "${presetName}" saved successfully!`);
+    this.showAlert('success', `Preset "${presetName}" saved successfully.`);
   }
 
   loadPreset(presetName) {
@@ -659,7 +659,7 @@ class ImageConverter {
       this.elements.watermarkFontSize.value = preset.watermark.font_size;
     }
 
-    this.showAlert('success', `📂 Loaded preset "${presetName}"`);
+    this.showAlert('success', `Loaded preset "${presetName}".`);
   }
 
   escapeHtml(text) {

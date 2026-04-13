@@ -1,0 +1,209 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: PE
+      - generic [ref=e6]:
+        - heading "Parts Extractor" [level=1] [ref=e7]
+        - paragraph [ref=e8]: Automation Jobs - Category Discovery - Change Tracking
+    - navigation [ref=e9]:
+      - link "Extractor" [ref=e10] [cursor=pointer]:
+        - /url: /
+      - link "History" [ref=e11] [cursor=pointer]:
+        - /url: /history
+      - link "Automation" [ref=e12] [cursor=pointer]:
+        - /url: /automation
+      - link "Images" [ref=e13] [cursor=pointer]:
+        - /url: /image-converter
+    - generic [ref=e15]:
+      - generic [ref=e16]: Light
+      - generic [ref=e17] [cursor=pointer]:
+        - checkbox [checked]
+      - generic [ref=e19]: Dark
+  - generic [ref=e20]:
+    - generic [ref=e21]:
+      - generic [ref=e22]:
+        - heading "Scheduled Category Scraping" [level=2] [ref=e23]
+        - paragraph [ref=e24]: Discover section links from a supplier, save the job, and keep comparing daily or weekly runs.
+      - generic [ref=e25]:
+        - generic [ref=e26]: Site discovery
+        - generic [ref=e27]: Daily and weekly
+        - generic [ref=e28]: Model change review
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e31]: "1"
+        - generic [ref=e32]: Jobs
+      - generic [ref=e33]:
+        - generic [ref=e34]: "1"
+        - generic [ref=e35]: Enabled
+      - generic [ref=e36]:
+        - generic [ref=e37]: "30"
+        - generic [ref=e38]: Saved Targets
+      - generic [ref=e39]:
+        - generic [ref=e40]: "0"
+        - generic [ref=e41]: Runs With Changes
+  - generic [ref=e42]:
+    - generic [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - heading "Create Or Update Job" [level=2] [ref=e46]
+          - paragraph [ref=e47]:
+            - text: Type a section like
+            - strong [ref=e48]: Game Consoles
+            - text: ", preview the discovered links, then save the schedule."
+        - button "New Job" [ref=e50] [cursor=pointer]
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - generic [ref=e53]: Job Name
+          - textbox "Job Name" [ref=e54]:
+            - /placeholder: XCell Game Consoles
+            - text: Temp Schedule Edit Check
+        - generic [ref=e55]:
+          - generic [ref=e56]: Site
+          - combobox "Site" [ref=e57] [cursor=pointer]:
+            - option "XCellParts" [selected]
+            - option "Parts4Cells"
+            - option "MobileSentrix"
+            - option "TXParts"
+        - generic [ref=e58]:
+          - generic [ref=e59]: Section / Category
+          - textbox "Section / Category" [active] [ref=e60]:
+            - /placeholder: Game Consoles
+            - text: iphone
+        - generic [ref=e61]:
+          - generic [ref=e62]: Root URL
+          - textbox "Root URL" [ref=e63]:
+            - /placeholder: https://xcellparts.com/
+            - text: https://xcellparts.com/
+        - generic [ref=e64]:
+          - generic [ref=e65]: Repeat Every
+          - spinbutton "Repeat Every" [ref=e66]: "1"
+        - generic [ref=e67]:
+          - generic [ref=e68]: Unit
+          - combobox "Unit" [ref=e69] [cursor=pointer]:
+            - option "Days"
+            - option "Weeks"
+            - option "Hours" [selected]
+        - generic [ref=e70]:
+          - generic [ref=e71]: Max Pages
+          - spinbutton "Max Pages" [ref=e72]: "10"
+        - generic [ref=e73]:
+          - generic [ref=e74]: Delay (ms)
+          - spinbutton "Delay (ms)" [ref=e75]: "50"
+      - generic [ref=e76]:
+        - generic [ref=e77] [cursor=pointer]:
+          - checkbox "Enable schedule" [checked] [ref=e78]
+          - generic [ref=e79]: Enable schedule
+        - generic [ref=e80] [cursor=pointer]:
+          - checkbox "Refresh links before each run" [checked] [ref=e81]
+          - generic [ref=e82]: Refresh links before each run
+        - generic [ref=e83] [cursor=pointer]:
+          - checkbox "Use parallel scraping" [checked] [ref=e84]
+          - generic [ref=e85]: Use parallel scraping
+        - generic [ref=e86] [cursor=pointer]:
+          - checkbox "Deep detail scan" [ref=e87]
+          - generic [ref=e88]: Deep detail scan
+      - generic [ref=e89]:
+        - button "Discover Links" [ref=e90] [cursor=pointer]
+        - button "Save Job" [ref=e91] [cursor=pointer]:
+          - generic [ref=e92]: Save Job
+      - generic [ref=e93]:
+        - generic [ref=e95]:
+          - generic [ref=e96]: Discovered Targets
+          - generic [ref=e97]: Run discovery to preview which category URLs will be scraped.
+        - generic [ref=e98]:
+          - generic [ref=e99]: All discovered links will run by default.
+          - generic [ref=e100]:
+            - button "Include All" [disabled] [ref=e101]
+            - button "Skip All" [disabled] [ref=e102]
+        - generic [ref=e269]:
+          - generic [ref=e270]: No discovered targets yet
+          - generic [ref=e271]: Use a site and section query, then click Discover Links.
+    - generic [ref=e107]:
+      - generic [ref=e109]:
+        - heading "Saved Jobs" [level=2] [ref=e110]
+        - paragraph [ref=e111]: Run now, refresh links, pause jobs, or reopen a saved configuration.
+      - generic [ref=e272]:
+        - generic [ref=e273]:
+          - generic [ref=e274]:
+            - generic [ref=e275]: XCellParts Tools
+            - generic [ref=e276]: XCellParts - tools and supplies
+          - generic [ref=e277]: completed
+        - generic [ref=e278]:
+          - generic [ref=e279]: Every 5 hours
+          - generic [ref=e280]: 30 targets
+          - generic [ref=e281]: 21 included
+          - generic [ref=e282]: 9 skipped
+          - generic [ref=e283]: Auto refresh links
+        - generic [ref=e284]:
+          - generic [ref=e285]:
+            - generic [ref=e286]: Next Run
+            - generic [ref=e287]: 11-Apr-2026, 1:44 pm (36 hours from now)
+          - generic [ref=e288]:
+            - generic [ref=e289]: Last Run
+            - generic [ref=e290]: 10-Apr-2026, 1:49 am
+          - generic [ref=e291]:
+            - generic [ref=e292]: Root URL
+            - generic [ref=e293]: https://xcellparts.com
+          - generic [ref=e294]:
+            - generic [ref=e295]: Latest History
+            - generic [ref=e296]: xcell:1775767788810
+        - generic [ref=e297]:
+          - button "Edit" [ref=e298] [cursor=pointer]
+          - button "Run Now" [ref=e299] [cursor=pointer]
+          - button "Refresh Links" [ref=e300] [cursor=pointer]
+          - button "Pause" [ref=e301] [cursor=pointer]
+          - button "Delete" [ref=e302] [cursor=pointer]
+  - generic [ref=e144]:
+    - generic [ref=e145]:
+      - generic [ref=e147]:
+        - heading "Recent Runs" [level=2] [ref=e148]
+        - paragraph [ref=e149]: Select a run to inspect changed items and filter by discovered model/category.
+      - button "XCellParts Tools manual - 10-Apr-2026, 1:45 am completed 321 items 0 changed 0 added 0 removed Targets 21 Price Drops 0" [ref=e303] [cursor=pointer]:
+        - generic [ref=e304]:
+          - generic [ref=e305]:
+            - generic [ref=e306]: XCellParts Tools
+            - generic [ref=e307]: manual - 10-Apr-2026, 1:45 am
+          - generic [ref=e308]: completed
+        - generic [ref=e309]:
+          - generic [ref=e310]: 321 items
+          - generic [ref=e311]: 0 changed
+          - generic [ref=e312]: 0 added
+          - generic [ref=e313]: 0 removed
+        - generic [ref=e314]:
+          - generic [ref=e315]:
+            - generic [ref=e316]: Targets
+            - generic [ref=e317]: "21"
+          - generic [ref=e318]:
+            - generic [ref=e319]: Price Drops
+            - generic [ref=e320]: "0"
+    - generic [ref=e169]:
+      - generic [ref=e170]:
+        - generic [ref=e171]:
+          - heading "Run Detail" [level=2] [ref=e172]
+          - paragraph [ref=e173]: Model-by-model review of what changed between this run and the previous one.
+        - generic [ref=e174]:
+          - generic [ref=e175]: Model
+          - combobox "Model" [ref=e176] [cursor=pointer]:
+            - option "All models" [selected]
+      - generic [ref=e177]:
+        - generic [ref=e321]:
+          - generic [ref=e322]:
+            - generic [ref=e323]: "321"
+            - generic [ref=e324]: Items Scraped
+          - generic [ref=e325]:
+            - generic [ref=e326]: "0"
+            - generic [ref=e327]: Changed
+          - generic [ref=e328]:
+            - generic [ref=e329]: "0"
+            - generic [ref=e330]: Added
+          - generic [ref=e331]:
+            - generic [ref=e332]: "0"
+            - generic [ref=e333]: Removed
+        - generic [ref=e334]:
+          - generic [ref=e335]:
+            - generic [ref=e336]: Current Session
+            - generic [ref=e337]: xcell:1775767788810
+          - generic [ref=e338]:
+            - generic [ref=e339]: Previous Session
+            - generic [ref=e340]: First run
+        - generic [ref=e341]: No items match the selected model filter.

@@ -5,6 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>History — Parts Extractor v8</title>
+  <link rel="icon" href="data:," />
   <style>
     * {
       margin: 0;
@@ -82,7 +83,7 @@
     <!-- ── Unified Header ───────────────────────────────────────── -->
     <header class="app-header cy-card mb-3">
       <div class="header-left">
-        <div class="app-logo">⚡</div>
+        <div class="app-logo">PE</div>
         <div class="header-brand">
           <h1 class="app-title">Parts Extractor</h1>
           <p class="app-sub">Fetch History &amp; Statistics</p>
@@ -91,16 +92,17 @@
       <nav class="nav-pills">
         <a href="/" class="nav-link">Extractor</a>
         <a href="/history" class="nav-link active">History</a>
+        <a href="/automation" class="nav-link">Automation</a>
         <a href="/image-converter" class="nav-link">Images</a>
       </nav>
       <div class="header-right">
         <div class="theme-switch">
-          <span class="theme-label">☀</span>
+          <span class="theme-label">Light</span>
           <label class="switch-track">
             <input type="checkbox" id="darkMode" checked>
             <span class="switch-thumb"></span>
           </label>
-          <span class="theme-label">☾</span>
+          <span class="theme-label">Dark</span>
         </div>
       </div>
     </header>
@@ -115,84 +117,72 @@
       </div>
       <div class="stats-grid">
         <div class="stat-card">
-          <div class="stat-icon">📊</div>
           <div class="stat-content">
             <div class="stat-value" id="totalHistories">-</div>
             <div class="stat-label">Total Sessions</div>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">🛍️</div>
           <div class="stat-content">
             <div class="stat-value" id="totalItems">-</div>
             <div class="stat-label">Items Scraped</div>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">📱</div>
           <div class="stat-content">
             <div class="stat-value" id="uniqueModels">-</div>
             <div class="stat-label">Unique Models</div>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">⏱️</div>
           <div class="stat-content">
             <div class="stat-value" id="recentSessions">-</div>
             <div class="stat-label">Recent (30d)</div>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">💾</div>
           <div class="stat-content">
             <div class="stat-value" id="dbSize">-</div>
             <div class="stat-label">Database Size</div>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">🌐</div>
           <div class="stat-content">
             <div class="stat-value" id="uniqueSites">-</div>
             <div class="stat-label">Sites Scraped</div>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">💰</div>
           <div class="stat-content">
             <div class="stat-value" id="avgPrice">-</div>
             <div class="stat-label">Avg Price</div>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">✅</div>
           <div class="stat-content">
             <div class="stat-value" id="successRate">-</div>
             <div class="stat-label">Success Rate</div>
           </div>
         </div>
         <div class="stat-card stat-card--highlight">
-          <div class="stat-icon stat-icon--trophy">🏆</div>
           <div class="stat-content">
             <div class="stat-value stat-value--large" id="topSite">-</div>
             <div class="stat-label">Top Site</div>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">📅</div>
           <div class="stat-content">
             <div class="stat-value" id="latestSession">-</div>
             <div class="stat-label">Latest Session</div>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">📈</div>
           <div class="stat-content">
             <div class="stat-value" id="highestPrice">-</div>
             <div class="stat-label">Highest Price</div>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">📉</div>
           <div class="stat-content">
             <div class="stat-value" id="lowestPrice">-</div>
             <div class="stat-label">Lowest Price</div>
@@ -212,9 +202,9 @@
           <div class="history-control-chip">
             <div class="history-control-chip__actions">
               <button type="button" id="refreshBtn"
-                class="history-control-chip__button history-control-chip__button--primary">🔄 Refresh</button>
+                class="history-control-chip__button history-control-chip__button--primary">Refresh</button>
               <button type="button" id="cleanupBtn"
-                class="history-control-chip__button history-control-chip__button--danger">🧹 Cleanup</button>
+                class="history-control-chip__button history-control-chip__button--danger">Cleanup</button>
             </div>
           </div>
         </div>
@@ -251,7 +241,7 @@
           <div class="history-filter__actions">
             <button type="button" id="historyClearFilters" class="btn btn-outline-secondary btn-ghost">Clear
               Filters</button>
-            <span id="historyResultSummary" class="history-result-summary">—</span>
+            <span id="historyResultSummary" class="history-result-summary">--</span>
           </div>
         </div>
       </div>
@@ -259,7 +249,7 @@
       <div id="historyContainer"></div>
 
       <div id="emptyState" class="empty-state d-none">
-        <div class="empty-icon">📋</div>
+        <div class="empty-icon">Log</div>
         <h3>No history yet</h3>
         <p>Start by <a href="/" style="color:var(--primary)">running a fetch</a> to see your sessions here.</p>
       </div>
@@ -280,7 +270,7 @@
     <div class="history-detail-content cleanup-modal-content">
       <button class="close-btn" id="closeCleanupModal">&times;</button>
       <div class="cleanup-modal-body">
-        <h3 class="cleanup-modal-title">🧹 Cleanup Old Sessions</h3>
+        <h3 class="cleanup-modal-title">Cleanup Old Sessions</h3>
         <p class="cleanup-modal-subtitle">Delete scraping sessions older than a specified date</p>
         <div class="cleanup-options">
           <div class="cleanup-option-group">
@@ -291,7 +281,7 @@
               <button type="button" class="cleanup-quick-btn active" data-days="90">90 Days</button>
               <button type="button" class="cleanup-quick-btn" data-days="180">6 Months</button>
               <button type="button" class="cleanup-quick-btn" data-days="365">1 Year</button>
-              <button type="button" class="cleanup-quick-btn cleanup-quick-btn--danger" data-days="99999">🗑️ Delete
+              <button type="button" class="cleanup-quick-btn cleanup-quick-btn--danger" data-days="99999">Delete
                 All</button>
             </div>
           </div>
@@ -307,7 +297,7 @@
             <small class="cleanup-help">Delete all sessions before this date</small>
           </div>
           <div class="cleanup-preview" id="cleanupPreview">
-            <div class="cleanup-preview-icon">⚠️</div>
+            <div class="cleanup-preview-icon">Warn</div>
             <div class="cleanup-preview-text">
               <strong>Action Preview:</strong>
               <span id="cleanupPreviewText">Sessions older than 90 days will be deleted</span>
@@ -316,8 +306,21 @@
         </div>
         <div class="cleanup-actions">
           <button type="button" id="cancelCleanup" class="btn btn-outline-secondary">Cancel</button>
-          <button type="button" id="confirmCleanup" class="btn btn-danger">🗑️ Delete Old Sessions</button>
+          <button type="button" id="confirmCleanup" class="btn btn-danger">Delete Old Sessions</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirmModal" class="confirm-modal d-none" aria-hidden="true">
+    <div class="confirm-modal__dialog cy-card" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle"
+      aria-describedby="confirmModalMessage">
+      <div class="confirm-modal__eyebrow">Confirm Action</div>
+      <h3 id="confirmModalTitle" class="confirm-modal__title">Please confirm</h3>
+      <p id="confirmModalMessage" class="confirm-modal__message">Are you sure you want to continue?</p>
+      <div class="confirm-modal__actions">
+        <button id="confirmCancelBtn" class="btn-export" type="button">Cancel</button>
+        <button id="confirmConfirmBtn" class="btn-danger" type="button">Continue</button>
       </div>
     </div>
   </div>

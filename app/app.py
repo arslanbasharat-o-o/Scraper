@@ -13,22 +13,30 @@ import uuid
 import html
 from xml.etree import ElementTree as ET
 from database import db_manager
+from automation_service import discover_category_targets
 
 # Import scraper engines (separated for maintainability)
-from scraper_engine import (
-    Item, build_session, scrape_url, scrape_urls_parallel,
+from scrapers.scraper_engine import (
+    Item, build_session, scrape_url,
     clean_text, parse_price_number, fmt_price, host_currency,
     scrape_category_all_pages, enrich_item_details as enrich_standard_item_details
 )
 
 # Import XCellParts specialized scraper
-import xcell_scraper_engine
+from scrapers import SCRAPER_CONFIG, detect_scraper_key, xcell_scraper_engine
 
 # Import TXParts specialized scraper
-import txparts_scraper_engine
+from scrapers import txparts_scraper_engine
 
 # Import Parts4Cells specialized scraper
-import parts4cells_scraper_engine
+from scrapers import parts4cells_scraper_engine
+
+SCRAPER_MODULES = {
+    'standard': None,
+    'xcell': xcell_scraper_engine,
+    'txparts': txparts_scraper_engine,
+    'parts4cells': parts4cells_scraper_engine,
+}
 
 app = Flask(__name__)
 
@@ -50,6 +58,7 @@ MAX_PROXIED_IMAGE_CACHE_ITEMS = 512
 PROXIED_IMAGE_CACHE: Dict[str, Dict[str, object]] = {}
 PROXIED_IMAGE_CACHE_LOCK = threading.Lock()
 AUTO_DETAIL_SCAN_MAX_ITEMS = 20
+AUTOMATION_POLL_INTERVAL_SECONDS = 45
 RESAMPLE_LANCZOS = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
 WATERMARK_FONT_CANDIDATES = (
     r'C:\Windows\Fonts\arial.ttf',
@@ -57,6 +66,11 @@ WATERMARK_FONT_CANDIDATES = (
     'arial.ttf',
     'DejaVuSans.ttf',
 )
+AUTOMATION_SCHEDULER_LOCK = threading.Lock()
+AUTOMATION_SCHEDULER_STARTED = False
+AUTOMATION_STOP_EVENT = threading.Event()
+AUTOMATION_ACTIVE_JOBS = set()
+AUTOMATION_ACTIVE_JOBS_LOCK = threading.Lock()
 
 
 def asset_url(filename: str) -> str:
@@ -76,15 +90,16 @@ def inject_asset_url():
     return {'asset_url': asset_url}
 
 
+@app.before_request
+def ensure_background_services():
+    ensure_automation_scheduler_started()
+
+
 def get_public_base_url() -> str:
     """Resolve the canonical external base URL when available, otherwise use the active request."""
     configured_url = os.getenv('PUBLIC_BASE_URL') or os.getenv('SITE_URL')
     if configured_url:
         return configured_url.rstrip('/')
-
-    fly_app_name = os.getenv('FLY_APP_NAME')
-    if fly_app_name and fly_app_name != 'local':
-        return f"https://{fly_app_name}.fly.dev"
 
     return request.url_root.rstrip('/')
 
@@ -113,6 +128,13 @@ def build_public_site_pages() -> List[Dict[str, str]]:
             'changefreq': 'daily',
             'priority': '0.8',
             'lastmod': get_template_lastmod('history.html'),
+        },
+        {
+            'path': '/automation',
+            'endpoint': 'automation',
+            'changefreq': 'daily',
+            'priority': '0.8',
+            'lastmod': get_template_lastmod('automation.html'),
         },
         {
             'path': '/image-converter',
@@ -175,17 +197,45 @@ def needs_specific_stock_refresh(items) -> bool:
 
 def get_scraper_for_url(url: str):
     """Determine which scraper engine to use based on domain."""
-    domain = urlparse(url).netloc.lower()
+    scraper_key = detect_scraper_key(url)
+    return scraper_key, SCRAPER_MODULES.get(scraper_key)
 
-    if 'xcellparts.com' in domain:
-        return 'xcell', xcell_scraper_engine
-    if 'txparts.com' in domain:
-        return 'txparts', txparts_scraper_engine
-    if 'parts4cells.com' in domain:
-        return 'parts4cells', parts4cells_scraper_engine
-    if 'mobilesentrix' in domain:
-        return 'standard', None
-    return 'standard', None
+
+def format_category_label_from_url(url: str) -> str:
+    """Turn a category URL tail into a readable model/category label."""
+    parsed = urlparse(str(url or '').strip())
+    path = parsed.path.rstrip('/')
+    if path.endswith('.html'):
+        path = path[:-5]
+    segments = [segment for segment in path.split('/') if segment]
+    if not segments:
+        return ''
+    label = segments[-1]
+    label = re.sub(r'[-_]+', ' ', label)
+    label = re.sub(r'\s+', ' ', label).strip()
+    return label.title()
+
+
+def annotate_items_with_target(items, target_url: str, target_label: str = '', automation_job: Dict | None = None):
+    """Attach the originating category URL/label so later comparisons can group by model."""
+    normalized_url = str(target_url or '').strip()
+    normalized_label = str(target_label or '').strip() or format_category_label_from_url(normalized_url)
+    for item in items or []:
+        extra = getattr(item, 'extra', None)
+        if not isinstance(extra, dict):
+            extra = {}
+            try:
+                setattr(item, 'extra', extra)
+            except Exception:
+                continue
+        extra['target_url'] = normalized_url
+        extra['target_label'] = normalized_label
+        if normalized_label:
+            extra['model_label'] = normalized_label
+        if automation_job:
+            extra['automation_job_id'] = automation_job.get('id')
+            extra['automation_job_name'] = automation_job.get('name')
+    return items
 
 
 def apply_enriched_item_data(item, enriched_data: Dict[str, object]):
@@ -337,21 +387,42 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         logger.info(f"[detail] Enriched {enriched_count} item(s) across {len(url_to_indexes)} unique product URLs")
     return items, enriched_count
 
-def get_effective_item_price(item) -> float | None:
-    """Extract the current comparable price from any scraper item shape."""
+def extract_item_price(item, *, prefer_adjusted: bool = True) -> float | None:
+    """Extract either the adjusted or source price from any scraper item shape."""
     item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
 
-    for key in ('discounted_value', 'price_value', 'discounted', 'original'):
+    numeric_keys = (
+        ('discounted_value', 'price_value', 'discounted', 'original')
+        if prefer_adjusted
+        else ('price_value', 'original', 'discounted_value', 'discounted')
+    )
+    text_keys = (
+        ('discounted_formatted', 'original_formatted', 'price_text')
+        if prefer_adjusted
+        else ('original_formatted', 'price_text', 'discounted_formatted')
+    )
+
+    for key in numeric_keys:
         value = item_dict.get(key)
         if isinstance(value, (int, float)) and float(value) > 0:
             return round(float(value), 2)
 
-    for key in ('discounted_formatted', 'original_formatted', 'price_text'):
+    for key in text_keys:
         value = parse_price_number(str(item_dict.get(key) or ''))
         if value is not None and float(value) > 0:
             return round(float(value), 2)
 
     return None
+
+
+def get_effective_item_price(item) -> float | None:
+    """Extract the adjusted/display price from any scraper item shape."""
+    return extract_item_price(item, prefer_adjusted=True)
+
+
+def get_comparable_item_price(item) -> float | None:
+    """Extract the stable source price used for run-to-run comparisons."""
+    return extract_item_price(item, prefer_adjusted=False)
 
 def build_price_drop_alerts(items, previous_prices: Dict[str, Dict], drop_pct: float) -> List[Dict]:
     """Compare current items against the latest saved DB prices for the same URL."""
@@ -367,7 +438,7 @@ def build_price_drop_alerts(items, previous_prices: Dict[str, Dict], drop_pct: f
         if not previous or previous.get('price') is None:
             continue
 
-        current_price = get_effective_item_price(item)
+        current_price = get_comparable_item_price(item)
         previous_price = float(previous['price'])
         if current_price is None or previous_price <= 0 or current_price >= previous_price:
             continue
@@ -394,7 +465,10 @@ def normalize_item_snapshot(item) -> Dict[str, object]:
     """Create a consistent comparison snapshot from current or historical item data."""
     item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
     extra = item_dict.get('extra') if isinstance(item_dict.get('extra'), dict) else {}
-    effective_price = get_effective_item_price(item_dict)
+    comparison_price = get_comparable_item_price(item_dict)
+    target_url = normalize_compare_text(item_dict.get('target_url') or extra.get('target_url'))
+    target_label = normalize_compare_text(item_dict.get('target_label') or extra.get('target_label'))
+    model_label = normalize_compare_text(item_dict.get('model_label') or extra.get('model_label') or target_label or format_category_label_from_url(target_url))
     return {
         'url': normalize_compare_text(item_dict.get('url')),
         'site': normalize_compare_text(item_dict.get('site')),
@@ -403,8 +477,16 @@ def normalize_item_snapshot(item) -> Dict[str, object]:
         'stock_status': normalize_compare_text(item_dict.get('stock_status') or extra.get('stock_status')),
         'stock_status_compare': normalize_stock_status_for_compare(item_dict.get('stock_status') or extra.get('stock_status')),
         'description': normalize_compare_text(item_dict.get('description') or extra.get('description')),
-        'effective_price': effective_price,
+        'comparison_price': comparison_price,
+        'target_url': target_url,
+        'target_label': target_label,
+        'model_label': model_label,
         'price_formatted': normalize_compare_text(
+            item_dict.get('original_formatted')
+            or item_dict.get('price_text')
+            or item_dict.get('discounted_formatted')
+        ),
+        'adjusted_price_formatted': normalize_compare_text(
             item_dict.get('discounted_formatted')
             or item_dict.get('original_formatted')
             or item_dict.get('price_text')
@@ -503,8 +585,8 @@ def build_session_comparison(previous_history: Dict | None, current_items) -> Di
         if prev_item.get('stock_status_compare', prev_item['stock_status']) != current_item.get('stock_status_compare', current_item['stock_status']):
             field_changes['stock_status'] = {'before': prev_item['stock_status'], 'after': current_item['stock_status']}
 
-        prev_price = prev_item.get('effective_price')
-        current_price = current_item.get('effective_price')
+        prev_price = prev_item.get('comparison_price')
+        current_price = current_item.get('comparison_price')
         if prev_price is not None and current_price is not None and abs(prev_price - current_price) > 0.009:
             field_changes['price'] = {
                 'before': prev_price,
@@ -530,6 +612,505 @@ def build_session_comparison(previous_history: Dict | None, current_items) -> Di
     comparison['summary']['description_changes'] = sum(1 for change in comparison['changed'] if 'description' in change['changes'])
     comparison['summary']['url_changes'] = sum(1 for change in comparison['changed'] if 'url' in change['changes'])
     return comparison
+
+
+def build_public_history_id(scraper_key: str, raw_history_id: str) -> str:
+    normalized_scraper = str(scraper_key or '').strip()
+    normalized_history_id = str(raw_history_id or '').strip()
+    if not normalized_scraper or not normalized_history_id:
+        return ''
+    return f"{normalized_scraper}:{normalized_history_id}"
+
+
+def get_comparison_model_label(item: Dict[str, object]) -> str:
+    snapshot = dict(item or {})
+    return (
+        normalize_compare_text(snapshot.get('model_label'))
+        or normalize_compare_text(snapshot.get('target_label'))
+        or format_category_label_from_url(snapshot.get('target_url'))
+        or format_category_label_from_url(snapshot.get('url'))
+        or normalize_compare_text(snapshot.get('title'))
+    )
+
+
+def build_automation_model_summary(comparison: Dict) -> List[Dict[str, object]]:
+    buckets: Dict[str, Dict[str, object]] = {}
+
+    def touch(label: str):
+        clean_label = normalize_compare_text(label) or 'Uncategorized'
+        return buckets.setdefault(clean_label, {
+            'model': clean_label,
+            'added': 0,
+            'removed': 0,
+            'changed': 0,
+            'price_changes': 0,
+            'stock_changes': 0,
+        })
+
+    for item in comparison.get('added', []):
+        touch(get_comparison_model_label(item))['added'] += 1
+
+    for item in comparison.get('removed', []):
+        touch(get_comparison_model_label(item))['removed'] += 1
+
+    for entry in comparison.get('changed', []):
+        bucket = touch(get_comparison_model_label(entry.get('after') or entry.get('before') or {}))
+        bucket['changed'] += 1
+        if 'price' in (entry.get('changes') or {}):
+            bucket['price_changes'] += 1
+        if 'stock_status' in (entry.get('changes') or {}):
+            bucket['stock_changes'] += 1
+
+    return sorted(
+        buckets.values(),
+        key=lambda item: (-int(item['changed']) - int(item['added']) - int(item['removed']), str(item['model']).lower())
+    )
+
+
+def build_automation_run_summary(target_urls: List[str], comparison: Dict, price_drops: List[Dict]) -> Dict[str, object]:
+    summary = dict((comparison or {}).get('summary') or {})
+    summary['target_count'] = len(target_urls or [])
+    summary['price_drop_alerts'] = len(price_drops or [])
+    summary['models'] = build_automation_model_summary(comparison or {})
+    return summary
+
+
+def execute_scrape_workflow(
+    urls_input,
+    *,
+    crawl_pagination: bool = True,
+    max_pages: int = 10,
+    delay_ms: int = 50,
+    retries: int = 1,
+    verify_ssl: bool = True,
+    use_curl: bool = False,
+    use_parallel: bool = True,
+    enrich_details: bool = False,
+    rules: Dict | None = None,
+    drop_pct: float = 10.0,
+    target_labels: Dict[str, str] | None = None,
+    automation_job: Dict | None = None,
+    previous_history_override: Dict | None = None,
+    progress_callback = None,
+):
+    rules = dict(rules or {})
+    target_labels = {str(key).strip(): str(value or '').strip() for key, value in (target_labels or {}).items() if str(key).strip()}
+    urls = [u.strip() for u in (urls_input.splitlines() if isinstance(urls_input, str) else urls_input or []) if str(u).strip()]
+    seen_urls = set()
+    urls = [u for u in urls if not (u in seen_urls or seen_urls.add(u))]
+
+    if not urls:
+        return {
+            "error": "At least one URL is required.",
+            "rules": rules,
+            "count": 0,
+            "drop_pct": drop_pct,
+            "price_drops": [],
+            "comparison": build_session_comparison(None, []),
+            "using_curl": False,
+            "using_parallel": False,
+            "engines_used": {},
+            "enrich_details": enrich_details,
+            "enrich_details_requested": enrich_details,
+            "auto_enrich_details": False,
+            "details_hydrated_from_history": 0,
+            "details_enriched": 0,
+            "items": [],
+            "history_id": "",
+            "history_public_id": "",
+            "history_saved": False,
+            "urls": [],
+        }
+
+    previous_history = previous_history_override if previous_history_override is not None else db_manager.get_latest_history_for_urls(urls)
+    items: List[Item] = []
+    engine_used: Dict[str, str] = {}
+    using_curl = False
+    progress_lock = threading.Lock()
+    progress_state = {
+        'completed_targets': 0,
+        'items_found': 0,
+    }
+    total_targets = len(urls)
+
+    def _target_label_for(url: str) -> str:
+        return target_labels.get(url, '')
+
+    def _count_valid_items(scraped_items) -> int:
+        count = 0
+        for item in scraped_items or []:
+            title = ''
+            if hasattr(item, 'title'):
+                title = str(getattr(item, 'title') or '').strip()
+            elif isinstance(item, dict):
+                title = str(item.get('title') or '').strip()
+            if title:
+                count += 1
+        return count
+
+    def _report_progress(target_url: str, scraped_items) -> None:
+        if not progress_callback:
+            return
+        valid_items_count = _count_valid_items(scraped_items)
+        with progress_lock:
+            progress_state['completed_targets'] += 1
+            progress_state['items_found'] += valid_items_count
+            progress_callback({
+                'completed_targets': progress_state['completed_targets'],
+                'total_targets': total_targets,
+                'current_items': progress_state['items_found'],
+                'last_target_url': str(target_url or ''),
+                'last_target_items': valid_items_count,
+            })
+
+    def _make_failed_item(url: str, exc: Exception):
+        failed_item = Item(
+            url=url,
+            site=urlparse(url).hostname or '',
+            title='',
+            price_value=None,
+            price_currency=None,
+            price_text=f'parallel_scrape_failed: {exc}',
+            discounted_value=None,
+            discounted_formatted='',
+            original_formatted='',
+            source='error',
+            image_url='',
+        )
+        return [failed_item]
+
+    def _scrape_url_batch(batch_urls, *, engine_name: str, build_session_fn, scrape_url_fn, uses_curl: bool = False, max_workers: int = 4):
+        nonlocal using_curl
+        if not batch_urls:
+            return
+
+        app.logger.info(f"[engine] Using {engine_name} for {len(batch_urls)} URL(s)")
+
+        def _scrape_single(url: str):
+            if uses_curl:
+                sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
+            else:
+                sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl)
+            scraped_items = scrape_url_fn(sess, url, rules, crawl_pagination, max_pages, delay_ms, app.logger)
+            annotate_items_with_target(scraped_items, url, _target_label_for(url), automation_job)
+            return url, scraped_items, local_using_curl
+
+        if use_parallel and len(batch_urls) > 1:
+            with ThreadPoolExecutor(max_workers=min(max_workers, len(batch_urls))) as executor:
+                future_to_url = {executor.submit(_scrape_single, url): url for url in batch_urls}
+                for future in as_completed(future_to_url):
+                    url = future_to_url[future]
+                    try:
+                        source_url, scraped_items, local_using_curl = future.result()
+                        using_curl = using_curl or bool(local_using_curl)
+                        items.extend(scraped_items)
+                        _report_progress(source_url, scraped_items)
+                        app.logger.info(f"[engine] Completed scraping {source_url}: {_count_valid_items(scraped_items)} items")
+                    except Exception as exc:
+                        app.logger.error(f"[engine] Error scraping {url}: {exc}")
+                        failed_items = _make_failed_item(url, exc)
+                        annotate_items_with_target(failed_items, url, _target_label_for(url), automation_job)
+                        items.extend(failed_items)
+                        _report_progress(url, [])
+        else:
+            for url in batch_urls:
+                try:
+                    source_url, scraped_items, local_using_curl = _scrape_single(url)
+                    using_curl = using_curl or bool(local_using_curl)
+                    items.extend(scraped_items)
+                    _report_progress(source_url, scraped_items)
+                    app.logger.info(f"[engine] Completed scraping {source_url}: {_count_valid_items(scraped_items)} items")
+                except Exception as exc:
+                    app.logger.error(f"[engine] Error scraping {url}: {exc}")
+                    failed_items = _make_failed_item(url, exc)
+                    annotate_items_with_target(failed_items, url, _target_label_for(url), automation_job)
+                    items.extend(failed_items)
+                    _report_progress(url, [])
+
+    xcell_urls = []
+    txparts_urls = []
+    parts4cells_urls = []
+    standard_urls = []
+
+    for url in urls:
+        engine_type, _ = get_scraper_for_url(url)
+        if engine_type == 'xcell':
+            xcell_urls.append(url)
+            engine_used[url] = 'xcell_scraper_engine'
+        elif engine_type == 'txparts':
+            txparts_urls.append(url)
+            engine_used[url] = 'txparts_scraper_engine'
+        elif engine_type == 'parts4cells':
+            parts4cells_urls.append(url)
+            engine_used[url] = 'parts4cells_scraper_engine'
+        else:
+            standard_urls.append(url)
+            engine_used[url] = 'scraper_engine'
+
+    _scrape_url_batch(
+        xcell_urls,
+        engine_name='XCellParts scraper',
+        build_session_fn=xcell_scraper_engine.build_session,
+        scrape_url_fn=xcell_scraper_engine.scrape_url,
+    )
+    _scrape_url_batch(
+        txparts_urls,
+        engine_name='TXParts scraper',
+        build_session_fn=txparts_scraper_engine.build_session,
+        scrape_url_fn=txparts_scraper_engine.scrape_url,
+    )
+    _scrape_url_batch(
+        parts4cells_urls,
+        engine_name='Parts4Cells scraper',
+        build_session_fn=parts4cells_scraper_engine.build_session,
+        scrape_url_fn=parts4cells_scraper_engine.scrape_url,
+    )
+    _scrape_url_batch(
+        standard_urls,
+        engine_name='standard scraper',
+        build_session_fn=build_session,
+        scrape_url_fn=scrape_url,
+        uses_curl=True,
+        max_workers=3,
+    )
+
+    hydrated_from_history = hydrate_items_from_previous_history(items, previous_history)
+    auto_enrich_details = (
+        not enrich_details
+        and len(items) <= AUTO_DETAIL_SCAN_MAX_ITEMS
+        and needs_specific_stock_refresh(items)
+    )
+    effective_enrich_details = enrich_details or auto_enrich_details
+    if auto_enrich_details:
+        app.logger.info(f"[detail] Auto-enabling detail scan for {len(items)} item(s) to capture stock detail")
+    items, enriched_count = enrich_scraped_items(
+        items, rules, retries, verify_ssl, use_curl, enrich_details=effective_enrich_details, logger=app.logger
+    )
+
+    previous_prices = {}
+    if previous_history:
+        for previous_item in previous_history.get('items', []):
+            snapshot = normalize_item_snapshot(previous_item)
+            url = snapshot.get('url')
+            price = snapshot.get('comparison_price')
+            if not url or price is None:
+                continue
+            previous_prices[url] = {
+                'price': price,
+                'title': snapshot.get('title', ''),
+                'site': snapshot.get('site', ''),
+                'history_id': previous_history.get('id'),
+                'timestamp': previous_history.get('timestamp'),
+            }
+    price_drops = build_price_drop_alerts(items, previous_prices, drop_pct)
+    comparison = build_session_comparison(previous_history, items)
+
+    history_id = str(int(time.time() * 1000))
+    history_saved = False
+    history_public_id = ''
+    history_rules = dict(rules)
+    if automation_job:
+        history_rules['_automation_job_id'] = automation_job.get('id')
+        history_rules['_automation_job_name'] = automation_job.get('name')
+        history_rules['_automation_category_query'] = automation_job.get('category_query')
+
+    try:
+        history_saved = db_manager.save_fetch_history(history_id, urls, items, history_rules)
+        if not history_saved:
+            app.logger.error("Failed to save fetch history to database")
+    except Exception as exc:
+        app.logger.error(f"Database error: {exc}")
+
+    scraper_keys = {detect_scraper_key(url) for url in urls if str(url or '').strip()}
+    if history_saved and len(scraper_keys) == 1:
+        history_public_id = build_public_history_id(next(iter(scraper_keys)), history_id)
+
+    return {
+        "rules": rules,
+        "count": len(items),
+        "drop_pct": drop_pct,
+        "price_drops": price_drops,
+        "comparison": comparison,
+        "using_curl": using_curl,
+        "using_parallel": use_parallel and len(urls) > 1,
+        "engines_used": engine_used,
+        "enrich_details": effective_enrich_details,
+        "enrich_details_requested": enrich_details,
+        "auto_enrich_details": auto_enrich_details,
+        "details_hydrated_from_history": hydrated_from_history,
+        "details_enriched": enriched_count,
+        "items": [asdict(i) for i in items],
+        "history_id": history_id,
+        "history_public_id": history_public_id,
+        "history_saved": history_saved,
+        "urls": urls,
+    }
+
+
+def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple[bool, str]:
+    try:
+        normalized_job_id = int(job_id)
+    except (TypeError, ValueError):
+        return False, 'Invalid automation job id.'
+
+    with AUTOMATION_ACTIVE_JOBS_LOCK:
+        if normalized_job_id in AUTOMATION_ACTIVE_JOBS:
+            return False, 'This automation job is already running.'
+        AUTOMATION_ACTIVE_JOBS.add(normalized_job_id)
+
+    def worker():
+        run_record = None
+        try:
+            job = db_manager.get_automation_job(normalized_job_id, include_targets=True)
+            if not job:
+                return
+
+            targets = [target for target in job.get('targets', []) if target.get('active', True)]
+            if job.get('auto_discover') or not targets:
+                discovered = discover_category_targets(
+                    job.get('scraper_key'),
+                    job.get('category_query'),
+                    root_url=job.get('root_url'),
+                    retries=job.get('retries', 1),
+                    verify_ssl=job.get('verify_ssl', True),
+                    logger=app.logger,
+                )
+                targets = db_manager.replace_automation_job_targets(normalized_job_id, discovered.get('targets', []))
+                job = db_manager.get_automation_job(normalized_job_id, include_targets=True) or job
+
+            active_targets = [target for target in targets if target.get('active', True)]
+            target_urls = [str(target.get('url') or '').strip() for target in active_targets if str(target.get('url') or '').strip()]
+            if not target_urls:
+                run_record = db_manager.create_automation_run(normalized_job_id, trigger_type=trigger_type, target_urls=[])
+                if run_record:
+                    db_manager.complete_automation_run(
+                        run_record['id'],
+                        status='failed',
+                        target_urls=[],
+                        items_count=0,
+                        summary={'target_count': 0},
+                        error_text='No category links were discovered for this automation job.',
+                    )
+                return
+
+            previous_history = None
+            last_history_ids = job.get('last_history_ids') or []
+            if last_history_ids:
+                previous_history = db_manager.get_history_detail(str(last_history_ids[0]))
+
+            run_record = db_manager.create_automation_run(normalized_job_id, trigger_type=trigger_type, target_urls=target_urls)
+            if not run_record:
+                return
+
+            total_target_count = len(target_urls)
+            db_manager.update_automation_run_progress(
+                run_record['id'],
+                items_count=0,
+                summary={
+                    'target_count': total_target_count,
+                    'completed_targets': 0,
+                    'total_targets': total_target_count,
+                    'current_items': 0,
+                    'progress_percent': 0,
+                    'last_target_url': '',
+                    'last_target_items': 0,
+                },
+            )
+
+            def automation_progress_callback(progress: Dict[str, object]):
+                completed_targets = int(progress.get('completed_targets') or 0)
+                total_targets_local = max(1, int(progress.get('total_targets') or total_target_count or 1))
+                current_items = int(progress.get('current_items') or 0)
+                last_target_items = int(progress.get('last_target_items') or 0)
+                progress_percent = round((completed_targets / total_targets_local) * 100, 1)
+                db_manager.update_automation_run_progress(
+                    run_record['id'],
+                    items_count=current_items,
+                    summary={
+                        'target_count': total_target_count,
+                        'completed_targets': completed_targets,
+                        'total_targets': total_targets_local,
+                        'current_items': current_items,
+                        'progress_percent': progress_percent,
+                        'last_target_url': str(progress.get('last_target_url') or ''),
+                        'last_target_items': last_target_items,
+                    },
+                )
+
+            target_labels = {str(target.get('url') or '').strip(): str(target.get('label') or '').strip() for target in active_targets}
+            result = execute_scrape_workflow(
+                target_urls,
+                crawl_pagination=job.get('crawl_pagination', True),
+                max_pages=job.get('max_pages', 10),
+                delay_ms=job.get('delay_ms', 50),
+                retries=job.get('retries', 1),
+                verify_ssl=job.get('verify_ssl', True),
+                use_curl=False,
+                use_parallel=job.get('use_parallel', True),
+                enrich_details=job.get('enrich_details', False),
+                rules=job.get('rules', {}),
+                drop_pct=job.get('drop_pct', 10.0),
+                target_labels=target_labels,
+                automation_job=job,
+                previous_history_override=previous_history,
+                progress_callback=automation_progress_callback,
+            )
+            summary = build_automation_run_summary(target_urls, result.get('comparison') or {}, result.get('price_drops') or [])
+            db_manager.complete_automation_run(
+                run_record['id'],
+                status='completed',
+                current_history_id=result.get('history_public_id') or '',
+                previous_history_id=(result.get('comparison') or {}).get('previous_history_id') or '',
+                target_urls=target_urls,
+                items_count=result.get('count') or 0,
+                summary=summary,
+                error_text='',
+            )
+        except Exception as exc:
+            app.logger.exception(f"[automation] Job {normalized_job_id} failed: {exc}")
+            if run_record:
+                db_manager.complete_automation_run(
+                    run_record['id'],
+                    status='failed',
+                    target_urls=run_record.get('target_urls') or [],
+                    items_count=0,
+                    summary={'target_count': len(run_record.get('target_urls') or [])},
+                    error_text=str(exc),
+                )
+        finally:
+            with AUTOMATION_ACTIVE_JOBS_LOCK:
+                AUTOMATION_ACTIVE_JOBS.discard(normalized_job_id)
+
+    threading.Thread(target=worker, name=f'automation-job-{normalized_job_id}', daemon=True).start()
+    return True, ''
+
+
+def _automation_scheduler_loop():
+    while not AUTOMATION_STOP_EVENT.wait(AUTOMATION_POLL_INTERVAL_SECONDS):
+        try:
+            for job in db_manager.get_due_automation_jobs(limit=5):
+                _launch_automation_job(job.get('id'), trigger_type='schedule')
+        except Exception as exc:
+            app.logger.exception(f"[automation] Scheduler error: {exc}")
+
+
+def ensure_automation_scheduler_started():
+    global AUTOMATION_SCHEDULER_STARTED
+    debug_env = str(os.getenv("FLASK_DEBUG", "0")).strip().lower()
+    debug_mode = debug_env not in {"0", "false", "no", "off"}
+    if debug_mode and os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        return
+    if AUTOMATION_SCHEDULER_STARTED:
+        return
+    with AUTOMATION_SCHEDULER_LOCK:
+        if AUTOMATION_SCHEDULER_STARTED:
+            return
+        recovered_runs = db_manager.recover_running_automation_runs()
+        if recovered_runs:
+            app.logger.warning(f"[automation] Recovered {recovered_runs} interrupted automation run(s) from a previous process")
+        threading.Thread(target=_automation_scheduler_loop, name='automation-scheduler', daemon=True).start()
+        AUTOMATION_SCHEDULER_STARTED = True
+        app.logger.info("[automation] Scheduler started")
 
 # -------- Image Processing --------
 def normalize_target_format(target_format: str) -> str:
@@ -1156,6 +1737,10 @@ def robots():
 def history():
     return render_template('history.html')
 
+@app.get('/automation')
+def automation():
+    return render_template('automation.html')
+
 @app.get('/image-converter')
 def image_converter():
     return render_template('image_converter.html')
@@ -1348,6 +1933,288 @@ def api_search():
             'query': query,
             'results': items,
             'count': len(items)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.get('/api/automation/overview')
+def api_automation_overview():
+    try:
+        overview = db_manager.get_automation_overview()
+        recent_runs = db_manager.list_automation_runs(limit=10)
+        return jsonify({
+            'overview': overview,
+            'recent_runs': recent_runs,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.post('/api/automation/discover')
+def api_automation_discover():
+    try:
+        data = request.get_json(silent=True) or {}
+        raw_scraper_value = data.get('scraper_key') or data.get('site') or data.get('site_key') or ''
+        root_url = str(data.get('root_url') or '').strip()
+        scraper_key = str(raw_scraper_value or '').strip().lower()
+        if scraper_key not in SCRAPER_CONFIG:
+            scraper_key = detect_scraper_key(str(raw_scraper_value or root_url or '').strip())
+        if scraper_key not in SCRAPER_CONFIG:
+            scraper_key = 'standard'
+        category_query = str(data.get('category_query') or '').strip()
+        retries = max(1, min(5, int(data.get('retries') or 1)))
+        verify_ssl = bool(data.get('verify_ssl', True))
+
+        if not category_query:
+            return jsonify({'error': 'Category query is required.'}), 400
+
+        discovered = discover_category_targets(
+            scraper_key,
+            category_query,
+            root_url=root_url,
+            retries=retries,
+            verify_ssl=verify_ssl,
+            logger=app.logger,
+        )
+        return jsonify(discovered)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.get('/api/automation/jobs')
+def api_automation_jobs():
+    try:
+        jobs = db_manager.list_automation_jobs(include_targets=True, limit=200)
+        return jsonify({
+            'jobs': jobs,
+            'overview': db_manager.get_automation_overview(),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.post('/api/automation/jobs')
+def api_automation_jobs_save():
+    try:
+        data = request.get_json(silent=True) or {}
+        targets = data.get('targets') if isinstance(data.get('targets'), list) else None
+        job = db_manager.save_automation_job(data, targets=targets)
+        if not job:
+            return jsonify({'error': 'Failed to save automation job. Check the site and category query.'}), 400
+        return jsonify({
+            'success': True,
+            'job': job,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.get('/api/automation/jobs/<int:job_id>')
+def api_automation_job_detail(job_id):
+    try:
+        job = db_manager.get_automation_job(job_id, include_targets=True)
+        if not job:
+            return jsonify({'error': 'Automation job not found.'}), 404
+        return jsonify({
+            'job': job,
+            'runs': db_manager.list_automation_runs(job_id=job_id, limit=15),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.delete('/api/automation/jobs/<int:job_id>')
+def api_automation_job_delete(job_id):
+    try:
+        if db_manager.delete_automation_job(job_id):
+            return jsonify({'success': True, 'job_id': job_id})
+        return jsonify({'error': 'Automation job not found.'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.post('/api/automation/jobs/<int:job_id>/toggle')
+def api_automation_job_toggle(job_id):
+    try:
+        data = request.get_json(silent=True) or {}
+        enabled = data.get('enabled', True)
+        if isinstance(enabled, str):
+            enabled = enabled.strip().lower() in {'1', 'true', 'yes', 'on'}
+        else:
+            enabled = bool(enabled)
+        job = db_manager.set_automation_job_enabled(job_id, enabled)
+        if not job:
+            return jsonify({'error': 'Automation job not found.'}), 404
+        return jsonify({'success': True, 'job': job})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.post('/api/automation/jobs/<int:job_id>/refresh-targets')
+def api_automation_job_refresh_targets(job_id):
+    try:
+        job = db_manager.get_automation_job(job_id, include_targets=True)
+        if not job:
+            return jsonify({'error': 'Automation job not found.'}), 404
+
+        discovered = discover_category_targets(
+            job.get('scraper_key'),
+            job.get('category_query'),
+            root_url=job.get('root_url'),
+            retries=job.get('retries', 1),
+            verify_ssl=job.get('verify_ssl', True),
+            logger=app.logger,
+        )
+        targets = db_manager.replace_automation_job_targets(job_id, discovered.get('targets', []))
+        return jsonify({
+            'success': True,
+            'job': db_manager.get_automation_job(job_id, include_targets=True),
+            'discovery': discovered,
+            'targets': targets,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.post('/api/automation/jobs/<int:job_id>/run')
+def api_automation_job_run(job_id):
+    try:
+        if not db_manager.get_automation_job(job_id, include_targets=False):
+            return jsonify({'error': 'Automation job not found.'}), 404
+        queued, message = _launch_automation_job(job_id, trigger_type='manual')
+        if not queued:
+            return jsonify({'error': message or 'Automation job is already running.'}), 409
+        return jsonify({
+            'success': True,
+            'queued': True,
+            'job_id': job_id,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.get('/api/automation/runs')
+def api_automation_runs():
+    try:
+        job_id = request.args.get('job_id')
+        limit = max(1, min(100, int(request.args.get('limit', 25))))
+        runs = db_manager.list_automation_runs(job_id=job_id, limit=limit)
+        return jsonify({
+            'runs': runs,
+            'count': len(runs),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.get('/api/automation/runs/<int:run_id>')
+def api_automation_run_detail(run_id):
+    try:
+        run = db_manager.get_automation_run(run_id)
+        if not run:
+            return jsonify({'error': 'Automation run not found.'}), 404
+
+        current_history = db_manager.get_history_detail(run.get('current_history_id')) if run.get('current_history_id') else None
+        previous_history = db_manager.get_history_detail(run.get('previous_history_id')) if run.get('previous_history_id') else None
+        comparison = build_session_comparison(previous_history, (current_history or {}).get('items', [])) if current_history else {
+            'has_previous_run': False,
+            'summary': {},
+            'added': [],
+            'removed': [],
+            'changed': [],
+        }
+        models = build_automation_model_summary(comparison)
+
+        return jsonify({
+            'run': run,
+            'job': db_manager.get_automation_job(run.get('job_id'), include_targets=True),
+            'current_history': {
+                'id': (current_history or {}).get('id'),
+                'timestamp': (current_history or {}).get('timestamp'),
+                'items_count': (current_history or {}).get('items_count'),
+                'urls': (current_history or {}).get('urls', []),
+            } if current_history else None,
+            'previous_history': {
+                'id': (previous_history or {}).get('id'),
+                'timestamp': (previous_history or {}).get('timestamp'),
+                'items_count': (previous_history or {}).get('items_count'),
+                'urls': (previous_history or {}).get('urls', []),
+            } if previous_history else None,
+            'comparison': comparison,
+            'models': models,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.get('/api/watchlist')
+def api_watchlist():
+    """Return all saved watchlist items across site databases."""
+    try:
+        limit_value = request.args.get('limit')
+        limit = int(limit_value) if limit_value else None
+        items = db_manager.get_watchlist_items(limit=limit)
+        return jsonify({
+            'items': items,
+            'count': len(items),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.post('/api/watchlist')
+def api_watchlist_save():
+    """Save or update a watchlist item snapshot."""
+    try:
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({'error': 'Invalid watchlist payload'}), 400
+
+        url = str(data.get('url') or '').strip()
+        if not url:
+            return jsonify({'error': 'Item URL is required'}), 400
+
+        saved_item = db_manager.save_watchlist_item(data)
+        if not saved_item:
+            return jsonify({'error': 'Failed to save watchlist item'}), 500
+
+        return jsonify({
+            'success': True,
+            'item': saved_item,
+            'count': len(db_manager.get_watchlist_urls()),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.delete('/api/watchlist')
+def api_watchlist_delete():
+    """Remove one watchlist item by URL."""
+    try:
+        data = request.get_json(silent=True) or {}
+        url = str(request.args.get('url') or data.get('url') or '').strip()
+        if not url:
+            return jsonify({'error': 'Item URL is required'}), 400
+
+        removed = db_manager.remove_watchlist_item(url)
+        if not removed:
+            return jsonify({'error': 'Watchlist item not found', 'count': len(db_manager.get_watchlist_urls())}), 404
+
+        return jsonify({
+            'success': True,
+            'url': url,
+            'count': len(db_manager.get_watchlist_urls()),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.post('/api/watchlist/clear')
+def api_watchlist_clear():
+    """Clear the entire shared watchlist."""
+    try:
+        cleared = db_manager.clear_watchlist()
+        return jsonify({
+            'success': True,
+            'cleared': cleared,
+            'count': 0,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1615,168 +2482,22 @@ def api_scrape():
         "absolute_off": float(data.get('absolute_off') or 0.0),
     }
     drop_pct = max(1.0, float(data.get('drop_pct') or 10.0))
-
-    urls = [u.strip() for u in (urls_raw.splitlines() if isinstance(urls_raw, str) else urls_raw) if u.strip()]
-    seen_u = set(); urls = [u for u in urls if not (u in seen_u or seen_u.add(u))]
-    previous_history = db_manager.get_latest_history_for_urls(urls)
-
-    items: List[Item] = []
-    engine_used = {}  # Track which engine was used for each URL
-    
-    if use_parallel and len(urls) > 1:
-        # For parallel processing, group URLs by engine type
-        xcell_urls = []
-        txparts_urls = []
-        parts4cells_urls = []
-        standard_urls = []
-        
-        for url in urls:
-            engine_type, _ = get_scraper_for_url(url)
-            if engine_type == 'xcell':
-                xcell_urls.append(url)
-                engine_used[url] = 'xcell_scraper_engine'
-            elif engine_type == 'txparts':
-                txparts_urls.append(url)
-                engine_used[url] = 'txparts_scraper_engine'
-            elif engine_type == 'parts4cells':
-                parts4cells_urls.append(url)
-                engine_used[url] = 'parts4cells_scraper_engine'
-            else:
-                standard_urls.append(url)
-                engine_used[url] = 'scraper_engine'
-        
-        # Process XCellParts URLs with xcell scraper
-        if xcell_urls:
-            app.logger.info(f"[engine] Using XCellParts scraper for {len(xcell_urls)} URLs")
-            xcell_session, _ = xcell_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
-            for url in xcell_urls:
-                items.extend(xcell_scraper_engine.scrape_url(
-                    xcell_session, url, rules, crawl_pagination, max_pages, delay_ms, app.logger
-                ))
-        
-        # Process TXParts URLs with txparts scraper
-        if txparts_urls:
-            app.logger.info(f"[engine] Using TXParts scraper for {len(txparts_urls)} URLs")
-            txparts_session, _ = txparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
-            for url in txparts_urls:
-                items.extend(txparts_scraper_engine.scrape_url(
-                    txparts_session, url, rules, crawl_pagination, max_pages, delay_ms, app.logger
-                ))
-
-        # Process Parts4Cells URLs with parts4cells scraper
-        if parts4cells_urls:
-            app.logger.info(f"[engine] Using Parts4Cells scraper for {len(parts4cells_urls)} URLs")
-            p4c_session, _ = parts4cells_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
-            for url in parts4cells_urls:
-                items.extend(parts4cells_scraper_engine.scrape_url(
-                    p4c_session, url, rules, crawl_pagination, max_pages, delay_ms, app.logger
-                ))
-        
-        # Process standard URLs with main scraper (parallel)
-        if standard_urls:
-            app.logger.info(f"[engine] Using standard scraper for {len(standard_urls)} URLs")
-            max_workers = min(3, len(standard_urls))
-            items.extend(scrape_urls_parallel(
-                standard_urls, rules, crawl_pagination, max_pages, delay_ms,
-                retries, verify_ssl, use_curl, max_workers, app.logger
-            ))
-        
-        using_curl = use_curl
-    else:
-        # Sequential processing
-        for u in urls:
-            engine_type, engine_module = get_scraper_for_url(u)
-            
-            if engine_type == 'xcell':
-                # Use XCellParts scraper
-                app.logger.info(f"[engine] Using XCellParts scraper for: {u}")
-                engine_used[u] = 'xcell_scraper_engine'
-                xcell_session, _ = xcell_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
-                items.extend(xcell_scraper_engine.scrape_url(
-                    xcell_session, u, rules, crawl_pagination, max_pages, delay_ms, app.logger
-                ))
-            elif engine_type == 'txparts':
-                # Use TXParts scraper
-                app.logger.info(f"[engine] Using TXParts scraper for: {u}")
-                engine_used[u] = 'txparts_scraper_engine'
-                txparts_session, _ = txparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
-                items.extend(txparts_scraper_engine.scrape_url(
-                    txparts_session, u, rules, crawl_pagination, max_pages, delay_ms, app.logger
-                ))
-            elif engine_type == 'parts4cells':
-                # Use Parts4Cells (Magento 2) scraper
-                app.logger.info(f"[engine] Using Parts4Cells scraper for: {u}")
-                engine_used[u] = 'parts4cells_scraper_engine'
-                p4c_session, _ = parts4cells_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
-                items.extend(parts4cells_scraper_engine.scrape_url(
-                    p4c_session, u, rules, crawl_pagination, max_pages, delay_ms, app.logger
-                ))
-            else:
-                # Use standard scraper
-                app.logger.info(f"[engine] Using standard scraper for: {u}")
-                engine_used[u] = 'scraper_engine'
-                sess, using_curl = build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
-                items.extend(scrape_url(sess, u, rules, crawl_pagination, max_pages, delay_ms, app.logger))
-
-    hydrated_from_history = hydrate_items_from_previous_history(items, previous_history)
-    auto_enrich_details = (
-        not enrich_details
-        and len(items) <= AUTO_DETAIL_SCAN_MAX_ITEMS
-        and needs_specific_stock_refresh(items)
+    result = execute_scrape_workflow(
+        urls_raw,
+        crawl_pagination=crawl_pagination,
+        max_pages=max_pages,
+        delay_ms=delay_ms,
+        retries=retries,
+        verify_ssl=verify_ssl,
+        use_curl=use_curl,
+        use_parallel=use_parallel,
+        enrich_details=enrich_details,
+        rules=rules,
+        drop_pct=drop_pct,
     )
-    effective_enrich_details = enrich_details or auto_enrich_details
-    if auto_enrich_details:
-        app.logger.info(f"[detail] Auto-enabling detail scan for {len(items)} item(s) to capture stock detail")
-    items, enriched_count = enrich_scraped_items(
-        items, rules, retries, verify_ssl, use_curl, enrich_details=effective_enrich_details, logger=app.logger
-    )
-
-    previous_prices = {}
-    if previous_history:
-        for previous_item in previous_history.get('items', []):
-            snapshot = normalize_item_snapshot(previous_item)
-            url = snapshot.get('url')
-            price = snapshot.get('effective_price')
-            if not url or price is None:
-                continue
-            previous_prices[url] = {
-                'price': price,
-                'title': snapshot.get('title', ''),
-                'site': snapshot.get('site', ''),
-                'history_id': previous_history.get('id'),
-                'timestamp': previous_history.get('timestamp'),
-            }
-    price_drops = build_price_drop_alerts(items, previous_prices, drop_pct)
-    comparison = build_session_comparison(previous_history, items)
-
-    # Store in database instead of memory
-    history_id = str(int(time.time() * 1000))  # timestamp-based ID
-    history_saved = False
-    try:
-        history_saved = db_manager.save_fetch_history(history_id, urls, items, rules)
-        if not history_saved:
-            app.logger.error("Failed to save fetch history to database")
-    except Exception as e:
-        app.logger.error(f"Database error: {e}")
-
-    return jsonify({
-        "rules": rules,
-        "count": len(items),
-        "drop_pct": drop_pct,
-        "price_drops": price_drops,
-        "comparison": comparison,
-        "using_curl": using_curl if 'using_curl' in locals() else False,
-        "using_parallel": use_parallel and len(urls) > 1,
-        "engines_used": engine_used,  # Show which engine was used for each URL
-        "enrich_details": effective_enrich_details,
-        "enrich_details_requested": enrich_details,
-        "auto_enrich_details": auto_enrich_details,
-        "details_hydrated_from_history": hydrated_from_history,
-        "details_enriched": enriched_count,
-        "items": [asdict(i) for i in items],
-        "history_id": history_id,
-        "history_saved": history_saved
-    })
+    if result.get('error'):
+        return jsonify(result), 400
+    return jsonify(result)
 
 @app.post('/api/export/xlsx')
 def export_xlsx():
@@ -1947,13 +2668,13 @@ def find_free_port(start=5000, end=5050):
     return 0
 
 if __name__ == '__main__':
-    # Get port from environment (for Fly.io) or find free port locally
+    # Use PORT when provided, otherwise pick the first free local port.
     port = int(os.getenv("PORT", "0")) or find_free_port()
     if not port:
         raise SystemExit("No free port in 5000–5050. Set PORT env var to a free port.")
     
-    # Check if running in production (Fly.io sets FLY_APP_NAME)
-    is_production = os.getenv("FLY_APP_NAME") is not None
-    debug_mode = not is_production
+    debug_env = str(os.getenv("FLASK_DEBUG", "0")).strip().lower()
+    debug_mode = debug_env not in {"0", "false", "no", "off"}
+    ensure_automation_scheduler_started()
     
     app.run(host='0.0.0.0', port=port, debug=debug_mode)

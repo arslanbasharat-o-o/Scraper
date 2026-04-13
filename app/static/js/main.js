@@ -34,16 +34,27 @@ const includeChipsCt = $('includeChips');
 const excludeChipsCt = $('excludeChips');
 const sortBy = $('sortBy');
 const hideDupes = $('hideDupes');
+const showInStockOnly = $('showInStockOnly');
+const showOutOfStockOnly = $('showOutOfStockOnly');
 const groupModel = $('groupModel');
 const enrichDetails = $('enrichDetails');
 
 
 
 const alertBox = $('alert');
+const confirmModal = $('confirmModal');
+const confirmModalTitle = $('confirmModalTitle');
+const confirmModalMessage = $('confirmModalMessage');
+const confirmConfirmBtn = $('confirmConfirmBtn');
+const confirmCancelBtn = $('confirmCancelBtn');
 const comparisonPanel = $('comparisonPanel');
 const comparisonContent = $('comparisonContent');
 const exportActions = $('exportActions');
 const watchlistBar = $('watchlistBar');
+const uploadZone = $('uploadZone');
+const csvUpload = $('csvUpload');
+const uploadText = $('uploadText');
+const clearFileBtn = $('clearFileBtn');
 
 const countBadge = $('countBadge');
 const searchInput = $('search');
@@ -51,6 +62,7 @@ const csvBtn = $('csvBtn');
 const xlsxBtn = $('xlsxBtn');
 const copyBtn = $('copyBtn');
 const exportWatchlistBtn = $('exportWatchlistBtn');
+const viewWatchlistBtn = $('viewWatchlistBtn');
 const clearResultsBtn = $('clearResultsBtn');
 
 const showWatchlistOnly = $('showWatchlistOnly');
@@ -88,8 +100,14 @@ let latestComparisonExportRows = [];
 let currentPage = 1;
 let pageSize = 25;
 let currentModels = [];
-let watch = loadWatch();
+let watch = new Set();
+let watchlistItems = [];
+let watchPendingUrls = new Set();
+let watchlistLoaded = false;
+let viewingWatchlist = false;
+let compareMap = new Map();
 let activePreviewSrc = '';
+let confirmResolver = null;
 // keyword chip state
 let incKeywords = [];
 let excKeywords = [];
@@ -98,7 +116,6 @@ let excKeywords = [];
 const STORAGE_RESULTS = 'msx_results_v2';
 const STORAGE_PAGESIZE = 'msx_page_size_v1';
 const STORAGE_MODELS = 'msx_last_models_v1';
-const STORAGE_WATCH = 'ms_watchlist_v8';
 
 const MODEL_SKIP = new Set([
   'replacement-parts', 'parts', 'apple', 'samsung', 'huawei', 'xiaomi', 'oneplus', 'google',
@@ -108,13 +125,13 @@ const MODEL_SKIP = new Set([
 ]);
 
 const LOAD_MSGS = [
-  ['Connecting to store…', 'Establishing secure connection'],
-  ['Analysing page structure…', 'Understanding the website layout'],
-  ['Extracting product data…', 'Finding products and prices'],
-  ['Processing images…', 'Collecting product images'],
-  ['Calculating discounts…', 'Computing price differences'],
-  ['Organising results…', 'Sorting and filtering data'],
-  ['Almost there…', 'Finalising extraction'],
+  ['Connecting to store...', 'Establishing secure connection'],
+  ['Analyzing page structure...', 'Understanding the website layout'],
+  ['Extracting product data...', 'Finding products and prices'],
+  ['Processing images...', 'Collecting product images'],
+  ['Calculating discounts...', 'Computing price differences'],
+  ['Organizing results...', 'Sorting and filtering data'],
+  ['Almost there...', 'Finalizing extraction'],
 ];
 
 // ── Inline notification bar ───────────────────────────────────────────────────
@@ -122,14 +139,14 @@ const _NOTIF_CLS = {
   success: 'alert-success', error: 'alert-danger', danger: 'alert-danger',
   warn: 'alert-warning', warning: 'alert-warning', info: 'alert-info'
 };
-const _NOTIF_ICONS = { success: '✓', error: '✕', danger: '✕', warn: '⚠', warning: '⚠', info: 'ℹ' };
+const _NOTIF_ICONS = { success: 'OK', error: 'ERR', danger: 'ERR', warn: 'WARN', warning: 'WARN', info: 'INFO' };
 
 function showToast(type, msg, duration = 6000) {
   if (!alertBox) return;
   alertBox.className = `alert-banner ${_NOTIF_CLS[type] || 'alert-info'}`;
   alertBox.innerHTML =
     `<span style="font-weight:800;margin-right:.45rem">${_NOTIF_ICONS[type] || 'ℹ'}</span>${escapeHtml(msg)}` +
-    `<button onclick="this.parentElement.classList.add('d-none')" style="margin-left:auto;background:none;border:none;cursor:pointer;color:inherit;font-size:1rem;opacity:.7;padding:0 .2rem" title="Close">×</button>`;
+    `<button onclick="this.parentElement.classList.add('d-none')" style="margin-left:auto;background:none;border:none;cursor:pointer;color:inherit;font-size:1rem;opacity:.7;padding:0 .2rem" title="Close">x</button>`;
   alertBox.style.display = 'flex';
   alertBox.style.alignItems = 'center';
   alertBox.style.gap = '.5rem';
@@ -148,6 +165,85 @@ function hideComparison() {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+function resolveConfirmDialog(result) {
+  if (!confirmModal) return;
+  const resolver = confirmResolver;
+  confirmResolver = null;
+  confirmModal.classList.add('d-none');
+  confirmModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+  if (confirmConfirmBtn) {
+    confirmConfirmBtn.classList.remove('btn-danger');
+    confirmConfirmBtn.classList.add('btn-export');
+    confirmConfirmBtn.disabled = false;
+  }
+  if (confirmCancelBtn) confirmCancelBtn.disabled = false;
+  if (typeof resolver === 'function') resolver(Boolean(result));
+}
+
+function bindConfirmDialog() {
+  if (!confirmModal || confirmModal.dataset.bound === '1') return;
+  confirmModal.dataset.bound = '1';
+
+  confirmModal.addEventListener('click', event => {
+    if (event.target === confirmModal) resolveConfirmDialog(false);
+  });
+
+  if (confirmCancelBtn) {
+    confirmCancelBtn.addEventListener('click', () => resolveConfirmDialog(false));
+  }
+
+  if (confirmConfirmBtn) {
+    confirmConfirmBtn.addEventListener('click', () => resolveConfirmDialog(true));
+  }
+
+  document.addEventListener('keydown', event => {
+    if (!confirmResolver || confirmModal?.classList.contains('d-none')) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      resolveConfirmDialog(false);
+      return;
+    }
+    if (event.key === 'Enter' && event.target !== confirmCancelBtn) {
+      event.preventDefault();
+      resolveConfirmDialog(true);
+    }
+  });
+}
+
+function showConfirmDialog({
+  title = 'Please confirm',
+  message = 'Are you sure you want to continue?',
+  confirmLabel = 'Continue',
+  cancelLabel = 'Cancel',
+  danger = false,
+} = {}) {
+  if (!confirmModal || !confirmModalTitle || !confirmModalMessage || !confirmConfirmBtn || !confirmCancelBtn) {
+    return Promise.resolve(window.confirm(message));
+  }
+
+  bindConfirmDialog();
+
+  if (confirmResolver) resolveConfirmDialog(false);
+
+  confirmModalTitle.textContent = title;
+  confirmModalMessage.textContent = message;
+  confirmConfirmBtn.textContent = confirmLabel;
+  confirmCancelBtn.textContent = cancelLabel;
+  confirmConfirmBtn.classList.toggle('btn-danger', danger);
+  confirmConfirmBtn.classList.toggle('btn-export', !danger);
+  confirmModal.classList.remove('d-none');
+  confirmModal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+
+  return new Promise(resolve => {
+    confirmResolver = resolve;
+    requestAnimationFrame(() => {
+      (danger ? confirmConfirmBtn : confirmCancelBtn).focus();
+    });
+  });
+}
+
 const escapeHtml = str => String(str || '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -224,6 +320,8 @@ function hasActiveNarrowingFilters() {
     parseKeywordTerms(excludeHidden?.value, kwExclude?.value).length ||
     priceMin?.value !== '' ||
     priceMax?.value !== '' ||
+    showInStockOnly?.checked ||
+    showOutOfStockOnly?.checked ||
     hideDupes?.checked ||
     showWatchlistOnly?.checked
   );
@@ -241,12 +339,52 @@ function parseMoney(v) {
   return m ? parseFloat(m[1].replace(/,/g, '')) : null;
 }
 
+function roundMoney(value) {
+  if (!Number.isFinite(value)) return null;
+  return Math.round((value + 1e-9) * 100) / 100;
+}
+
+function getRealtimePricingRules() {
+  return {
+    percentOff: Math.max(0, parseFloat(percentInput?.value || '0') || 0),
+    absoluteOff: Math.max(0, parseFloat(absOffInput?.value || '0') || 0),
+    addPercent: Math.max(0, parseFloat(addPercentInput?.value || '0') || 0),
+  };
+}
+
+function applyRealtimePricing(basePrice, rules = getRealtimePricingRules()) {
+  if (!Number.isFinite(basePrice)) return null;
+  let price = Number(basePrice);
+  if (rules.addPercent > 0) price *= (1 + rules.addPercent / 100);
+  if (rules.percentOff > 0) price *= (1 - rules.percentOff / 100);
+  if (rules.absoluteOff > 0) price -= rules.absoluteOff;
+  return roundMoney(price);
+}
+
+function formatMoneyValue(value, currencySymbol = '$') {
+  if (!Number.isFinite(value)) return '';
+  return `${currencySymbol}${Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 function formatSource(site) {
   if (!site) return { label: '', title: '' };
   let label = String(site).trim();
   try { label = new URL(/^https?:\/\//.test(label) ? label : 'https://' + label).hostname; } catch (_) { }
   label = label.replace(/^www\./i, '').split('/')[0].trim();
   return { label: label || site, title: site };
+}
+
+function getStockTone(stockText) {
+  const text = String(stockText || '').trim().toLowerCase();
+  if (!text) return '';
+  if (text.includes('out of stock') || text.includes('out-of-stock') || text.includes('outofstock')) return 'out';
+  if (text.includes('in stock') || /\b\d+\s+in stock\b/.test(text)) return 'in';
+  if (text.includes('backorder') || text.includes('back order')) return 'backorder';
+  if (text.includes('preorder') || text.includes('pre-order')) return 'preorder';
+  return 'neutral';
 }
 
 function normaliseModelWord(w) {
@@ -275,7 +413,15 @@ function deriveModelName(url) {
 }
 
 function hostToSource(url) {
-  try { return /\.ca$/i.test(new URL(url).hostname) ? 'MS-CA' : 'MS-US'; } catch { return 'MS'; }
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    if (host === 'mobilesentrix.ca' || host.endsWith('.mobilesentrix.ca')) return 'MS-CA';
+    if (host === 'mobilesentrix.com' || host.endsWith('.mobilesentrix.com')) return 'MS-US';
+    if (host === 'xcellparts.com' || host.endsWith('.xcellparts.com')) return 'XCellParts';
+    if (host === 'txparts.com' || host.endsWith('.txparts.com')) return 'TXParts';
+    if (host === 'parts4cells.com' || host.endsWith('.parts4cells.com')) return 'Parts4Cells';
+  } catch { }
+  return 'Store';
 }
 
 function deriveModelNames(urlList) {
@@ -293,8 +439,208 @@ function deriveModelNames(urlList) {
 }
 
 // ── Watchlist / Price memory ──────────────────────────────────────────────────
-function loadWatch() { try { return new Set(JSON.parse(localStorage.getItem(STORAGE_WATCH) || '[]')); } catch { return new Set(); } }
-function saveWatch(s) { localStorage.setItem(STORAGE_WATCH, JSON.stringify([...s])); }
+async function fetchJson(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const res = await fetch(url, { ...options, headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Server ${res.status}`);
+  return data;
+}
+
+function ensureItemShape(item) {
+  const safe = (item && typeof item === 'object') ? { ...item } : {};
+  safe.url = String(safe.url || '').trim();
+  safe.site = String(safe.site || '').trim();
+  safe.title = String(safe.title || '').trim();
+  safe.price_text = String(safe.price_text || '').trim();
+  safe.original_formatted = String(safe.original_formatted || '').trim();
+  safe.discounted_formatted = String(safe.discounted_formatted || '').trim();
+  safe.stock_status = String(safe.stock_status || '').trim();
+  safe.description = String(safe.description || '').trim();
+  safe.sku = String(safe.sku || '').trim();
+  safe.source = String(safe.source || '').trim();
+  safe.image_url = String(safe.image_url || '').trim();
+  safe.extra = (safe.extra && typeof safe.extra === 'object' && !Array.isArray(safe.extra)) ? safe.extra : {};
+  return safe;
+}
+
+function watchlistTimestampValue(item) {
+  const raw = String(item?.updated_at || item?.created_at || '').trim();
+  if (!raw) return 0;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function sortWatchlistCache() {
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  watchlistItems.sort((a, b) => {
+    const tsDelta = watchlistTimestampValue(b) - watchlistTimestampValue(a);
+    if (tsDelta !== 0) return tsDelta;
+    return collator.compare(a.title || a.url || '', b.title || b.url || '');
+  });
+}
+
+function setWatchlistCache(items) {
+  watchlistItems = Array.isArray(items) ? items.map(ensureItemShape) : [];
+  sortWatchlistCache();
+  watch = new Set(
+    watchlistItems
+      .map(item => String(item.url || '').trim())
+      .filter(Boolean)
+  );
+  watchlistLoaded = true;
+  updateWatchUI();
+}
+
+function upsertWatchlistCacheItem(item) {
+  const safe = ensureItemShape(item);
+  if (!safe.url) return;
+  const index = watchlistItems.findIndex(entry => entry.url === safe.url);
+  if (index >= 0) watchlistItems.splice(index, 1, { ...watchlistItems[index], ...safe });
+  else watchlistItems.unshift(safe);
+  sortWatchlistCache();
+  watch.add(safe.url);
+  watchlistLoaded = true;
+  updateWatchUI();
+}
+
+function removeWatchlistCacheItem(url) {
+  const normalized = String(url || '').trim();
+  if (!normalized) return;
+  watchlistItems = watchlistItems.filter(item => item.url !== normalized);
+  watch.delete(normalized);
+  updateWatchUI();
+}
+
+function buildWatchlistPayload(item) {
+  const safe = ensureItemShape(item);
+  return {
+    url: safe.url,
+    site: safe.site,
+    title: safe.title,
+    price_value: safe.price_value,
+    price_currency: safe.price_currency,
+    price_text: safe.price_text,
+    discounted_value: safe.discounted_value,
+    discounted_formatted: safe.discounted_formatted,
+    original_formatted: safe.original_formatted,
+    sku: safe.sku,
+    stock_status: safe.stock_status || safe.extra?.stock_status || '',
+    description: safe.description || safe.extra?.description || '',
+    extra: safe.extra || {},
+    source: safe.source,
+    image_url: safe.image_url,
+  };
+}
+
+function formatSavedAt(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) return raw;
+  return new Date(parsed).toLocaleString();
+}
+
+async function loadWatchlistFromServer({ silent = false, rerender = true } = {}) {
+  try {
+    const data = await fetchJson('/api/watchlist');
+    setWatchlistCache(data.items || []);
+    if (rerender) render();
+    return watchlistItems;
+  } catch (err) {
+    watchlistLoaded = true;
+    updateWatchUI();
+    if (rerender) render();
+    if (!silent) showToast('error', `Could not load watchlist: ${err.message}`);
+    return [];
+  }
+}
+
+function setDisplayedResults(items, { models = null, persist = false, viewing = false } = {}) {
+  rawItems = Array.isArray(items) ? items.map(ensureItemShape) : [];
+  rows = [];
+  currentPage = 1;
+  viewingWatchlist = viewing;
+  currentModels = Array.isArray(models)
+    ? models
+    : deriveModelNames(rawItems.map(item => item.url).filter(Boolean));
+  renderModelChips(currentModels);
+  if (persist) saveResults(rawItems, currentModels);
+}
+
+async function toggleWatchlistForRow(row) {
+  const url = String(row?.url || '').trim();
+  if (!url || watchPendingUrls.has(url)) return;
+
+  watchPendingUrls.add(url);
+  render();
+  try {
+    if (watch.has(url)) {
+      await fetchJson(`/api/watchlist?url=${encodeURIComponent(url)}`, { method: 'DELETE' });
+      removeWatchlistCacheItem(url);
+      showToast('info', 'Removed from watchlist.');
+    } else {
+      const payload = buildWatchlistPayload(row.raw_item || row);
+      const data = await fetchJson('/api/watchlist', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      upsertWatchlistCacheItem(data.item || payload);
+      showToast('success', 'Saved to watchlist.');
+    }
+  } catch (err) {
+    showToast('error', `Watchlist update failed: ${err.message}`);
+  } finally {
+    watchPendingUrls.delete(url);
+    render();
+  }
+}
+
+async function clearWatchlistFromServer() {
+  if (!watch.size) return;
+  const confirmed = await showConfirmDialog({
+    title: 'Clear Watchlist?',
+    message: 'This will remove every saved watchlist item from the shared database. You can save them again later, but this action cannot be undone.',
+    confirmLabel: 'Clear Watchlist',
+    cancelLabel: 'Keep Saved Items',
+    danger: true,
+  });
+  if (!confirmed) return;
+  try {
+    await fetchJson('/api/watchlist/clear', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    setWatchlistCache([]);
+    if (showWatchlistOnly) showWatchlistOnly.checked = false;
+    updateFilterBadge();
+    if (viewingWatchlist) {
+      setDisplayedResults([], { models: [], viewing: false });
+      hideComparison();
+      clearAlert();
+    }
+    render();
+    showToast('info', 'Watchlist cleared.');
+  } catch (err) {
+    showToast('error', `Could not clear watchlist: ${err.message}`);
+  }
+}
+
+async function viewWatchlistResults() {
+  if (!watchlistLoaded) await loadWatchlistFromServer({ silent: false, rerender: false });
+  if (!watchlistItems.length) {
+    render();
+    showToast('info', 'Watchlist is empty.');
+    return;
+  }
+
+  hideComparison();
+  clearAlert();
+  setDisplayedResults(watchlistItems, { viewing: true });
+  render();
+  showToast('info', `Loaded ${watchlistItems.length} saved item${watchlistItems.length === 1 ? '' : 's'}.`);
+}
 
 // ── Results persistence ───────────────────────────────────────────────────────
 function saveResults(items, models = []) {
@@ -361,7 +707,7 @@ function setLoading(on, urls = '') {
 
     // Update status
     if (statusDot) statusDot.className = 'status-dot active';
-    if (statusText) statusText.textContent = 'Fetching…';
+    if (statusText) statusText.textContent = 'Fetching...';
 
     _loadInterval = setInterval(() => {
       const elapsed = ((Date.now() - _loadStart) / 1000).toFixed(1);
@@ -414,7 +760,7 @@ function toggleFilters() {
   filtersOpen = !filtersOpen;
   if (advancedControls) advancedControls.style.display = filtersOpen ? 'block' : 'none';
   if (advancedToggle) advancedToggle.classList.toggle('open', filtersOpen);
-  if (filterArrow) filterArrow.textContent = filtersOpen ? '⌄' : '›';
+  if (filterArrow) filterArrow.textContent = '>';
 }
 
 function updateFilterBadge() {
@@ -428,6 +774,8 @@ function updateFilterBadge() {
   if (parseKeywordTerms(includeHidden?.value, kwInclude?.value).length) n++;
   if (parseKeywordTerms(excludeHidden?.value, kwExclude?.value).length) n++;
   if (sortBy?.value && sortBy.value !== 'none') n++;
+  if (showInStockOnly?.checked) n++;
+  if (showOutOfStockOnly?.checked) n++;
   if (hideDupes?.checked) n++;
   if (groupModel?.checked) n++;
   if (showWatchlistOnly?.checked) n++;
@@ -439,7 +787,7 @@ function updateFilterBadge() {
 function makeChip(text, arr, container, hidden) {
   const chip = document.createElement('span');
   chip.className = 'kw-chip';
-  chip.innerHTML = `${escapeHtml(text)} <span style="cursor:pointer;margin-left:.2rem;">×</span>`;
+  chip.innerHTML = `${escapeHtml(text)} <span style="cursor:pointer;margin-left:.2rem;">x</span>`;
   chip.querySelector('span').addEventListener('click', () => {
     const i = arr.indexOf(text);
     if (i > -1) arr.splice(i, 1);
@@ -475,6 +823,8 @@ function resetFilters() {
   if (dropPct) dropPct.value = '10';
   if (sortBy) sortBy.value = 'none';
   if (hideDupes) hideDupes.checked = false;
+  if (showInStockOnly) showInStockOnly.checked = false;
+  if (showOutOfStockOnly) showOutOfStockOnly.checked = false;
   if (groupModel) groupModel.checked = false;
   if (enrichDetails) enrichDetails.checked = false;
   if (showWatchlistOnly) showWatchlistOnly.checked = false;
@@ -512,19 +862,85 @@ function renderModelChips(models) {
 }
 
 // ── Render (filter + sort + paginate + display) ───────────────────────────────
+function buildDisplayRow(item, pricingRules = getRealtimePricingRules()) {
+  const safeItem = ensureItemShape(item);
+  const origStr = safeItem.original_formatted || safeItem.price_text || '';
+  const fallbackFinalStr = safeItem.discounted_formatted || origStr;
+  const origNum = parseMoney(safeItem.price_value ?? safeItem.original ?? origStr);
+  const fallbackFinalNum = parseMoney(safeItem.discounted_value ?? safeItem.discounted ?? fallbackFinalStr);
+  const currencySymbol = detectCurrencySymbol(origStr, fallbackFinalStr);
+  const liveFinalNum = applyRealtimePricing(origNum, pricingRules);
+  const finNum = liveFinalNum ?? fallbackFinalNum;
+  const finalStr = finNum != null ? formatMoneyValue(finNum, currencySymbol) : fallbackFinalStr;
+  const pctDelta = (origNum > 0 && finNum != null) ? +((finNum - origNum) / origNum * 100).toFixed(2) : null;
+  const amountDelta = (origNum != null && finNum != null) ? +(finNum - origNum).toFixed(2) : null;
+  const watchKey = safeItem.url || '';
+
+  return {
+    raw_item: safeItem,
+    url: safeItem.url,
+    site: safeItem.site,
+    image_url: safeItem.image_url,
+    title: safeItem.title,
+    model: modelKey(safeItem.title || ''),
+    stock_status: safeItem.stock_status || safeItem.extra?.stock_status || '',
+    stock_tone: getStockTone(safeItem.stock_status || safeItem.extra?.stock_status || ''),
+    original: origStr,
+    final: finalStr,
+    original_num: origNum,
+    final_num: finNum,
+    percent_delta: pctDelta,
+    amount_delta: amountDelta,
+    currency_symbol: currencySymbol,
+    watchlisted: watch.has(watchKey),
+    watchPending: watchPendingUrls.has(watchKey),
+  };
+}
+
+function buildResultExportRows(displayRows) {
+  const hasAdjustedPrice = displayRows.some(r => {
+    if (r.original_num != null && r.final_num != null) return Math.abs(r.final_num - r.original_num) > 0.0001;
+    return String(r.original || '') !== String(r.final || '');
+  });
+
+  const exportRows = displayRows.map(r => {
+    const row = { title: r.title, price: r.original, url: r.url };
+    if (hasAdjustedPrice) row.adjusted_price = r.final;
+    return row;
+  });
+  exportRows._hasAdjustedPrice = hasAdjustedPrice;
+  return exportRows;
+}
+
+function buildWatchlistExportRows() {
+  const displayRows = watchlistItems.map(item => buildDisplayRow(item, getRealtimePricingRules()));
+  const hasAdjustedPrice = displayRows.some(r => {
+    if (r.original_num != null && r.final_num != null) return Math.abs(r.final_num - r.original_num) > 0.0001;
+    return String(r.original || '') !== String(r.final || '');
+  });
+
+  const exportRows = displayRows.map(r => {
+    const row = {
+      title: r.title,
+      price: r.original,
+      stock_status: r.stock_status,
+      site: formatSource(r.site).label,
+      saved_at: formatSavedAt(r.raw_item.updated_at || r.raw_item.created_at),
+      url: r.url,
+    };
+    if (hasAdjustedPrice) row.adjusted_price = r.final;
+    return row;
+  });
+  exportRows._headers = hasAdjustedPrice
+    ? ['title', 'price', 'adjusted_price', 'stock_status', 'site', 'saved_at', 'url']
+    : ['title', 'price', 'stock_status', 'site', 'saved_at', 'url'];
+  exportRows._hasAdjustedPrice = hasAdjustedPrice;
+  return exportRows;
+}
+
 function render() {
   if (!tbody) return;
   tbody.innerHTML = '';
-
-  const getStockTone = stockText => {
-    const text = String(stockText || '').trim().toLowerCase();
-    if (!text) return '';
-    if (text.includes('out of stock') || text.includes('out-of-stock') || text.includes('outofstock')) return 'out';
-    if (text.includes('in stock') || /\b\d+\s+in stock\b/.test(text)) return 'in';
-    if (text.includes('backorder') || text.includes('back order')) return 'backorder';
-    if (text.includes('preorder') || text.includes('pre-order')) return 'preorder';
-    return 'neutral';
-  };
 
   // Build include/exclude from hidden inputs
   const inc = parseKeywordTerms(includeHidden?.value, kwInclude?.value);
@@ -532,27 +948,12 @@ function render() {
   const minP = priceMin?.value !== '' ? parseFloat(priceMin.value) : null;
   const maxP = priceMax?.value !== '' ? parseFloat(priceMax.value) : null;
   const searchQ = norm(searchInput?.value || '');
+  const pricingRules = getRealtimePricingRules();
+  const filterInStock = Boolean(showInStockOnly?.checked);
+  const filterOutOfStock = Boolean(showOutOfStockOnly?.checked);
 
   // Map raw → display
-  rows = rawItems.map(it => {
-    const origStr = it.original_formatted || it.price_text || '';
-    const finalStr = it.discounted_formatted || origStr;
-    const origNum = parseMoney(origStr);
-    const finNum = parseMoney(finalStr);
-    const pctDelta = (origNum > 0 && finNum != null) ? +((finNum - origNum) / origNum * 100).toFixed(2) : null;
-    const amountDelta = (origNum != null && finNum != null) ? +(finNum - origNum).toFixed(2) : null;
-    const wKey = it.url || '';
-    return {
-      url: it.url || '', site: it.site || '', image_url: it.image_url || '',
-      title: it.title || '', model: modelKey(it.title || ''),
-      stock_status: it.stock_status || (it.extra?.stock_status) || '',
-      original: origStr, final: finalStr,
-      original_num: origNum, final_num: finNum,
-      percent_delta: pctDelta, amount_delta: amountDelta,
-      currency_symbol: detectCurrencySymbol(origStr, finalStr),
-      watchlisted: watch.has(wKey),
-    };
-  });
+  rows = rawItems.map(it => buildDisplayRow(it, pricingRules));
 
   // Search
   if (searchQ) {
@@ -576,6 +977,13 @@ function render() {
       if (minP != null && (p == null || p < minP)) return false;
       if (maxP != null && (p == null || p > maxP)) return false;
       return true;
+    });
+  }
+
+  if (filterInStock || filterOutOfStock) {
+    rows = rows.filter(r => {
+      const tone = r.stock_tone || getStockTone(r.stock_status);
+      return (filterInStock && tone === 'in') || (filterOutOfStock && tone === 'out');
     });
   }
 
@@ -641,14 +1049,14 @@ function render() {
     const imageSrc = buildImageProxyUrl(r.image_url);
     const safeImageSrc = escapeHtml(imageSrc);
     const stockText = String(r.stock_status || '').trim();
-    const stockTone = getStockTone(stockText);
+    const stockTone = r.stock_tone || getStockTone(stockText);
     const stockMarkup = stockText
       ? `<div class="stock-meta stock-meta--${stockTone || 'neutral'}"><span class="stock-meta__label">Stock:</span><span class="stock-meta__value">${escapeHtml(stockText)}</span></div>`
       : '';
 
     tr.innerHTML = `
       <td>${start + idx + 1}</td>
-      <td><span class="star" data-url="${safe_url}" title="Toggle watchlist">${r.watchlisted ? '★' : '☆'}</span></td>
+      <td><span class="star" data-url="${safe_url}" title="Toggle watchlist">${r.watchPending ? '...' : (r.watchlisted ? 'Saved' : 'Save')}</span></td>
       <td>${imageSrc ? `<img src="${safeImageSrc}" class="table-img" alt="${safe_title}" data-preview-src="${safeImageSrc}" loading="lazy" onerror="this.style.display='none'">` : ''}</td>
       <td class="col-title">
         <div class="item-title-cell">
@@ -660,18 +1068,19 @@ function render() {
       <td>${pctTxt}</td>
       <td>${absOffTxt}</td>
       <td><strong>${escapeHtml(r.final)}</strong></td>
-      <td><a class="url-link" href="${safe_url}" target="_blank" rel="noopener noreferrer" title="${safe_url}">Open ↗</a></td>
+      <td><a class="url-link" href="${safe_url}" target="_blank" rel="noopener noreferrer" title="${safe_url}">Open</a></td>
       <td>${srcLabel ? `<span class="source-chip" title="${escapeHtml(srcTitle)}">${escapeHtml(srcLabel)}</span>` : ''}</td>
     `;
 
     // Star click
     const star = tr.querySelector('.star');
-    star.addEventListener('click', () => {
-      const key = r.url;
-      if (watch.has(key)) watch.delete(key); else watch.add(key);
-      saveWatch(watch);
-      render();
-    });
+    if (star) {
+      if (r.watchPending) star.setAttribute('aria-disabled', 'true');
+      star.addEventListener('click', () => {
+        if (r.watchPending) return;
+        toggleWatchlistForRow(r);
+      });
+    }
 
     frag.appendChild(tr);
   });
@@ -685,11 +1094,16 @@ function render() {
   const emptyText = resultsEmpty?.querySelector('p');
   if (emptyTitle && emptyText) {
     if (hasLoadedResults && showingWatchlistOnly) {
-      emptyTitle.textContent = 'No watchlisted items';
-      emptyText.textContent = 'Star some items in the current results or turn off the watchlist-only filter.';
+      emptyTitle.textContent = 'No saved items';
+      emptyText.textContent = viewingWatchlist
+        ? 'This watchlist view is empty after the current filters. Adjust filters or clear the watchlist-only toggle.'
+        : 'Save some items in the current results, click View Watchlist, or turn off the watchlist-only filter.';
     } else if (hasLoadedResults) {
       emptyTitle.textContent = 'No matching results';
       emptyText.textContent = 'Try adjusting your filters or search terms.';
+    } else if (watch.size) {
+      emptyTitle.textContent = 'Saved items available';
+      emptyText.innerHTML = 'Click <strong>View Watchlist</strong> to reopen your saved items, or fetch a new category URL.';
     } else {
       emptyTitle.textContent = 'No results yet';
       emptyText.innerHTML = 'Paste a category URL above and click <strong>Fetch Data</strong>';
@@ -701,7 +1115,7 @@ function render() {
   if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
   if (countBadge) countBadge.textContent = `${total.toLocaleString()} item${total === 1 ? '' : 's'}`;
   if (exportActions) exportActions.style.display = has ? 'flex' : 'none';
-  if (watchlistBar) watchlistBar.style.display = hasLoadedResults ? 'flex' : 'none';
+  if (watchlistBar) watchlistBar.style.display = (hasLoadedResults || watch.size > 0) ? 'flex' : 'none';
   if (csvBtn) csvBtn.disabled = !has;
   if (xlsxBtn) xlsxBtn.disabled = !has;
   if (copyBtn) copyBtn.disabled = !has;
@@ -710,17 +1124,7 @@ function render() {
   updateWatchUI();
 
   // Export cache — only Title, Price, (Adjusted Price if any row changed), URL
-  const hasAdjustedPrice = rows.some(r => {
-    if (r.original_num != null && r.final_num != null) return Math.abs(r.final_num - r.original_num) > 0.0001;
-    return String(r.original || '') !== String(r.final || '');
-  });
-  lastExportRows = rows.map(r => {
-    const row = { title: r.title, price: r.original, url: r.url };
-    if (hasAdjustedPrice) row.adjusted_price = r.final;
-    return row;
-  });
-  // store flag so export functions know the schema
-  lastExportRows._hasAdjustedPrice = hasAdjustedPrice;
+  lastExportRows = buildResultExportRows(rows);
 }
 
 function refilter() { currentPage = 1; render(); }
@@ -730,6 +1134,7 @@ function updateWatchUI() {
   const wSz = watch.size;
   if (heroWatchCount) heroWatchCount.textContent = wSz;
   if (exportWatchlistBtn) exportWatchlistBtn.disabled = wSz === 0;
+  if (viewWatchlistBtn) viewWatchlistBtn.disabled = wSz === 0;
   if (clearWatchlistBtn) clearWatchlistBtn.disabled = wSz === 0;
 }
 
@@ -745,7 +1150,8 @@ function formatComparisonTimestamp(timestamp) {
 function compactComparisonText(value, maxLength = 280) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
-  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
 function formatComparisonPrice(snapshot) {
@@ -863,7 +1269,7 @@ async function exportComparisonXlsx() {
   const btn = $('comparisonXlsxBtn');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '…';
+    btn.textContent = '...';
   }
 
   try {
@@ -927,7 +1333,7 @@ function renderComparison(comparison) {
     if (snapshot.sku) parts.push(`SKU: ${escapeHtml(snapshot.sku)}`);
     if (snapshot.stock_status) parts.push(`Stock: ${escapeHtml(snapshot.stock_status)}`);
     if (snapshot.price_formatted) parts.push(`Price: ${escapeHtml(snapshot.price_formatted)}`);
-    return parts.length ? `<div class="comparison-item__meta">${parts.join(' • ')}</div>` : '';
+    return parts.length ? `<div class="comparison-item__meta">${parts.join(' | ')}</div>` : '';
   };
 
   const renderChangeLine = (field, change) => {
@@ -937,7 +1343,7 @@ function renderComparison(comparison) {
       return `<div class="comparison-item__change"><strong>Price</strong>: ${before} -> ${after}</div>`;
     }
     const label = field === 'stock_status' ? 'Stock' : field.charAt(0).toUpperCase() + field.slice(1);
-    return `<div class="comparison-item__change"><strong>${escapeHtml(label)}</strong>: ${escapeHtml(change.before || '—')} -> ${escapeHtml(change.after || '—')}</div>`;
+    return `<div class="comparison-item__change"><strong>${escapeHtml(label)}</strong>: ${escapeHtml(change.before || '--')} -> ${escapeHtml(change.after || '--')}</div>`;
   };
 
   const renderChanged = (comparison.changed || []).map(entry => {
@@ -1013,11 +1419,11 @@ function renderComparison(comparison) {
 
 // ── Export helpers ────────────────────────────────────────────────────────────
 function toCSV(rowsArr) {
-  // Columns: Title, Price, [Adjusted Price if any price rule changed results], URL
-  const hasAdjustedPrice = rowsArr._hasAdjustedPrice;
-  const header = hasAdjustedPrice
+  const customHeaders = Array.isArray(rowsArr?._headers) ? rowsArr._headers : null;
+  const hasAdjustedPrice = rowsArr?._hasAdjustedPrice;
+  const header = customHeaders || (hasAdjustedPrice
     ? ['title', 'price', 'adjusted_price', 'url']
-    : ['title', 'price', 'url'];
+    : ['title', 'price', 'url']);
   const lines = [header.join(',')];
   for (const r of rowsArr) {
     const cells = header.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`);
@@ -1084,6 +1490,22 @@ function handleTableImageHover(event) {
 }
 
 // ── Main fetch ────────────────────────────────────────────────────────────────
+function formatFetchErrorMessage(err) {
+  const rawMessage = String(err?.message || '').trim();
+  const failedToFetch =
+    err instanceof TypeError ||
+    /^failed to fetch$/i.test(rawMessage) ||
+    /networkerror/i.test(rawMessage);
+
+  if (!failedToFetch) return rawMessage || 'Unknown error';
+
+  const sameOriginHint = window.location.href.startsWith('http')
+    ? `Make sure the Flask server is running at ${window.location.origin}.`
+    : 'Open the app from the Flask server URL instead of opening the HTML file directly.';
+
+  return `Cannot reach the scraper API. ${sameOriginHint}`;
+}
+
 async function doFetch() {
   clearAlert();
   const urls = (urlsTA?.value || '').trim();
@@ -1103,9 +1525,9 @@ async function doFetch() {
   };
 
   rawItems = []; rows = [];
+  viewingWatchlist = false;
   if (tbody) tbody.innerHTML = '';
   if (exportActions) exportActions.style.display = 'none';
-  if (watchlistBar) watchlistBar.style.display = 'none';
   hideComparison();
   clearResults();
   setLoading(true, urls);
@@ -1123,14 +1545,13 @@ async function doFetch() {
     }
 
     const data = await res.json();
-    rawItems = data.items || [];
-    currentPage = 1;
-    currentModels = deriveModelNames(urlList);
-    renderModelChips(currentModels);
+    setDisplayedResults(data.items || [], {
+      models: deriveModelNames(urlList),
+      persist: true,
+      viewing: false,
+    });
 
     const drops = Array.isArray(data.price_drops) ? data.price_drops : [];
-
-    saveResults(rawItems, currentModels);
     render();
     renderComparison(data.comparison);
 
@@ -1148,14 +1569,14 @@ async function doFetch() {
     if (!rawItems.length) {
       showToast('warn', 'No products found. Check the URL or try a different page.');
     } else if (drops.length) {
-      showToast('success', `⬇ ${drops.length} price drop${drops.length > 1 ? 's' : ''} detected! ${filteredSummary}${detailSummary}`);
+      showToast('success', `Detected ${drops.length} price drop${drops.length > 1 ? 's' : ''}. ${filteredSummary}${detailSummary}`);
     } else {
       showToast('success', `${filteredSummary}${detailSummary}`);
     }
 
   } catch (err) {
     console.error('[fetch]', err);
-    showToast('error', `Fetch failed: ${err.message || 'Unknown error'}`);
+    showToast('error', `Fetch failed: ${formatFetchErrorMessage(err)}`);
     hideComparison();
     render();
   } finally {
@@ -1164,7 +1585,7 @@ async function doFetch() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
 
   // Restore page size
   const storedPS = parseInt(localStorage.getItem(STORAGE_PAGESIZE) || '25', 10);
@@ -1182,8 +1603,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Restore last results
   const saved = loadResults();
   if (saved?.items?.length) {
-    rawItems = saved.items;
-    if (saved.models?.length) { currentModels = saved.models; renderModelChips(currentModels); }
+    setDisplayedResults(saved.items, {
+      models: saved.models?.length ? saved.models : null,
+      persist: false,
+      viewing: false,
+    });
     render();
   } else {
     hideComparison();
@@ -1193,6 +1617,7 @@ document.addEventListener('DOMContentLoaded', () => {
   startClock();
   updateUrlCounter();
   updateWatchUI();
+  await loadWatchlistFromServer({ silent: true, rerender: true });
 
   // ── Event bindings ──────────────────────────────────────────────────────────
 
@@ -1224,7 +1649,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // All filter inputs → refilter + update badge
-  for (const el of [priceMin, priceMax, addPercentInput, sortBy, hideDupes, groupModel, showWatchlistOnly, searchInput]) {
+  for (const el of [percentInput, absOffInput, addPercentInput, priceMin, priceMax, sortBy, hideDupes, showInStockOnly, showOutOfStockOnly, groupModel, showWatchlistOnly, searchInput]) {
     if (el) {
       el.addEventListener('input', () => { updateFilterBadge(); refilter(); });
       el.addEventListener('change', () => { updateFilterBadge(); refilter(); });
@@ -1265,7 +1690,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (xlsxBtn) xlsxBtn.addEventListener('click', async () => {
     if (!lastExportRows.length) return;
     xlsxBtn.disabled = true;
-    xlsxBtn.textContent = '…';
+    xlsxBtn.textContent = '...';
     try {
       const res = await fetch('/api/export/xlsx', {
         method: 'POST',
@@ -1293,39 +1718,43 @@ document.addEventListener('DOMContentLoaded', () => {
       await navigator.clipboard.writeText(toCSV(lastExportRows));
       showToast('success', 'Copied to clipboard as CSV.');
     } catch {
-      showToast('warn', 'Clipboard access denied — use Download CSV instead.');
+      showToast('warn', 'Clipboard access denied - use Download CSV instead.');
     }
   });
 
   // Export watchlist
-  if (exportWatchlistBtn) exportWatchlistBtn.addEventListener('click', () => {
-    if (!watch.size) return;
-    const csv = 'url\n' + [...watch].map(u => `"${u.replace(/"/g, '""')}"`).join('\n');
-    downloadBlob(new Blob([csv], { type: 'text/csv' }), 'watchlist.csv');
-    showToast('info', `Exported ${watch.size} watchlist URLs.`);
+  if (exportWatchlistBtn) exportWatchlistBtn.addEventListener('click', async () => {
+    if (!watchlistLoaded) await loadWatchlistFromServer({ silent: false, rerender: false });
+    if (!watchlistItems.length) return;
+    const exportRows = buildWatchlistExportRows();
+    downloadBlob(new Blob([toCSV(exportRows)], { type: 'text/csv;charset=utf-8;' }), 'watchlist.csv');
+    showToast('info', `Exported ${watchlistItems.length} saved watchlist item${watchlistItems.length === 1 ? '' : 's'}.`);
+  });
+
+  if (viewWatchlistBtn) viewWatchlistBtn.addEventListener('click', () => {
+    viewWatchlistResults();
   });
 
   // Clear watchlist
   if (clearWatchlistBtn) clearWatchlistBtn.addEventListener('click', () => {
-    if (!watch.size || !confirm('Clear all watchlist items?')) return;
-    watch.clear();
-    saveWatch(watch);
-    if (showWatchlistOnly) showWatchlistOnly.checked = false;
-    updateFilterBadge();
-    render();
-    showToast('info', 'Watchlist cleared.');
+    clearWatchlistFromServer();
   });
 
   // Clear results
-  if (clearResultsBtn) clearResultsBtn.addEventListener('click', () => {
-    if (!confirm('Clear all results? This cannot be undone.')) return;
-    rawItems = []; rows = []; lastExportRows = [];
-    currentModels = []; clearResults();
+  if (clearResultsBtn) clearResultsBtn.addEventListener('click', async () => {
+    const confirmed = await showConfirmDialog({
+      title: 'Clear Results?',
+      message: 'This clears the current on-screen results from this browser tab. Saved watchlist items stay intact.',
+      confirmLabel: 'Clear Results',
+      cancelLabel: 'Keep Results',
+      danger: true,
+    });
+    if (!confirmed) return;
+    setDisplayedResults([], { models: [], viewing: false });
+    lastExportRows = [];
+    clearResults();
     if (tbody) tbody.innerHTML = '';
-    renderModelChips([]);
-    currentPage = 1;
     if (exportActions) exportActions.style.display = 'none';
-    if (watchlistBar) watchlistBar.style.display = 'none';
     hideComparison();
     clearAlert();
     render();
@@ -1384,7 +1813,7 @@ async function processCompareFile(file) {
   if (!['csv', 'txt', 'xlsx', 'xls'].includes(ext)) {
     showToast('warn', 'Unsupported file. Use CSV or XLSX.'); return;
   }
-  if (uploadText) uploadText.textContent = `Uploading ${file.name}…`;
+  if (uploadText) uploadText.textContent = `Uploading ${file.name}...`;
   const fd = new FormData();
   fd.append('file', file);
   try {
@@ -1410,7 +1839,7 @@ async function processCompareFile(file) {
     }
 
     currentPage = 1; render();
-    if (uploadText) uploadText.textContent = `✓ Loaded: ${file.name}`;
+    if (uploadText) uploadText.textContent = `Loaded: ${file.name}`;
     if (clearFileBtn) clearFileBtn.style.display = 'block';
     showToast('success', `Comparison data loaded (${data.rows?.length || 0} rows).`);
   } catch (err) {

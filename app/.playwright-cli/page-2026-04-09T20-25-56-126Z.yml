@@ -1,0 +1,68 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: PE
+      - generic [ref=e6]:
+        - heading "Parts Extractor" [level=1] [ref=e7]
+        - paragraph [ref=e8]: WebP · PNG · JPG · Format Converter
+    - navigation [ref=e9]:
+      - link "Extractor" [ref=e10] [cursor=pointer]:
+        - /url: /
+      - link "History" [ref=e11] [cursor=pointer]:
+        - /url: /history
+      - link "Automation" [ref=e12] [cursor=pointer]:
+        - /url: /automation
+      - link "Images" [ref=e13] [cursor=pointer]:
+        - /url: /image-converter
+    - generic [ref=e15]:
+      - generic [ref=e16]: Light
+      - generic [ref=e17] [cursor=pointer]:
+        - checkbox [checked]
+      - generic [ref=e19]: Dark
+  - generic [ref=e20]:
+    - generic [ref=e21]:
+      - heading "Image Conversion" [level=2] [ref=e22]
+      - paragraph [ref=e23]: Convert images from WebP to JPG/PNG or upload files for conversion
+    - tablist [ref=e24]:
+      - tab "From URL" [selected] [ref=e25] [cursor=pointer]
+      - tab "Upload Files" [ref=e26] [cursor=pointer]
+    - tabpanel "From URL" [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]: Image URLs
+        - paragraph [ref=e31]: Paste image URLs (one per line). Supports WebP, JPG, PNG, and GIF.
+        - textbox "https://example.com/image1.webp https://example.com/image2.png ..." [ref=e32]:
+          - /placeholder: "https://example.com/image1.webp\nhttps://example.com/image2.png\n..."
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - generic [ref=e35]: Output Format
+        - generic [ref=e36]: Target Format
+        - combobox [ref=e37]:
+          - option "JPEG" [selected]
+          - option "PNG"
+          - option "WebP"
+          - option "GIF"
+          - option "BMP"
+          - option "TIFF"
+      - generic [ref=e38]:
+        - generic [ref=e39]: Quality
+        - generic [ref=e40]: Quality (1–100)
+        - slider [ref=e41]: "85"
+        - generic [ref=e42]:
+          - generic [ref=e43]: Low
+          - generic [ref=e44]: "85"
+          - generic [ref=e45]: High
+    - button "Advanced Options" [ref=e47] [cursor=pointer]
+    - generic [ref=e48]:
+      - button "Convert Images" [ref=e49] [cursor=pointer]
+      - button "Preview" [ref=e50] [cursor=pointer]
+      - button "Clear" [ref=e51] [cursor=pointer]
+      - button "Download ZIP" [disabled]
+      - button "Save Preset" [ref=e52] [cursor=pointer]
+  - generic [ref=e53]:
+    - generic [ref=e54]:
+      - heading "Conversion Results" [level=2] [ref=e55]
+      - paragraph [ref=e56]: Download converted images or view conversion details
+    - generic [ref=e58]:
+      - generic [ref=e59]: Img
+      - heading "No conversions yet" [level=3] [ref=e60]
+      - paragraph [ref=e61]: Add image URLs above and click "Convert Images" to get started.

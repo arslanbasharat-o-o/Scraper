@@ -1,5 +1,5 @@
 """
-Database module for MobileSentrix Extractor
+Database module for Parts Extractor
 Handles persistent storage of scraping history and items
 """
 
@@ -12,6 +12,9 @@ from dataclasses import asdict
 import threading
 import pytz
 import os
+import shutil
+
+from scrapers import SCRAPER_CONFIG, detect_scraper_key, get_db_filename, get_db_key, split_urls_by_scraper
 
 # Thread-local storage for database connections
 _local = threading.local()
@@ -46,20 +49,33 @@ class DatabaseManager:
         db_dir = os.path.dirname(self.db_path)
         if db_dir and not os.path.exists(db_dir):
             os.makedirs(db_dir, exist_ok=True)
+
+        self._connection_key = os.path.abspath(self.db_path)
         
         self.init_database()
     
     def get_connection(self):
         """Get thread-local database connection"""
-        if not hasattr(_local, 'connection'):
-            _local.connection = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
-            _local.connection.row_factory = sqlite3.Row  # Enable dict-like access
-            _local.connection.execute('PRAGMA foreign_keys = ON')
-        return _local.connection
+        connections = getattr(_local, 'connections', None)
+        if connections is None:
+            connections = {}
+            _local.connections = connections
+
+        conn = connections.get(self._connection_key)
+        if conn is None:
+            conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
+            conn.row_factory = sqlite3.Row  # Enable dict-like access
+            conn.execute('PRAGMA foreign_keys = ON')
+            connections[self._connection_key] = conn
+        return conn
 
     def close_connection(self):
         """Close the thread-local database connection, if one exists."""
-        conn = getattr(_local, 'connection', None)
+        connections = getattr(_local, 'connections', None)
+        if not connections:
+            return
+
+        conn = connections.get(self._connection_key)
         if conn is None:
             return
 
@@ -72,7 +88,9 @@ class DatabaseManager:
         try:
             conn.close()
         finally:
-            delattr(_local, 'connection')
+            connections.pop(self._connection_key, None)
+            if not connections and hasattr(_local, 'connections'):
+                delattr(_local, 'connections')
     
     def init_database(self):
         """Initialize database tables"""
@@ -114,6 +132,95 @@ class DatabaseManager:
                 image_url TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (history_id) REFERENCES fetch_history (id) ON DELETE CASCADE
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS watchlist_items (
+                url TEXT PRIMARY KEY,
+                site TEXT,
+                title TEXT,
+                price_value REAL,
+                price_currency TEXT,
+                price_text TEXT,
+                discounted_value REAL,
+                discounted_formatted TEXT,
+                original_formatted TEXT,
+                sku TEXT,
+                stock_status TEXT,
+                description TEXT,
+                extra_json TEXT,
+                source TEXT,
+                image_url TEXT,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                scraper_key TEXT NOT NULL,
+                category_query TEXT NOT NULL,
+                root_url TEXT NOT NULL,
+                interval_minutes INTEGER NOT NULL DEFAULT 1440,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                auto_discover INTEGER NOT NULL DEFAULT 1,
+                crawl_pagination INTEGER NOT NULL DEFAULT 1,
+                max_pages INTEGER NOT NULL DEFAULT 10,
+                delay_ms INTEGER NOT NULL DEFAULT 50,
+                retries INTEGER NOT NULL DEFAULT 1,
+                verify_ssl INTEGER NOT NULL DEFAULT 1,
+                use_parallel INTEGER NOT NULL DEFAULT 1,
+                enrich_details INTEGER NOT NULL DEFAULT 0,
+                drop_pct REAL NOT NULL DEFAULT 10,
+                rules_json TEXT NOT NULL DEFAULT '{}',
+                last_discovery_at DATETIME,
+                last_run_at DATETIME,
+                next_run_at DATETIME,
+                last_status TEXT NOT NULL DEFAULT 'idle',
+                last_error TEXT DEFAULT '',
+                last_history_ids TEXT DEFAULT '[]',
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_job_targets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                label TEXT NOT NULL,
+                group_label TEXT,
+                url TEXT NOT NULL,
+                url_key TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                position INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                FOREIGN KEY (job_id) REFERENCES automation_jobs (id) ON DELETE CASCADE,
+                UNIQUE (job_id, url_key)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                run_uuid TEXT NOT NULL UNIQUE,
+                trigger_type TEXT NOT NULL DEFAULT 'manual',
+                status TEXT NOT NULL DEFAULT 'running',
+                started_at DATETIME NOT NULL,
+                completed_at DATETIME,
+                current_history_id TEXT,
+                previous_history_id TEXT,
+                target_urls_json TEXT DEFAULT '[]',
+                items_count INTEGER NOT NULL DEFAULT 0,
+                summary_json TEXT DEFAULT '{}',
+                error_text TEXT DEFAULT '',
+                created_at DATETIME NOT NULL,
+                FOREIGN KEY (job_id) REFERENCES automation_jobs (id) ON DELETE CASCADE
             )
         ''')
         
@@ -224,6 +331,7 @@ class DatabaseManager:
         # Ensure schema migrations on existing databases before creating indexes.
         self._ensure_history_columns()
         self._ensure_item_columns()
+        self._ensure_watchlist_columns()
 
         # Create indexes for better performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_history_timestamp ON fetch_history (timestamp)')
@@ -232,6 +340,13 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_url ON items (url)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_site ON items (site)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_sku ON items (sku)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_watchlist_site ON watchlist_items (site)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_watchlist_updated_at ON watchlist_items (updated_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_jobs_enabled ON automation_jobs (enabled)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_jobs_next_run ON automation_jobs (next_run_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_targets_job ON automation_job_targets (job_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_runs_job ON automation_runs (job_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_runs_started ON automation_runs (started_at)')
 
         # Auto-scraper indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_scraper_runs_status ON scraper_runs (status)')
@@ -266,6 +381,24 @@ class DatabaseManager:
         self._ensure_column('items', 'stock_status', 'TEXT')
         self._ensure_column('items', 'description', 'TEXT')
         self._ensure_column('items', 'extra_json', 'TEXT')
+
+    def _ensure_watchlist_columns(self):
+        self._ensure_column('watchlist_items', 'site', 'TEXT')
+        self._ensure_column('watchlist_items', 'title', 'TEXT')
+        self._ensure_column('watchlist_items', 'price_value', 'REAL')
+        self._ensure_column('watchlist_items', 'price_currency', 'TEXT')
+        self._ensure_column('watchlist_items', 'price_text', 'TEXT')
+        self._ensure_column('watchlist_items', 'discounted_value', 'REAL')
+        self._ensure_column('watchlist_items', 'discounted_formatted', 'TEXT')
+        self._ensure_column('watchlist_items', 'original_formatted', 'TEXT')
+        self._ensure_column('watchlist_items', 'sku', 'TEXT')
+        self._ensure_column('watchlist_items', 'stock_status', 'TEXT')
+        self._ensure_column('watchlist_items', 'description', 'TEXT')
+        self._ensure_column('watchlist_items', 'extra_json', 'TEXT')
+        self._ensure_column('watchlist_items', 'source', 'TEXT')
+        self._ensure_column('watchlist_items', 'image_url', 'TEXT')
+        self._ensure_column('watchlist_items', 'created_at', 'DATETIME')
+        self._ensure_column('watchlist_items', 'updated_at', 'DATETIME')
 
     @staticmethod
     def build_urls_key(urls: List[str]) -> str:
@@ -395,6 +528,148 @@ class DatabaseManager:
             row['original_formatted'],
             row['price_text'],
         )
+
+    def _watchlist_row_to_item(self, row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            'url': row['url'],
+            'site': row['site'] or '',
+            'title': row['title'] or '',
+            'price_value': row['price_value'],
+            'price_currency': row['price_currency'] or '',
+            'price_text': row['price_text'] or '',
+            'discounted_value': row['discounted_value'],
+            'discounted_formatted': row['discounted_formatted'] or '',
+            'original_formatted': row['original_formatted'] or '',
+            'sku': row['sku'] or '',
+            'stock_status': row['stock_status'] or '',
+            'description': row['description'] or '',
+            'extra': json.loads(row['extra_json']) if row['extra_json'] else {},
+            'source': row['source'] or '',
+            'image_url': row['image_url'] or '',
+            'created_at': row['created_at'],
+            'updated_at': row['updated_at'],
+        }
+
+    @staticmethod
+    def _parse_json_text(value, fallback):
+        if value in (None, ''):
+            return fallback
+        try:
+            return json.loads(value)
+        except Exception:
+            return fallback
+
+    @staticmethod
+    def _normalize_automation_url(url: str) -> str:
+        normalized = str(url or '').strip()
+        if not normalized:
+            return ''
+        if normalized.endswith('/') and len(normalized) > len('https://a/'):
+            normalized = normalized.rstrip('/')
+        return normalized
+
+    @staticmethod
+    def _format_interval_minutes(minutes: int) -> str:
+        total = max(1, int(minutes or 0))
+        if total % (60 * 24 * 7) == 0:
+            weeks = total // (60 * 24 * 7)
+            return f"Every {weeks} week{'s' if weeks != 1 else ''}"
+        if total % (60 * 24) == 0:
+            days = total // (60 * 24)
+            return f"Every {days} day{'s' if days != 1 else ''}"
+        if total % 60 == 0:
+            hours = total // 60
+            return f"Every {hours} hour{'s' if hours != 1 else ''}"
+        return f"Every {total} minute{'s' if total != 1 else ''}"
+
+    @staticmethod
+    def _add_minutes_to_iso(timestamp_value, minutes: int) -> str:
+        base = get_pakistan_time()
+        if timestamp_value:
+            try:
+                base = datetime.datetime.fromisoformat(str(timestamp_value).replace('Z', '+00:00'))
+                if base.tzinfo is None:
+                    base = PAKISTAN_TZ.localize(base)
+                else:
+                    base = base.astimezone(PAKISTAN_TZ)
+            except Exception:
+                base = get_pakistan_time()
+        return (base + datetime.timedelta(minutes=max(1, int(minutes or 0)))).isoformat()
+
+    def _row_to_automation_target(self, row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            'id': int(row['id']),
+            'job_id': int(row['job_id']),
+            'label': row['label'] or '',
+            'group_label': row['group_label'] or '',
+            'url': row['url'] or '',
+            'url_key': row['url_key'] or '',
+            'active': bool(row['active']),
+            'position': int(row['position'] or 0),
+            'created_at': row['created_at'],
+            'updated_at': row['updated_at'],
+        }
+
+    def _row_to_automation_job(self, row: sqlite3.Row, *, targets: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        scraper_key = str(row['scraper_key'] or 'standard')
+        interval_minutes = int(row['interval_minutes'] or 1440)
+        target_list = list(targets or [])
+        active_target_count = sum(1 for target in target_list if target.get('active', True))
+        return {
+            'id': int(row['id']),
+            'name': row['name'] or '',
+            'scraper_key': scraper_key,
+            'site_label': (SCRAPER_CONFIG.get(scraper_key) or SCRAPER_CONFIG['standard'])['label'],
+            'category_query': row['category_query'] or '',
+            'root_url': row['root_url'] or '',
+            'interval_minutes': interval_minutes,
+            'interval_label': self._format_interval_minutes(interval_minutes),
+            'enabled': bool(row['enabled']),
+            'auto_discover': bool(row['auto_discover']),
+            'crawl_pagination': bool(row['crawl_pagination']),
+            'max_pages': int(row['max_pages'] or 10),
+            'delay_ms': int(row['delay_ms'] or 0),
+            'retries': int(row['retries'] or 1),
+            'verify_ssl': bool(row['verify_ssl']),
+            'use_parallel': bool(row['use_parallel']),
+            'enrich_details': bool(row['enrich_details']),
+            'drop_pct': float(row['drop_pct'] or 10.0),
+            'rules': self._parse_json_text(row['rules_json'], {}),
+            'last_discovery_at': row['last_discovery_at'],
+            'last_run_at': row['last_run_at'],
+            'next_run_at': row['next_run_at'],
+            'last_status': row['last_status'] or 'idle',
+            'last_error': row['last_error'] or '',
+            'last_history_ids': self._parse_json_text(row['last_history_ids'], []),
+            'targets': target_list,
+            'target_count': len(target_list),
+            'active_target_count': active_target_count,
+            'skipped_target_count': max(0, len(target_list) - active_target_count),
+            'created_at': row['created_at'],
+            'updated_at': row['updated_at'],
+        }
+
+    def _row_to_automation_run(self, row: sqlite3.Row) -> Dict[str, Any]:
+        summary = self._parse_json_text(row['summary_json'], {})
+        return {
+            'id': int(row['id']),
+            'job_id': int(row['job_id']),
+            'job_name': row['job_name'] or '',
+            'scraper_key': row['scraper_key'] or '',
+            'category_query': row['category_query'] or '',
+            'run_uuid': row['run_uuid'] or '',
+            'trigger_type': row['trigger_type'] or 'manual',
+            'status': row['status'] or 'running',
+            'started_at': row['started_at'],
+            'completed_at': row['completed_at'],
+            'current_history_id': row['current_history_id'] or '',
+            'previous_history_id': row['previous_history_id'] or '',
+            'target_urls': self._parse_json_text(row['target_urls_json'], []),
+            'items_count': int(row['items_count'] or 0),
+            'summary': summary,
+            'error_text': row['error_text'] or '',
+            'created_at': row['created_at'],
+        }
     
     def save_fetch_history(self, history_id: str, urls: List[str], items: List[Any], rules: Dict) -> bool:
         """Save fetch history and items to database"""
@@ -458,6 +733,878 @@ class DatabaseManager:
             print(f"Error saving to database: {e}")
             conn.rollback()
             return False
+
+    def save_watchlist_item(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Create or update a saved watchlist item snapshot."""
+        conn = None
+        try:
+            item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
+            url = str(item_dict.get('url') or '').strip()
+            if not url:
+                return None
+
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            price_value, price_currency, price_text, discounted_value, discounted_formatted, original_formatted = self._extract_price_fields(item_dict)
+            sku, stock_status, description, extra_json = self._extract_item_metadata(item_dict)
+            site = str(item_dict.get('site') or '').strip()
+            title = str(item_dict.get('title') or '').strip()
+            source = str(item_dict.get('source') or '').strip()
+            image_url = str(item_dict.get('image_url') or '').strip()
+            now_iso = get_pakistan_time().isoformat()
+
+            cursor.execute('''
+                INSERT INTO watchlist_items (
+                    url, site, title, price_value, price_currency, price_text,
+                    discounted_value, discounted_formatted, original_formatted,
+                    sku, stock_status, description, extra_json, source,
+                    image_url, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(url) DO UPDATE SET
+                    site = excluded.site,
+                    title = excluded.title,
+                    price_value = excluded.price_value,
+                    price_currency = excluded.price_currency,
+                    price_text = excluded.price_text,
+                    discounted_value = excluded.discounted_value,
+                    discounted_formatted = excluded.discounted_formatted,
+                    original_formatted = excluded.original_formatted,
+                    sku = excluded.sku,
+                    stock_status = excluded.stock_status,
+                    description = excluded.description,
+                    extra_json = excluded.extra_json,
+                    source = excluded.source,
+                    image_url = excluded.image_url,
+                    updated_at = excluded.updated_at
+            ''', (
+                url,
+                site,
+                title,
+                price_value,
+                price_currency,
+                price_text,
+                discounted_value,
+                discounted_formatted,
+                original_formatted,
+                sku,
+                stock_status,
+                description,
+                extra_json,
+                source,
+                image_url,
+                now_iso,
+                now_iso,
+            ))
+            conn.commit()
+            return self.get_watchlist_item(url)
+        except Exception as e:
+            print(f"Error saving watchlist item: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
+    def get_watchlist_item(self, url: str) -> Optional[Dict[str, Any]]:
+        normalized_url = str(url or '').strip()
+        if not normalized_url:
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT
+                    url, site, title, price_value, price_currency, price_text,
+                    discounted_value, discounted_formatted, original_formatted,
+                    sku, stock_status, description, extra_json, source,
+                    image_url, created_at, updated_at
+                FROM watchlist_items
+                WHERE url = ?
+                LIMIT 1
+            ''', (normalized_url,))
+            row = cursor.fetchone()
+            return self._watchlist_row_to_item(row) if row else None
+        except Exception as e:
+            print(f"Error getting watchlist item: {e}")
+            return None
+
+    def get_watchlist_items(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            query = '''
+                SELECT
+                    url, site, title, price_value, price_currency, price_text,
+                    discounted_value, discounted_formatted, original_formatted,
+                    sku, stock_status, description, extra_json, source,
+                    image_url, created_at, updated_at
+                FROM watchlist_items
+                ORDER BY updated_at DESC, title COLLATE NOCASE ASC, url ASC
+            '''
+            params: Tuple[Any, ...] = ()
+            if limit is not None:
+                query += ' LIMIT ?'
+                params = (max(1, int(limit)),)
+            cursor.execute(query, params)
+            return [self._watchlist_row_to_item(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"Error getting watchlist items: {e}")
+            return []
+
+    def get_watchlist_urls(self) -> List[str]:
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT url FROM watchlist_items ORDER BY updated_at DESC, url ASC')
+            return [str(row['url']) for row in cursor.fetchall() if row['url']]
+        except Exception as e:
+            print(f"Error getting watchlist urls: {e}")
+            return []
+
+    def remove_watchlist_item(self, url: str) -> bool:
+        conn = None
+        normalized_url = str(url or '').strip()
+        if not normalized_url:
+            return False
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM watchlist_items WHERE url = ?', (normalized_url,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Error removing watchlist item: {e}")
+            if conn:
+                conn.rollback()
+            return False
+
+    def clear_watchlist(self) -> int:
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM watchlist_items')
+            deleted = cursor.rowcount if isinstance(cursor.rowcount, int) and cursor.rowcount > 0 else 0
+            conn.commit()
+            return int(deleted)
+        except Exception as e:
+            print(f"Error clearing watchlist: {e}")
+            if conn:
+                conn.rollback()
+            return 0
+
+    def get_automation_job_targets(self, job_id: int) -> List[Dict[str, Any]]:
+        try:
+            normalized_job_id = int(job_id)
+        except (TypeError, ValueError):
+            return []
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, job_id, label, group_label, url, url_key, active, position, created_at, updated_at
+                FROM automation_job_targets
+                WHERE job_id = ?
+                ORDER BY position ASC, label COLLATE NOCASE ASC, id ASC
+            ''', (normalized_job_id,))
+            return [self._row_to_automation_target(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"Error getting automation job targets: {e}")
+            return []
+
+    def get_automation_job(self, job_id: int, include_targets: bool = True) -> Optional[Dict[str, Any]]:
+        try:
+            normalized_job_id = int(job_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT
+                    id, name, scraper_key, category_query, root_url,
+                    interval_minutes, enabled, auto_discover, crawl_pagination,
+                    max_pages, delay_ms, retries, verify_ssl, use_parallel,
+                    enrich_details, drop_pct, rules_json,
+                    last_discovery_at, last_run_at, next_run_at, last_status,
+                    last_error, last_history_ids, created_at, updated_at
+                FROM automation_jobs
+                WHERE id = ?
+                LIMIT 1
+            ''', (normalized_job_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            targets = self.get_automation_job_targets(normalized_job_id) if include_targets else []
+            return self._row_to_automation_job(row, targets=targets)
+        except Exception as e:
+            print(f"Error getting automation job: {e}")
+            return None
+
+    def list_automation_jobs(self, include_targets: bool = True, limit: int = 100) -> List[Dict[str, Any]]:
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT
+                    id, name, scraper_key, category_query, root_url,
+                    interval_minutes, enabled, auto_discover, crawl_pagination,
+                    max_pages, delay_ms, retries, verify_ssl, use_parallel,
+                    enrich_details, drop_pct, rules_json,
+                    last_discovery_at, last_run_at, next_run_at, last_status,
+                    last_error, last_history_ids, created_at, updated_at
+                FROM automation_jobs
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+            ''', (max(1, int(limit)),))
+            rows = cursor.fetchall()
+            targets_by_job: Dict[int, List[Dict[str, Any]]] = {}
+            if include_targets and rows:
+                job_ids = [int(row['id']) for row in rows]
+                placeholders = ','.join(['?' for _ in job_ids])
+                cursor.execute(f'''
+                    SELECT id, job_id, label, group_label, url, url_key, active, position, created_at, updated_at
+                    FROM automation_job_targets
+                    WHERE job_id IN ({placeholders})
+                    ORDER BY job_id ASC, position ASC, label COLLATE NOCASE ASC, id ASC
+                ''', job_ids)
+                for target_row in cursor.fetchall():
+                    target = self._row_to_automation_target(target_row)
+                    targets_by_job.setdefault(target['job_id'], []).append(target)
+
+            return [
+                self._row_to_automation_job(row, targets=targets_by_job.get(int(row['id']), []))
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"Error listing automation jobs: {e}")
+            return []
+
+    def replace_automation_job_targets(self, job_id: int, targets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        try:
+            normalized_job_id = int(job_id)
+        except (TypeError, ValueError):
+            return []
+
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            now_iso = get_pakistan_time().isoformat()
+            cursor.execute('SELECT url_key, active FROM automation_job_targets WHERE job_id = ?', (normalized_job_id,))
+            existing_active_by_url = {
+                str(row['url_key'] or '').strip().lower(): bool(row['active'])
+                for row in cursor.fetchall()
+            }
+            normalized_targets = []
+            seen = set()
+            for position, target in enumerate(targets or []):
+                target_data = target if isinstance(target, dict) else {}
+                url = self._normalize_automation_url(target_data.get('url'))
+                if not url:
+                    continue
+                url_key = url.lower()
+                if url_key in seen:
+                    continue
+                seen.add(url_key)
+                raw_active = target_data['active'] if 'active' in target_data else existing_active_by_url.get(url_key, True)
+                active = 0 if str(raw_active).strip().lower() in {'0', 'false', 'no', 'off'} else 1
+                normalized_targets.append({
+                    'label': str(target_data.get('label') or '').strip() or url,
+                    'group_label': str(target_data.get('group_label') or '').strip(),
+                    'url': url,
+                    'url_key': url_key,
+                    'active': active,
+                    'position': position,
+                })
+
+            cursor.execute('DELETE FROM automation_job_targets WHERE job_id = ?', (normalized_job_id,))
+            for target in normalized_targets:
+                cursor.execute('''
+                    INSERT INTO automation_job_targets (
+                        job_id, label, group_label, url, url_key, active, position, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    normalized_job_id,
+                    target['label'],
+                    target['group_label'],
+                    target['url'],
+                    target['url_key'],
+                    target['active'],
+                    target['position'],
+                    now_iso,
+                    now_iso,
+                ))
+
+            cursor.execute('''
+                UPDATE automation_jobs
+                SET last_discovery_at = ?, updated_at = ?
+                WHERE id = ?
+            ''', (now_iso, now_iso, normalized_job_id))
+            conn.commit()
+            return self.get_automation_job_targets(normalized_job_id)
+        except Exception as e:
+            print(f"Error replacing automation targets: {e}")
+            if conn:
+                conn.rollback()
+            return []
+
+    def save_automation_job(self, job_data: Dict[str, Any], targets: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+        conn = None
+        try:
+            payload = dict(job_data or {})
+            raw_job_id = payload.get('id')
+            job_id = int(raw_job_id) if raw_job_id not in (None, '') else None
+            raw_scraper_value = payload.get('scraper_key') or payload.get('site') or payload.get('site_key') or ''
+            scraper_key = str(raw_scraper_value or '').strip().lower()
+            if scraper_key not in SCRAPER_CONFIG:
+                scraper_key = detect_scraper_key(str(raw_scraper_value or payload.get('root_url') or '').strip())
+            if scraper_key not in SCRAPER_CONFIG:
+                scraper_key = 'standard'
+
+            category_query = str(payload.get('category_query') or '').strip()
+            if not category_query:
+                return None
+
+            site_label = (SCRAPER_CONFIG.get(scraper_key) or SCRAPER_CONFIG['standard'])['label']
+            name = str(payload.get('name') or '').strip() or f"{site_label} - {category_query}"
+            root_url = self._normalize_automation_url(payload.get('root_url'))
+            if not root_url:
+                default_domain = (SCRAPER_CONFIG.get(scraper_key) or SCRAPER_CONFIG['standard'])['domains'][0]
+                root_url = f"https://{default_domain}"
+
+            interval_minutes = max(5, min(60 * 24 * 30, int(payload.get('interval_minutes') or 1440)))
+            enabled = 1 if bool(payload.get('enabled', True)) else 0
+            auto_discover = 1 if bool(payload.get('auto_discover', True)) else 0
+            crawl_pagination = 1 if bool(payload.get('crawl_pagination', True)) else 0
+            max_pages = max(1, min(20, int(payload.get('max_pages') or 10)))
+            delay_ms = max(0, min(5000, int(payload.get('delay_ms') or 50)))
+            retries = max(1, min(5, int(payload.get('retries') or 1)))
+            verify_ssl = 1 if bool(payload.get('verify_ssl', True)) else 0
+            use_parallel = 1 if bool(payload.get('use_parallel', True)) else 0
+            enrich_details = 1 if bool(payload.get('enrich_details', False)) else 0
+            drop_pct = max(1.0, min(90.0, float(payload.get('drop_pct') or 10.0)))
+            rules = payload.get('rules') if isinstance(payload.get('rules'), dict) else {}
+            rules_json = json.dumps(rules, ensure_ascii=True, separators=(',', ':'))
+            now_iso = get_pakistan_time().isoformat()
+
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            scope_changed = False
+            if job_id:
+                cursor.execute('''
+                    SELECT
+                        scraper_key, category_query, root_url,
+                        interval_minutes, enabled, next_run_at,
+                        last_run_at, last_discovery_at, last_status, last_error, last_history_ids
+                    FROM automation_jobs
+                    WHERE id = ?
+                ''', (job_id,))
+                existing = cursor.fetchone()
+                if not existing:
+                    return None
+                previous_scraper_key = str(existing['scraper_key'] or '').strip().lower()
+                previous_category_query = str(existing['category_query'] or '').strip()
+                previous_root_url = self._normalize_automation_url(existing['root_url'])
+                previous_interval_minutes = int(existing['interval_minutes'] or 1440)
+                previous_enabled = 1 if bool(existing['enabled']) else 0
+                scope_changed = (
+                    previous_scraper_key != scraper_key
+                    or previous_category_query != category_query
+                    or previous_root_url != root_url
+                )
+                schedule_changed = (
+                    previous_interval_minutes != interval_minutes
+                    or previous_enabled != enabled
+                )
+
+                next_run_at = None
+                if enabled:
+                    if schedule_changed:
+                        # Restart the countdown when schedule settings change on an existing job.
+                        next_run_at = self._add_minutes_to_iso(now_iso, interval_minutes)
+                    else:
+                        next_run_at = existing['next_run_at'] or self._add_minutes_to_iso(now_iso, interval_minutes)
+                cursor.execute('''
+                    UPDATE automation_jobs
+                    SET
+                        name = ?, scraper_key = ?, category_query = ?, root_url = ?,
+                        interval_minutes = ?, enabled = ?, auto_discover = ?, crawl_pagination = ?,
+                        max_pages = ?, delay_ms = ?, retries = ?, verify_ssl = ?,
+                        use_parallel = ?, enrich_details = ?, drop_pct = ?, rules_json = ?,
+                        next_run_at = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (
+                    name,
+                    scraper_key,
+                    category_query,
+                    root_url,
+                    interval_minutes,
+                    enabled,
+                    auto_discover,
+                    crawl_pagination,
+                    max_pages,
+                    delay_ms,
+                    retries,
+                    verify_ssl,
+                    use_parallel,
+                    enrich_details,
+                    drop_pct,
+                    rules_json,
+                    next_run_at,
+                    now_iso,
+                    job_id,
+                ))
+                if scope_changed and targets is None:
+                    cursor.execute('DELETE FROM automation_job_targets WHERE job_id = ?', (job_id,))
+                    cursor.execute('''
+                        UPDATE automation_jobs
+                        SET last_discovery_at = NULL, updated_at = ?
+                        WHERE id = ?
+                    ''', (now_iso, job_id))
+            else:
+                next_run_at = self._add_minutes_to_iso(now_iso, interval_minutes) if enabled else None
+                cursor.execute('''
+                    INSERT INTO automation_jobs (
+                        name, scraper_key, category_query, root_url,
+                        interval_minutes, enabled, auto_discover, crawl_pagination,
+                        max_pages, delay_ms, retries, verify_ssl, use_parallel,
+                        enrich_details, drop_pct, rules_json, next_run_at,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    name,
+                    scraper_key,
+                    category_query,
+                    root_url,
+                    interval_minutes,
+                    enabled,
+                    auto_discover,
+                    crawl_pagination,
+                    max_pages,
+                    delay_ms,
+                    retries,
+                    verify_ssl,
+                    use_parallel,
+                    enrich_details,
+                    drop_pct,
+                    rules_json,
+                    next_run_at,
+                    now_iso,
+                    now_iso,
+                ))
+                job_id = int(cursor.lastrowid)
+
+            conn.commit()
+            if targets is not None:
+                self.replace_automation_job_targets(job_id, targets)
+            return self.get_automation_job(job_id, include_targets=True)
+        except Exception as e:
+            print(f"Error saving automation job: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
+    def delete_automation_job(self, job_id: int) -> bool:
+        conn = None
+        try:
+            normalized_job_id = int(job_id)
+        except (TypeError, ValueError):
+            return False
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM automation_jobs WHERE id = ?', (normalized_job_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Error deleting automation job: {e}")
+            if conn:
+                conn.rollback()
+            return False
+
+    def set_automation_job_enabled(self, job_id: int, enabled: bool) -> Optional[Dict[str, Any]]:
+        conn = None
+        try:
+            normalized_job_id = int(job_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT interval_minutes FROM automation_jobs WHERE id = ?', (normalized_job_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            now_iso = get_pakistan_time().isoformat()
+            next_run_at = self._add_minutes_to_iso(now_iso, row['interval_minutes']) if enabled else None
+            cursor.execute('''
+                UPDATE automation_jobs
+                SET enabled = ?, next_run_at = ?, updated_at = ?
+                WHERE id = ?
+            ''', (1 if enabled else 0, next_run_at, now_iso, normalized_job_id))
+            conn.commit()
+            return self.get_automation_job(normalized_job_id, include_targets=True)
+        except Exception as e:
+            print(f"Error toggling automation job: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
+    def get_due_automation_jobs(self, limit: int = 10) -> List[Dict[str, Any]]:
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            now_iso = get_pakistan_time().isoformat()
+            cursor.execute('''
+                SELECT
+                    id, name, scraper_key, category_query, root_url,
+                    interval_minutes, enabled, auto_discover, crawl_pagination,
+                    max_pages, delay_ms, retries, verify_ssl, use_parallel,
+                    enrich_details, drop_pct, rules_json,
+                    last_discovery_at, last_run_at, next_run_at, last_status,
+                    last_error, last_history_ids, created_at, updated_at
+                FROM automation_jobs
+                WHERE enabled = 1
+                  AND next_run_at IS NOT NULL
+                  AND next_run_at <= ?
+                  AND (last_status IS NULL OR last_status != 'running')
+                ORDER BY next_run_at ASC, id ASC
+                LIMIT ?
+            ''', (now_iso, max(1, int(limit))))
+            rows = cursor.fetchall()
+            return [self._row_to_automation_job(row, targets=self.get_automation_job_targets(int(row['id']))) for row in rows]
+        except Exception as e:
+            print(f"Error getting due automation jobs: {e}")
+            return []
+
+    def create_automation_run(self, job_id: int, trigger_type: str = 'manual', target_urls: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+        conn = None
+        try:
+            normalized_job_id = int(job_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT id FROM automation_jobs WHERE id = ?', (normalized_job_id,))
+            if not cursor.fetchone():
+                return None
+
+            now_iso = get_pakistan_time().isoformat()
+            run_uuid = f"automation-{normalized_job_id}-{int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)}"
+            cursor.execute('''
+                INSERT INTO automation_runs (
+                    job_id, run_uuid, trigger_type, status, started_at, target_urls_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                normalized_job_id,
+                run_uuid,
+                str(trigger_type or 'manual').strip() or 'manual',
+                'running',
+                now_iso,
+                json.dumps(list(target_urls or []), ensure_ascii=True, separators=(',', ':')),
+                now_iso,
+            ))
+            run_id = int(cursor.lastrowid)
+            cursor.execute('''
+                UPDATE automation_jobs
+                SET last_status = ?, last_error = '', updated_at = ?
+                WHERE id = ?
+            ''', ('running', now_iso, normalized_job_id))
+            conn.commit()
+            return self.get_automation_run(run_id)
+        except Exception as e:
+            print(f"Error creating automation run: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
+    def update_automation_run_progress(
+        self,
+        run_id: int,
+        *,
+        items_count: Optional[int] = None,
+        summary: Optional[Dict[str, Any]] = None,
+        error_text: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        conn = None
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, job_id, items_count, summary_json, error_text
+                FROM automation_runs
+                WHERE id = ?
+                LIMIT 1
+            ''', (normalized_run_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            existing_summary = self._parse_json_text(row['summary_json'], {})
+            merged_summary = dict(existing_summary)
+            if isinstance(summary, dict):
+                merged_summary.update(summary)
+
+            next_items_count = int(items_count if items_count is not None else row['items_count'] or 0)
+            next_error_text = str(error_text if error_text is not None else row['error_text'] or '')
+            now_iso = get_pakistan_time().isoformat()
+
+            cursor.execute('''
+                UPDATE automation_runs
+                SET items_count = ?, summary_json = ?, error_text = ?
+                WHERE id = ?
+            ''', (
+                next_items_count,
+                json.dumps(merged_summary, ensure_ascii=True, separators=(',', ':')),
+                next_error_text,
+                normalized_run_id,
+            ))
+            cursor.execute('''
+                UPDATE automation_jobs
+                SET updated_at = ?
+                WHERE id = ?
+            ''', (now_iso, int(row['job_id'])))
+            conn.commit()
+            return self.get_automation_run(normalized_run_id)
+        except Exception as e:
+            print(f"Error updating automation run progress: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
+    def complete_automation_run(
+        self,
+        run_id: int,
+        *,
+        status: str,
+        current_history_id: str = '',
+        previous_history_id: str = '',
+        target_urls: Optional[List[str]] = None,
+        items_count: int = 0,
+        summary: Optional[Dict[str, Any]] = None,
+        error_text: str = '',
+    ) -> Optional[Dict[str, Any]]:
+        conn = None
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT
+                    r.id, r.job_id, r.trigger_type, r.started_at,
+                    j.interval_minutes, j.enabled, j.next_run_at, j.last_history_ids
+                FROM automation_runs r
+                JOIN automation_jobs j ON j.id = r.job_id
+                WHERE r.id = ?
+                LIMIT 1
+            ''', (normalized_run_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            now_iso = get_pakistan_time().isoformat()
+            safe_status = str(status or 'completed').strip() or 'completed'
+            safe_summary = dict(summary or {})
+            serialized_targets = json.dumps(list(target_urls or []), ensure_ascii=True, separators=(',', ':'))
+            cursor.execute('''
+                UPDATE automation_runs
+                SET
+                    status = ?, completed_at = ?, current_history_id = ?, previous_history_id = ?,
+                    target_urls_json = ?, items_count = ?, summary_json = ?, error_text = ?
+                WHERE id = ?
+            ''', (
+                safe_status,
+                now_iso,
+                str(current_history_id or ''),
+                str(previous_history_id or ''),
+                serialized_targets,
+                int(items_count or 0),
+                json.dumps(safe_summary, ensure_ascii=True, separators=(',', ':')),
+                str(error_text or ''),
+                normalized_run_id,
+            ))
+
+            next_run_at = None
+            if bool(row['enabled']):
+                trigger_type = str(row['trigger_type'] or 'manual').strip().lower()
+                existing_next_run = str(row['next_run_at'] or '').strip()
+                if trigger_type == 'manual' and existing_next_run and existing_next_run > now_iso:
+                    next_run_at = existing_next_run
+                else:
+                    next_run_at = self._add_minutes_to_iso(existing_next_run or row['started_at'], row['interval_minutes'])
+                    guard = 0
+                    while next_run_at <= now_iso and guard < 8:
+                        next_run_at = self._add_minutes_to_iso(next_run_at, row['interval_minutes'])
+                        guard += 1
+
+            last_history_ids = row['last_history_ids'] or '[]'
+            if safe_status == 'completed' and current_history_id:
+                last_history_ids = json.dumps([str(current_history_id)], ensure_ascii=True, separators=(',', ':'))
+
+            cursor.execute('''
+                UPDATE automation_jobs
+                SET
+                    last_run_at = ?, next_run_at = ?, last_status = ?, last_error = ?,
+                    last_history_ids = ?, updated_at = ?
+                WHERE id = ?
+            ''', (
+                now_iso,
+                next_run_at,
+                safe_status,
+                str(error_text or ''),
+                last_history_ids,
+                now_iso,
+                int(row['job_id']),
+            ))
+            conn.commit()
+            return self.get_automation_run(normalized_run_id)
+        except Exception as e:
+            print(f"Error completing automation run: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
+    def recover_running_automation_runs(self, reason: str = 'Automation run interrupted by server restart.') -> int:
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT DISTINCT r.id, r.job_id
+                FROM automation_runs r
+                WHERE r.status = 'running'
+            ''')
+            running_rows = cursor.fetchall()
+            if not running_rows:
+                return 0
+
+            now_iso = get_pakistan_time().isoformat()
+            run_ids = [int(row['id']) for row in running_rows]
+            job_ids = sorted({int(row['job_id']) for row in running_rows})
+            run_placeholders = ','.join(['?' for _ in run_ids])
+            job_placeholders = ','.join(['?' for _ in job_ids])
+
+            cursor.execute(f'''
+                UPDATE automation_runs
+                SET status = 'failed', completed_at = ?, error_text = ?
+                WHERE id IN ({run_placeholders})
+            ''', [now_iso, str(reason or '')] + run_ids)
+            cursor.execute(f'''
+                UPDATE automation_jobs
+                SET last_status = 'failed', last_error = ?, updated_at = ?
+                WHERE id IN ({job_placeholders})
+            ''', [str(reason or ''), now_iso] + job_ids)
+            conn.commit()
+            return len(run_ids)
+        except Exception as e:
+            print(f"Error recovering running automation runs: {e}")
+            if conn:
+                conn.rollback()
+            return 0
+
+    def list_automation_runs(self, job_id: Optional[int] = None, limit: int = 25) -> List[Dict[str, Any]]:
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            params: List[Any] = []
+            where_clause = ''
+            if job_id not in (None, ''):
+                where_clause = 'WHERE r.job_id = ?'
+                params.append(int(job_id))
+            params.append(max(1, int(limit)))
+            cursor.execute(f'''
+                SELECT
+                    r.id, r.job_id, r.run_uuid, r.trigger_type, r.status,
+                    r.started_at, r.completed_at, r.current_history_id,
+                    r.previous_history_id, r.target_urls_json, r.items_count,
+                    r.summary_json, r.error_text, r.created_at,
+                    j.name AS job_name, j.scraper_key, j.category_query
+                FROM automation_runs r
+                JOIN automation_jobs j ON j.id = r.job_id
+                {where_clause}
+                ORDER BY r.started_at DESC, r.id DESC
+                LIMIT ?
+            ''', tuple(params))
+            return [self._row_to_automation_run(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"Error listing automation runs: {e}")
+            return []
+
+    def get_automation_run(self, run_id: int) -> Optional[Dict[str, Any]]:
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT
+                    r.id, r.job_id, r.run_uuid, r.trigger_type, r.status,
+                    r.started_at, r.completed_at, r.current_history_id,
+                    r.previous_history_id, r.target_urls_json, r.items_count,
+                    r.summary_json, r.error_text, r.created_at,
+                    j.name AS job_name, j.scraper_key, j.category_query
+                FROM automation_runs r
+                JOIN automation_jobs j ON j.id = r.job_id
+                WHERE r.id = ?
+                LIMIT 1
+            ''', (normalized_run_id,))
+            row = cursor.fetchone()
+            return self._row_to_automation_run(row) if row else None
+        except Exception as e:
+            print(f"Error getting automation run: {e}")
+            return None
+
+    def get_automation_overview(self) -> Dict[str, Any]:
+        try:
+            jobs = self.list_automation_jobs(include_targets=True, limit=500)
+            runs = self.list_automation_runs(limit=100)
+            enabled_jobs = sum(1 for job in jobs if job.get('enabled'))
+            running_jobs = sum(1 for job in jobs if job.get('last_status') == 'running')
+            total_targets = sum(int(job.get('target_count') or 0) for job in jobs)
+            changed_runs = sum(
+                1 for run in runs
+                if (run.get('summary') or {}).get('changed')
+                or (run.get('summary') or {}).get('added')
+                or (run.get('summary') or {}).get('removed')
+            )
+            return {
+                'total_jobs': len(jobs),
+                'enabled_jobs': enabled_jobs,
+                'running_jobs': running_jobs,
+                'total_targets': total_targets,
+                'recent_runs': len(runs),
+                'changed_runs': changed_runs,
+            }
+        except Exception as e:
+            print(f"Error getting automation overview: {e}")
+            return {
+                'total_jobs': 0,
+                'enabled_jobs': 0,
+                'running_jobs': 0,
+                'total_targets': 0,
+                'recent_runs': 0,
+                'changed_runs': 0,
+            }
 
     def get_latest_prices_for_urls(self, urls: List[str]) -> Dict[str, Dict[str, Any]]:
         """Return the latest saved price snapshot for each product URL."""
@@ -1380,5 +2527,425 @@ class DatabaseManager:
             print(f"Error searching products: {e}")
             return []
 
+class MultiDatabaseManager:
+    """Facade that keeps one SQLite database per scraper/site while aggregating reads."""
+
+    def __init__(self, base_dir: str = None):
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        self.base_dir = base_dir or os.environ.get("DATABASES_DIR") or os.path.join(app_dir, "data", "site_dbs")
+        os.makedirs(self.base_dir, exist_ok=True)
+        self.app_dir = app_dir
+        self.managers: Dict[str, DatabaseManager] = {}
+
+        for scraper_key in ('standard', 'xcell', 'txparts', 'parts4cells'):
+            db_path = os.path.join(self.base_dir, get_db_filename(scraper_key))
+            self._seed_site_database(scraper_key, db_path)
+            self.managers[scraper_key] = DatabaseManager(db_path=db_path)
+
+    def _seed_site_database(self, scraper_key: str, target_path: str) -> None:
+        if os.path.exists(target_path):
+            return
+
+        legacy_candidates = []
+        if scraper_key == 'standard':
+            legacy_candidates.extend([
+                os.path.join(self.app_dir, "mobilesentrix.db"),
+                os.path.join(self.app_dir, "data", "mobilesentrix.db"),
+            ])
+
+        for candidate in legacy_candidates:
+            if candidate and os.path.exists(candidate):
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                shutil.copy2(candidate, target_path)
+                return
+
+    def _get_manager(self, scraper_key: str) -> DatabaseManager:
+        return self.managers.get(scraper_key, self.managers['standard'])
+
+    @staticmethod
+    def _public_history_id(scraper_key: str, raw_history_id: str) -> str:
+        return f"{scraper_key}:{raw_history_id}"
+
+    def _parse_history_id(self, history_id: str) -> Tuple[Optional[str], str]:
+        normalized = str(history_id or '').strip()
+        if ':' in normalized:
+            scraper_key, raw_history_id = normalized.split(':', 1)
+            if scraper_key in self.managers and raw_history_id:
+                return scraper_key, raw_history_id
+        return None, normalized
+
+    @staticmethod
+    def _history_timestamp_to_ms(timestamp_value) -> int:
+        if timestamp_value in (None, ''):
+            return 0
+        if isinstance(timestamp_value, (int, float)):
+            return int(timestamp_value)
+        text = str(timestamp_value)
+        if 'T' in text:
+            try:
+                return int(datetime.datetime.fromisoformat(text.replace('Z', '+00:00')).timestamp() * 1000)
+            except Exception:
+                return 0
+        try:
+            return int(float(text))
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _format_session_label(timestamp_value, *, latest: bool) -> str:
+        if not timestamp_value:
+            return 'Never' if latest else 'N/A'
+        try:
+            text = str(timestamp_value)
+            if '+' in text or 'Z' in text:
+                ts = datetime.datetime.fromisoformat(text.replace('Z', '+00:00'))
+                if ts.tzinfo is None:
+                    ts = pytz.UTC.localize(ts)
+                ts_pakistan = ts.astimezone(PAKISTAN_TZ)
+            else:
+                ts = datetime.datetime.fromisoformat(text)
+                ts_pakistan = PAKISTAN_TZ.localize(ts)
+            return ts_pakistan.strftime('%b %d' if latest else '%b %d, %Y')
+        except Exception:
+            return 'Recent' if latest else 'Unknown'
+
+    def _decorate_history(self, scraper_key: str, history: Optional[Dict]) -> Optional[Dict]:
+        if not history:
+            return None
+        decorated = dict(history)
+        decorated['id'] = self._public_history_id(scraper_key, history.get('id', ''))
+        decorated['scraper_key'] = scraper_key
+        decorated['database_key'] = get_db_key(scraper_key)
+        return decorated
+
+    def _decorate_watchlist_item(self, scraper_key: str, item: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not item:
+            return None
+        decorated = dict(item)
+        decorated['scraper_key'] = scraper_key
+        decorated['database_key'] = get_db_key(scraper_key)
+        return decorated
+
+    @staticmethod
+    def _watchlist_sort_key(item: Dict[str, Any]) -> Tuple[float, str]:
+        timestamp = str(item.get('updated_at') or item.get('created_at') or '')
+        if timestamp:
+            try:
+                dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                if dt.tzinfo is None:
+                    dt = PAKISTAN_TZ.localize(dt)
+                return dt.timestamp(), str(item.get('title') or '')
+            except Exception:
+                pass
+        return 0.0, str(item.get('title') or '')
+
+    def close_connection(self):
+        for manager in self.managers.values():
+            manager.close_connection()
+
+    def save_fetch_history(self, history_id: str, urls: List[str], items: List[Any], rules: Dict) -> bool:
+        urls_by_scraper = split_urls_by_scraper(urls)
+        items_by_scraper: Dict[str, List[Any]] = {}
+
+        for item in items or []:
+            item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
+            scraper_key = detect_scraper_key(item_dict.get('url') or item_dict.get('site'))
+            items_by_scraper.setdefault(scraper_key, []).append(item)
+
+        all_scraper_keys = list(dict.fromkeys([*urls_by_scraper.keys(), *items_by_scraper.keys()]))
+        if not all_scraper_keys:
+            all_scraper_keys = ['standard']
+
+        success = True
+        for scraper_key in all_scraper_keys:
+            site_urls = urls_by_scraper.get(scraper_key, [])
+            site_items = items_by_scraper.get(scraper_key, [])
+            if not site_urls and site_items:
+                site_urls = sorted({
+                    str(getattr(item, 'url', '') or '')
+                    for item in site_items
+                    if str(getattr(item, 'url', '') or '').strip()
+                })
+            success = self._get_manager(scraper_key).save_fetch_history(history_id, site_urls, site_items, rules) and success
+
+        return success
+
+    def get_latest_history_for_urls(self, urls: List[str]) -> Optional[Dict]:
+        urls_by_scraper = split_urls_by_scraper(urls)
+        combined_histories = []
+
+        for scraper_key, site_urls in urls_by_scraper.items():
+            history = self._get_manager(scraper_key).get_latest_history_for_urls(site_urls)
+            if history:
+                combined_histories.append((scraper_key, history))
+
+        if not combined_histories:
+            return None
+
+        if len(combined_histories) == 1:
+            scraper_key, history = combined_histories[0]
+            return self._decorate_history(scraper_key, history)
+
+        latest_timestamp = max(self._history_timestamp_to_ms(history.get('timestamp')) for _, history in combined_histories)
+        combined_items = []
+        combined_urls = []
+        previous_ids = []
+        for scraper_key, history in combined_histories:
+            combined_items.extend(history.get('items', []))
+            combined_urls.extend(history.get('urls', []))
+            previous_ids.append(self._public_history_id(scraper_key, history.get('id', '')))
+
+        return {
+            'id': '|'.join(previous_ids),
+            'timestamp': latest_timestamp,
+            'urls': combined_urls,
+            'items_count': len(combined_items),
+            'rules': {},
+            'items': combined_items,
+            'scraper_key': 'multi',
+            'database_key': 'multi',
+        }
+
+    def get_history_list(self, limit: int = 50, offset: int = 0) -> List[Dict]:
+        sample_size = max(limit + offset, limit, 50)
+        histories = []
+        for scraper_key, manager in self.managers.items():
+            for history in manager.get_history_list(limit=sample_size, offset=0):
+                decorated = self._decorate_history(scraper_key, history)
+                if decorated:
+                    histories.append(decorated)
+
+        histories.sort(key=lambda entry: entry.get('timestamp') or 0, reverse=True)
+        return histories[offset:offset + limit]
+
+    def get_history_detail(self, history_id: str) -> Optional[Dict]:
+        scraper_key, raw_history_id = self._parse_history_id(history_id)
+        if scraper_key:
+            return self._decorate_history(scraper_key, self._get_manager(scraper_key).get_history_detail(raw_history_id))
+
+        for candidate_key, manager in self.managers.items():
+            history = manager.get_history_detail(raw_history_id)
+            if history:
+                return self._decorate_history(candidate_key, history)
+        return None
+
+    def delete_history(self, history_id: str) -> bool:
+        scraper_key, raw_history_id = self._parse_history_id(history_id)
+        if scraper_key:
+            return self._get_manager(scraper_key).delete_history(raw_history_id)
+
+        for manager in self.managers.values():
+            if manager.delete_history(raw_history_id):
+                return True
+        return False
+
+    def save_watchlist_item(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
+        scraper_key = detect_scraper_key(item_dict.get('url') or item_dict.get('site'))
+        saved = self._get_manager(scraper_key).save_watchlist_item(item_dict)
+        return self._decorate_watchlist_item(scraper_key, saved)
+
+    def get_watchlist_item(self, url: str) -> Optional[Dict[str, Any]]:
+        normalized_url = str(url or '').strip()
+        if not normalized_url:
+            return None
+
+        scraper_key = detect_scraper_key(normalized_url)
+        item = self._get_manager(scraper_key).get_watchlist_item(normalized_url)
+        if item:
+            return self._decorate_watchlist_item(scraper_key, item)
+
+        for candidate_key, manager in self.managers.items():
+            if candidate_key == scraper_key:
+                continue
+            item = manager.get_watchlist_item(normalized_url)
+            if item:
+                return self._decorate_watchlist_item(candidate_key, item)
+        return None
+
+    def get_watchlist_items(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        for scraper_key, manager in self.managers.items():
+            for item in manager.get_watchlist_items():
+                decorated = self._decorate_watchlist_item(scraper_key, item)
+                if decorated:
+                    items.append(decorated)
+
+        items.sort(key=self._watchlist_sort_key, reverse=True)
+        if limit is not None:
+            return items[:max(1, int(limit))]
+        return items
+
+    def get_watchlist_urls(self) -> List[str]:
+        urls = []
+        seen = set()
+        for manager in self.managers.values():
+            for url in manager.get_watchlist_urls():
+                normalized = str(url or '').strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                urls.append(normalized)
+        return urls
+
+    def remove_watchlist_item(self, url: str) -> bool:
+        normalized_url = str(url or '').strip()
+        if not normalized_url:
+            return False
+
+        scraper_key = detect_scraper_key(normalized_url)
+        if self._get_manager(scraper_key).remove_watchlist_item(normalized_url):
+            return True
+
+        for candidate_key, manager in self.managers.items():
+            if candidate_key == scraper_key:
+                continue
+            if manager.remove_watchlist_item(normalized_url):
+                return True
+        return False
+
+    def clear_watchlist(self) -> int:
+        return sum(manager.clear_watchlist() for manager in self.managers.values())
+
+    def get_statistics(self) -> Dict:
+        now_pakistan = get_pakistan_time()
+        thirty_days_ago_str = (now_pakistan - datetime.timedelta(days=30)).isoformat()
+
+        total_histories = 0
+        total_items = 0
+        recent_histories = 0
+        database_size = 0
+        successful_items = 0
+        priced_items = 0
+        sum_prices = 0.0
+        total_value = 0.0
+        highest_price = 0.0
+        lowest_price = None
+        latest_timestamp = None
+        oldest_timestamp = None
+        unique_models = set()
+        unique_sites = set()
+        site_counts: Dict[str, int] = {}
+
+        for manager in self.managers.values():
+            conn = manager.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT COUNT(*) AS count FROM fetch_history')
+            total_histories += cursor.fetchone()['count']
+
+            cursor.execute('SELECT COUNT(*) AS count FROM items')
+            db_total_items = cursor.fetchone()['count']
+            total_items += db_total_items
+
+            cursor.execute('SELECT COUNT(*) AS count FROM fetch_history WHERE timestamp >= ?', (thirty_days_ago_str,))
+            recent_histories += cursor.fetchone()['count']
+
+            cursor.execute("SELECT page_count * page_size AS size FROM pragma_page_count(), pragma_page_size()")
+            database_size += cursor.fetchone()['size'] or 0
+
+            cursor.execute('''
+                SELECT
+                    COUNT(CASE WHEN price_value IS NOT NULL AND price_value > 0 THEN 1 END) AS successful,
+                    SUM(CASE WHEN price_value IS NOT NULL AND price_value > 0 THEN price_value ELSE 0 END) AS price_sum,
+                    MAX(CASE WHEN price_value IS NOT NULL AND price_value > 0 THEN price_value END) AS max_price,
+                    MIN(CASE WHEN price_value IS NOT NULL AND price_value > 0 THEN price_value END) AS min_price
+                FROM items
+            ''')
+            price_row = cursor.fetchone()
+            successful_items += price_row['successful'] or 0
+            priced_items += price_row['successful'] or 0
+            sum_prices += float(price_row['price_sum'] or 0.0)
+            total_value += float(price_row['price_sum'] or 0.0)
+            highest_price = max(highest_price, float(price_row['max_price'] or 0.0))
+            if price_row['min_price'] is not None:
+                min_price = float(price_row['min_price'])
+                lowest_price = min(min_price, lowest_price) if lowest_price is not None else min_price
+
+            cursor.execute('''
+                SELECT DISTINCT
+                    CASE
+                        WHEN title LIKE '%iPhone%' THEN 'iPhone'
+                        WHEN title LIKE '%Galaxy%' THEN 'Galaxy'
+                        WHEN title LIKE '%iPad%' THEN 'iPad'
+                        WHEN title LIKE '%Pixel%' THEN 'Pixel'
+                        WHEN title LIKE '%OnePlus%' THEN 'OnePlus'
+                        ELSE SUBSTR(title, 1, 20)
+                    END AS model_label
+                FROM items
+                WHERE title != ''
+            ''')
+            unique_models.update(row['model_label'] for row in cursor.fetchall() if row['model_label'])
+
+            cursor.execute('SELECT DISTINCT site FROM items WHERE site != ""')
+            unique_sites.update(str(row['site']) for row in cursor.fetchall() if row['site'])
+
+            cursor.execute('SELECT site, COUNT(*) AS item_count FROM items WHERE site != "" GROUP BY site')
+            for row in cursor.fetchall():
+                site_name = str(row['site'] or '')
+                site_counts[site_name] = site_counts.get(site_name, 0) + int(row['item_count'] or 0)
+
+            cursor.execute('SELECT MAX(timestamp) AS latest_timestamp, MIN(timestamp) AS oldest_timestamp FROM fetch_history')
+            ts_row = cursor.fetchone()
+            if ts_row['latest_timestamp']:
+                candidate = str(ts_row['latest_timestamp'])
+                if latest_timestamp is None or self._history_timestamp_to_ms(candidate) > self._history_timestamp_to_ms(latest_timestamp):
+                    latest_timestamp = candidate
+            if ts_row['oldest_timestamp']:
+                candidate = str(ts_row['oldest_timestamp'])
+                if oldest_timestamp is None or self._history_timestamp_to_ms(candidate) < self._history_timestamp_to_ms(oldest_timestamp):
+                    oldest_timestamp = candidate
+
+        avg_items = round(total_items / max(total_histories, 1), 1)
+        avg_price = round(sum_prices / max(priced_items, 1), 2) if priced_items else 0.0
+        success_rate = round((successful_items / max(total_items, 1)) * 100, 1) if total_items else 0.0
+
+        top_site = 'N/A'
+        if site_counts:
+            top_site = max(site_counts.items(), key=lambda item: item[1])[0]
+            top_site = top_site.replace('www.', '').replace('.com', '').replace('.ca', '')
+            if '.' in top_site:
+                top_site = top_site.split('.')[0]
+            top_site = top_site.capitalize()
+
+        return {
+            'total_histories': total_histories,
+            'total_items': total_items,
+            'recent_histories': recent_histories,
+            'unique_models': len(unique_models),
+            'unique_sites': len(unique_sites),
+            'database_size': database_size,
+            'avg_items_per_session': avg_items,
+            'avg_price': avg_price,
+            'success_rate': success_rate,
+            'top_site': top_site,
+            'latest_session': self._format_session_label(latest_timestamp, latest=True),
+            'oldest_session': self._format_session_label(oldest_timestamp, latest=False),
+            'total_value': round(total_value, 2),
+            'highest_price': round(highest_price, 2),
+            'lowest_price': round(lowest_price or 0, 2),
+        }
+
+    def cleanup_old_entries(self, days: int = 90) -> int:
+        return sum(manager.cleanup_old_entries(days) for manager in self.managers.values())
+
+    def search_items(self, query: str, limit: int = 100) -> List[Dict]:
+        results = []
+        for scraper_key, manager in self.managers.items():
+            for item in manager.search_items(query, limit):
+                enriched = dict(item)
+                enriched['history_id'] = self._public_history_id(scraper_key, item.get('history_id', ''))
+                enriched['scraper_key'] = scraper_key
+                enriched['database_key'] = get_db_key(scraper_key)
+                results.append(enriched)
+
+        results.sort(key=lambda item: self._history_timestamp_to_ms(item.get('timestamp')), reverse=True)
+        return results[:limit]
+
+    def __getattr__(self, name: str):
+        """Fallback to the default site database manager for advanced APIs."""
+        return getattr(self.managers['standard'], name)
+
+
 # Global database instance
-db_manager = DatabaseManager()
+db_manager = MultiDatabaseManager()
