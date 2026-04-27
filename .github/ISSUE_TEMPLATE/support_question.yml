@@ -4,12 +4,23 @@ title: "[Question]: "
 labels:
   - question
 body:
+  - type: dropdown
+    id: project_area
+    attributes:
+      label: Question area
+      options:
+        - image-scraper
+        - parts-extractor
+        - repository / CI
+        - not sure
+    validations:
+      required: true
   - type: textarea
     id: question
     attributes:
       label: Your question
       description: What are you trying to do?
-      placeholder: How should I configure MAX_ACTIVE_SCRAPES on Railway for 512MB RAM?
+      placeholder: How should I run or configure the affected app for my use case?
     validations:
       required: true
   - type: textarea
@@ -23,5 +34,5 @@ body:
     attributes:
       label: Checklist
       options:
-        - label: I checked the docs in `docs/` first.
+        - label: I checked the root README and the relevant app README/docs first.
           required: true

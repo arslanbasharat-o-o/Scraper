@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Documentation
-    url: https://github.com/arslanbasharat-o-o/Scraper/tree/main/docs
-    about: Read setup, optimization, and deployment guides before filing issues.
+  - name: Workspace README
+    url: https://github.com/arslanbasharat-o-o/Scraper/blob/main/README.md
+    about: Start here to choose the right app and find its current run instructions.
+  - name: Image Scraper Docs
+    url: https://github.com/arslanbasharat-o-o/Scraper/tree/main/image-scraper/docs
+    about: Read setup, optimization, and deployment guides for the Node image scraper.
   - name: Discussions
     url: https://github.com/arslanbasharat-o-o/Scraper/discussions
     about: Ask open-ended questions or request implementation advice.

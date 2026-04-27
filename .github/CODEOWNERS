@@ -4,5 +4,7 @@
 # GitHub workflows and templates
 /.github/ @arslanbasharat-o-o
 
-# Documentation
-/docs/ @arslanbasharat-o-o
+# Subprojects
+/image-scraper/ @arslanbasharat-o-o
+/image-scraper/docs/ @arslanbasharat-o-o
+/parts-extractor/ @arslanbasharat-o-o

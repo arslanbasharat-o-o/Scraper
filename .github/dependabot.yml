@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directory: "/"
+    directory: "/image-scraper"
     schedule:
       interval: weekly
       day: monday
@@ -20,7 +20,7 @@ updates:
           - patch
 
   - package-ecosystem: pip
-    directory: "/"
+    directory: "/image-scraper"
     schedule:
       interval: weekly
       day: monday
@@ -37,6 +37,53 @@ updates:
         update-types:
           - minor
           - patch
+
+  - package-ecosystem: pip
+    directory: "/parts-extractor"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:45"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      python-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: docker
+    directory: "/image-scraper"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:50"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(docker)"
+      include: scope
+
+  - package-ecosystem: docker
+    directory: "/parts-extractor"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:55"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(docker)"
+      include: scope
 
   - package-ecosystem: github-actions
     directory: "/"

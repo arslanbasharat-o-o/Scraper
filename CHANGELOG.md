@@ -8,14 +8,18 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ### Added
 
-- Professionalized repository governance and automation.
-- Railway deployment documentation and CI/CD workflow integration.
-- GitHub issue forms, CODEOWNERS, security policy, and standards files.
+- Parts Extractor category manager UI, automation target management, and related tests.
+- Automated Windows startup for `parts-extractor/start.bat` with dependency checks and first-run bootstrap.
 
 ### Changed
 
-- Repository documentation reorganized under `docs/`.
-- CI pipeline expanded with quality checks and Docker smoke build.
+- Repository reorganized into `image-scraper/` and `parts-extractor/`.
+- Root documentation and GitHub metadata updated to match the split workspace.
+- CI, Dependabot, and Railway workflow paths updated for the new structure.
+
+### Removed
+
+- Obsolete runtime logs, dump artifacts, and the old `parts-extractor/push-to-github.sh` helper.
 
 ## [1.0.0] - 2026-02-13
 

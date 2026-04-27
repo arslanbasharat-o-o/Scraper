@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Automation - Parts Extractor v8</title>
+  <link rel="icon" href="data:," />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0d0f14;
+      color: #e8eaf5;
+      min-height: 100vh
+    }
+
+    .page-shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: .75rem 1rem;
+      opacity: 0;
+      animation: fadeIn .25s ease forwards
+    }
+
+    @keyframes fadeIn {
+      to {
+        opacity: 1
+      }
+    }
+
+    .cy-card {
+      background: #13161e;
+      border: 1px solid #252a3d;
+      border-radius: 16px
+    }
+
+    .d-none {
+      display: none !important
+    }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="{{ asset_url('css/common.css') }}">
+  <link rel="stylesheet" href="{{ asset_url('css/automation.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div class="page-shell py-3">
+    <header class="app-header cy-card mb-3">
+      <div class="header-left">
+        <div class="app-logo">PE</div>
+        <div class="header-brand">
+          <h1 class="app-title">Parts Extractor</h1>
+          <p class="app-sub">Automation Jobs - Category Discovery - Change Tracking</p>
+        </div>
+      </div>
+      <nav class="nav-pills">
+        <a href="/" class="nav-link">Extractor</a>
+        <a href="/history" class="nav-link">History</a>
+        <a href="/automation" class="nav-link active">Automation</a>
+        <a href="/category-manager" class="nav-link">Categories</a>
+        <a href="/image-converter" class="nav-link">Images</a>
+      </nav>
+      <div class="header-right">
+        <div class="theme-switch">
+          <span class="theme-label">Light</span>
+          <label class="switch-track">
+            <input type="checkbox" id="darkMode" checked>
+            <span class="switch-thumb"></span>
+          </label>
+          <span class="theme-label">Dark</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="alert" class="alert-banner d-none" role="alert"></div>
+
+    <section class="cy-card automation-hero mb-3">
+      <div class="section-heading">
+        <div>
+          <h2 class="section-title">Scheduled Category Scraping</h2>
+          <p class="section-subtitle">Discover section links from a supplier, save the job, and keep comparing daily or weekly runs.</p>
+        </div>
+        <div class="automation-hero__chips">
+          <span class="automation-pill">Site discovery</span>
+          <span class="automation-pill automation-pill--accent">Daily and weekly</span>
+          <span class="automation-pill">Model change review</span>
+        </div>
+      </div>
+      <div class="automation-stats" id="automationStats">
+        <div class="automation-stat">
+          <span class="automation-stat__value" id="automationStatJobs">0</span>
+          <span class="automation-stat__label">Jobs</span>
+        </div>
+        <div class="automation-stat">
+          <span class="automation-stat__value" id="automationStatEnabled">0</span>
+          <span class="automation-stat__label">Enabled</span>
+        </div>
+        <div class="automation-stat">
+          <span class="automation-stat__value" id="automationStatTargets">0</span>
+          <span class="automation-stat__label">Saved Targets</span>
+        </div>
+        <div class="automation-stat">
+          <span class="automation-stat__value" id="automationStatChangedRuns">0</span>
+          <span class="automation-stat__label">Runs With Changes</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="automation-grid mb-3">
+      <div class="cy-card automation-panel">
+        <div class="section-heading mb-3">
+          <div>
+            <h2 class="section-title">Create Or Update Job</h2>
+            <p class="section-subtitle">Type a section like <strong>Game Consoles</strong>, preview the discovered links, then save the schedule.</p>
+          </div>
+          <div class="automation-form__actions">
+            <button id="automationResetBtn" class="btn-export" type="button">New Job</button>
+          </div>
+        </div>
+
+        <input type="hidden" id="automationJobId">
+
+        <div class="automation-form-grid">
+          <div class="field-item">
+            <label class="field-label-sm" for="automationName">Job Name</label>
+            <input id="automationName" class="field-input" placeholder="XCell Game Consoles">
+          </div>
+          <div class="field-item">
+            <label class="field-label-sm" for="automationSite">Site</label>
+            <select id="automationSite" class="field-input">
+              <option value="xcell">XCellParts</option>
+              <option value="parts4cells">Parts4Cells</option>
+              <option value="standard">MobileSentrix</option>
+              <option value="txparts">TXParts</option>
+            </select>
+          </div>
+          <div class="field-item field-item--wide">
+            <label class="field-label-sm" for="automationCategoryQuery">Section / Category</label>
+            <input id="automationCategoryQuery" class="field-input" placeholder="Game Consoles">
+          </div>
+          <div class="field-item field-item--wide">
+            <label class="field-label-sm" for="automationRootUrl">Root URL</label>
+            <input id="automationRootUrl" class="field-input" placeholder="https://xcellparts.com/">
+          </div>
+          <div class="field-item">
+            <label class="field-label-sm" for="automationIntervalValue">Repeat Every</label>
+            <input id="automationIntervalValue" type="number" min="1" step="1" value="1" class="field-input">
+          </div>
+          <div class="field-item">
+            <label class="field-label-sm" for="automationIntervalUnit">Unit</label>
+            <select id="automationIntervalUnit" class="field-input">
+              <option value="days">Days</option>
+              <option value="weeks">Weeks</option>
+              <option value="hours">Hours</option>
+            </select>
+          </div>
+          <div class="field-item">
+            <label class="field-label-sm" for="automationMaxPages">Max Pages</label>
+            <input id="automationMaxPages" type="number" min="1" max="20" step="1" value="10" class="field-input">
+          </div>
+          <div class="field-item">
+            <label class="field-label-sm" for="automationDelayMs">Delay (ms)</label>
+            <input id="automationDelayMs" type="number" min="0" max="5000" step="50" value="50" class="field-input">
+          </div>
+        </div>
+
+        <div class="automation-toggles">
+          <label class="toggle-field">
+            <input type="checkbox" id="automationEnabled" class="toggle-cb" checked>
+            <span class="toggle-label-text">Enable schedule</span>
+          </label>
+          <label class="toggle-field">
+            <input type="checkbox" id="automationAutoDiscover" class="toggle-cb" checked>
+            <span class="toggle-label-text">Refresh links before each run</span>
+          </label>
+          <label class="toggle-field">
+            <input type="checkbox" id="automationParallel" class="toggle-cb" checked>
+            <span class="toggle-label-text">Use parallel scraping</span>
+          </label>
+          <label class="toggle-field">
+            <input type="checkbox" id="automationEnrich" class="toggle-cb">
+            <span class="toggle-label-text">Deep detail scan</span>
+          </label>
+        </div>
+
+        <div class="automation-actions">
+          <button id="automationDiscoverBtn" class="btn-export" type="button">Discover Links</button>
+          <button id="automationSaveBtn" class="btn-run" type="button"><span>Save Job</span></button>
+        </div>
+
+        <div class="automation-discovery">
+          <div class="automation-discovery__header">
+            <div>
+              <div class="section-title">Discovered Targets</div>
+              <div class="section-subtitle" id="automationDiscoverySummary">Run discovery to preview which category URLs will be scraped.</div>
+            </div>
+            <div class="automation-discovery__meta" id="automationDiscoveryMeta"></div>
+          </div>
+          <div class="automation-discovery__toolbar">
+            <div class="automation-discovery__selection" id="automationDiscoverySelection">All discovered links will run by default.</div>
+            <div class="automation-discovery__actions">
+              <button id="automationIncludeAllBtn" class="btn-export" type="button">Include All</button>
+              <button id="automationSkipAllBtn" class="btn-export" type="button">Skip All</button>
+            </div>
+          </div>
+          <div class="automation-target-list" id="automationDiscoveredTargets"></div>
+        </div>
+      </div>
+
+      <div class="cy-card automation-panel">
+        <div class="section-heading mb-3">
+          <div>
+            <h2 class="section-title">Saved Jobs</h2>
+            <p class="section-subtitle">Run now, refresh links, pause jobs, or reopen a saved configuration.</p>
+          </div>
+        </div>
+        <div class="automation-job-list" id="automationJobs"></div>
+      </div>
+    </section>
+
+    <section class="automation-grid automation-grid--detail">
+      <div class="cy-card automation-panel">
+        <div class="section-heading mb-3">
+          <div>
+            <h2 class="section-title">Recent Runs</h2>
+            <p class="section-subtitle">Select a run to inspect changed items and filter by discovered model/category.</p>
+          </div>
+        </div>
+        <div class="automation-run-list" id="automationRuns"></div>
+      </div>
+
+      <div class="cy-card automation-panel">
+        <div class="section-heading mb-3">
+          <div>
+            <h2 class="section-title">Run Detail</h2>
+            <p class="section-subtitle">Model-by-model review of what changed between this run and the previous one.</p>
+          </div>
+          <div class="automation-detail-filter">
+            <label class="field-label-sm" for="automationModelFilter">Model</label>
+            <select id="automationModelFilter" class="field-input">
+              <option value="">All models</option>
+            </select>
+          </div>
+        </div>
+        <div id="automationRunDetail" class="automation-run-detail automation-run-detail--empty">
+          Select a run to load its changes.
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="overlay" class="overlay d-none">
+    <div class="spinner"></div>
+  </div>
+
+  <script defer src="{{ asset_url('js/automation.js') }}"></script>
+</body>
+
+</html>

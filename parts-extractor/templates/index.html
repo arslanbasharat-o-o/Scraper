@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Parts Extractor — v8</title>
+  <link rel="icon" href="data:," />
+  <meta name="description"
+    content="Extract and compare pricing data from MobileSentrix, XCellParts, TXParts, and Parts4Cells." />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    html {
+      font-size: 15px
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0d0f14;
+      color: #e8eaf5;
+      min-height: 100vh
+    }
+
+    .page-shell {
+      max-width: 1420px;
+      margin: 0 auto;
+      padding: 1rem;
+      opacity: 0;
+      animation: fadeIn .25s ease forwards
+    }
+
+    @keyframes fadeIn {
+      to {
+        opacity: 1
+      }
+    }
+
+    .cy-card {
+      background: #13161e;
+      border: 1px solid #252a3d;
+      border-radius: 16px
+    }
+
+    .d-none {
+      display: none !important
+    }
+
+    #toast-container {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: .6rem;
+      pointer-events: none
+    }
+
+    .toast-item {
+      pointer-events: all;
+      padding: .8rem 1.25rem;
+      border-radius: 12px;
+      font-size: .85rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: .65rem;
+      min-width: 260px;
+      max-width: 400px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, .6);
+      animation: toastIn .22s ease;
+      border-left: 3px solid transparent
+    }
+
+    @keyframes toastIn {
+      from {
+        opacity: 0;
+        transform: translateY(12px) scale(.97)
+      }
+
+      to {
+        opacity: 1;
+        transform: none
+      }
+    }
+
+    .toast-success {
+      background: #0f2218;
+      border-color: #34d49a;
+      color: #6ff0b8
+    }
+
+    .toast-error {
+      background: #1f0f0f;
+      border-color: #f06b6b;
+      color: #ff9999
+    }
+
+    .toast-info {
+      background: #0f1629;
+      border-color: #4f8cff;
+      color: #91b6ff
+    }
+
+    .toast-warn {
+      background: #1f1a0a;
+      border-color: #f0c040;
+      color: #f5d060
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: #0d0f14;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999
+    }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="{{ asset_url('css/common.css') }}">
+  <link rel="stylesheet" href="{{ asset_url('css/main.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div id="toast-container"></div>
+
+  <div class="page-shell py-3">
+
+    <!-- ── Header ──────────────────────────────────────────── -->
+    <header class="app-header cy-card mb-3">
+      <div class="header-left">
+        <div class="app-logo">PE</div>
+        <div class="header-brand">
+          <h1 class="app-title">Parts Extractor</h1>
+          <p class="app-sub">MobileSentrix · XCellParts · TXParts · Parts4Cells</p>
+        </div>
+      </div>
+      <nav class="nav-pills">
+        <a href="/" class="nav-link active">Extractor</a>
+        <a href="/history" class="nav-link">History</a>
+        <a href="/automation" class="nav-link">Automation</a>
+        <a href="/category-manager" class="nav-link">Categories</a>
+        <a href="/image-converter" class="nav-link">Images</a>
+      </nav>
+      <div class="header-right">
+        <div class="header-clock">
+          <span class="clock-date" id="currentDateValue">--</span>
+          <span class="clock-time" id="currentTimeValue">--</span>
+        </div>
+        <div class="theme-switch">
+          <span class="theme-label">Light</span>
+          <label class="switch-track">
+            <input type="checkbox" id="darkMode" checked>
+            <span class="switch-thumb"></span>
+          </label>
+          <span class="theme-label">Dark</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── Fetch Controls ──────────────────────────────────── -->
+    <section class="cy-card fetch-card mb-3">
+      <div class="fetch-top">
+        <div class="fetch-left">
+          <label class="field-label">Target URLs</label>
+          <p class="field-desc">One URL per line — category or product page from any supported site</p>
+        </div>
+        <div class="fetch-right">
+          <span class="url-count-badge" id="urlCountBadge">0 URLs</span>
+        </div>
+      </div>
+      <textarea id="urls" class="url-area" rows="4"
+        placeholder="https://www.mobilesentrix.ca/replacement-parts/samsung/...&#10;https://xcellparts.com/product-category/...&#10;https://parts4cells.com/apple/..."></textarea>
+
+      <div class="fetch-actions">
+        <button id="runBtn" class="btn-run">
+          <span>Fetch Data</span>
+        </button>
+        <button id="advancedToggle" class="btn-secondary">
+          <span>Filters</span>
+          <span class="toggle-arrow" id="filterArrow">&gt;</span>
+        </button>
+        <div class="fetch-status" id="fetchStatus">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Ready</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Advanced Filters (collapsible) ─────────────────── -->
+    <section class="cy-card filters-card mb-3" id="advancedControls" style="display:none">
+      <div class="filters-header">
+        <h2 class="filters-title">Advanced Filters</h2>
+        <span class="filter-badge" id="filterCount">0 active</span>
+        <button class="btn-icon-sm" id="resetAllBtn" title="Reset all filters">Reset</button>
+      </div>
+      <p class="field-desc" style="margin:.35rem 0 1rem 0;">Pricing, keyword, search, and display filters update instantly. Alert Drop % and Deep detail scan apply on the next fetch.</p>
+
+      <div class="filters-grid">
+
+        <!-- Pricing -->
+        <div class="filter-group">
+          <div class="fgroup-label">Pricing</div>
+          <div class="fgroup-fields">
+            <div class="field-item">
+              <label class="field-label-sm">Discount %</label>
+              <input id="percent" type="number" class="field-input" min="0" max="95" step="0.1" value="0"
+                placeholder="0">
+            </div>
+            <div class="field-item">
+              <label class="field-label-sm">Fixed Off $</label>
+              <input id="absOff" type="number" class="field-input" min="0" step="0.01" value="0" placeholder="0.00">
+            </div>
+            <div class="field-item">
+              <label class="field-label-sm">Add %</label>
+              <input id="addPercent" type="number" class="field-input" min="0" max="500" step="0.1" value="0"
+                placeholder="5.0">
+            </div>
+            <div class="field-item">
+              <label class="field-label-sm">Min Price</label>
+              <input id="priceMin" type="number" class="field-input" min="0" step="0.01" placeholder="0">
+            </div>
+            <div class="field-item">
+              <label class="field-label-sm">Max Price</label>
+              <input id="priceMax" type="number" class="field-input" min="0" step="0.01" placeholder="∞">
+            </div>
+            <div class="field-item">
+              <label class="field-label-sm">Alert Drop %</label>
+              <input id="dropPct" type="number" class="field-input" min="1" max="90" step="1" value="10">
+            </div>
+          </div>
+        </div>
+
+        <!-- Keywords -->
+        <div class="filter-group">
+          <div class="fgroup-label">Keywords</div>
+          <div class="fgroup-fields">
+            <div class="field-item full-width">
+              <label class="field-label-sm">Include (hit Enter)</label>
+              <input id="kwInclude" class="field-input" placeholder="e.g. oled, lcd">
+              <div class="chip-row" id="includeChips"></div>
+              <input type="hidden" id="include">
+            </div>
+            <div class="field-item full-width">
+              <label class="field-label-sm">Exclude (hit Enter)</label>
+              <input id="kwExclude" class="field-input" placeholder="e.g. refurb, frame">
+              <div class="chip-row" id="excludeChips"></div>
+              <input type="hidden" id="exclude">
+            </div>
+          </div>
+        </div>
+
+        <!-- Display -->
+        <div class="filter-group">
+          <div class="fgroup-label">Display</div>
+          <div class="fgroup-fields">
+            <div class="field-item full-width">
+              <label class="field-label-sm">Sort</label>
+              <select id="sortBy" class="field-input">
+                <option value="none">Default</option>
+                <option value="final_asc">Price ↑</option>
+                <option value="final_desc">Price ↓</option>
+                <option value="orig_asc">Original ↑</option>
+                <option value="orig_desc">Original ↓</option>
+                <option value="disc_desc">Largest Change</option>
+                <option value="title_asc">Title A→Z</option>
+                <option value="title_desc">Title Z→A</option>
+              </select>
+            </div>
+            <div class="field-item full-width">
+              <label class="toggle-field">
+                <input type="checkbox" id="hideDupes" class="toggle-cb">
+                <span class="toggle-label-text">Hide duplicates</span>
+              </label>
+              <label class="toggle-field">
+                <input type="checkbox" id="showInStockOnly" class="toggle-cb">
+                <span class="toggle-label-text">In stock only</span>
+              </label>
+              <label class="toggle-field">
+                <input type="checkbox" id="showOutOfStockOnly" class="toggle-cb">
+                <span class="toggle-label-text">Out of stock only</span>
+              </label>
+              <label class="toggle-field">
+                <input type="checkbox" id="groupModel" class="toggle-cb">
+                <span class="toggle-label-text">Group by model</span>
+              </label>
+              <label class="toggle-field">
+                <input type="checkbox" id="enrichDetails" class="toggle-cb">
+                <span class="toggle-label-text">Deep detail scan (slower)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+
+      </div>
+    </section>
+
+    <!-- ── Alert Banner ────────────────────────────────────── -->
+    <div id="alert" class="alert-banner d-none" role="alert"></div>
+
+    <div id="confirmModal" class="confirm-modal d-none" aria-hidden="true">
+      <div class="confirm-modal__dialog cy-card" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle"
+        aria-describedby="confirmModalMessage">
+        <div class="confirm-modal__eyebrow">Confirm Action</div>
+        <h3 id="confirmModalTitle" class="confirm-modal__title">Please confirm</h3>
+        <p id="confirmModalMessage" class="confirm-modal__message">Are you sure you want to continue?</p>
+        <div class="confirm-modal__actions">
+          <button id="confirmCancelBtn" class="btn-export" type="button">Cancel</button>
+          <button id="confirmConfirmBtn" class="btn-danger" type="button">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Run Comparison ──────────────────────────────────── -->
+    <section id="comparisonPanel" class="cy-card comparison-card mb-3 d-none">
+      <div id="comparisonContent"></div>
+    </section>
+
+    <!-- ── Export + Search Row ────────────────────────────── -->
+    <div class="toolbar-row mb-3" id="exportActions" style="display:none">
+      <div class="toolbar-left">
+        <div class="result-count" id="countBadge">0 items</div>
+        <input id="search" class="search-input" placeholder="Search title or URL...">
+      </div>
+      <div class="toolbar-right">
+        <button id="csvBtn" class="btn-export" disabled>CSV</button>
+        <button id="xlsxBtn" class="btn-export" disabled>XLSX</button>
+        <button id="copyBtn" class="btn-export" disabled>Copy</button>
+        <button id="exportWatchlistBtn" class="btn-export" disabled>Watchlist CSV</button>
+        <button id="clearResultsBtn" class="btn-danger">Clear</button>
+      </div>
+    </div>
+
+    <!-- ── Watchlist filter ────────────────────────────────── -->
+    <div class="watchlist-bar mb-3" id="watchlistBar" style="display:none">
+      <label class="toggle-field">
+        <input type="checkbox" id="showWatchlistOnly" class="toggle-cb">
+        <span class="toggle-label-text">Show watchlist only (<strong id="heroWatchCount">0</strong> saved)</span>
+      </label>
+      <button id="viewWatchlistBtn" class="btn-export" disabled>View Watchlist</button>
+      <button id="clearWatchlistBtn" class="btn-danger-sm" disabled>Clear watchlist</button>
+    </div>
+
+    <!-- ── Results Table ───────────────────────────────────── -->
+    <section class="cy-card results-card">
+      <div class="results-header">
+        <div class="results-title-group">
+          <h2 class="results-title">Results</h2>
+          <nav id="modelChipWrap" class="model-chips" hidden></nav>
+        </div>
+        <div class="results-controls">
+          <label class="field-label-sm" for="pageSize">Per page</label>
+          <select id="pageSize" class="field-input compact-select">
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="results-body">
+        <div class="table-wrap">
+          <table id="resultsTable">
+            <thead>
+              <tr>
+                <th class="col-num">#</th>
+                <th class="col-star">Save</th>
+                <th class="col-img">Img</th>
+                <th class="col-title">Title</th>
+                <th class="col-price">Original</th>
+                <th class="col-pct">Δ%</th>
+                <th class="col-off">Δ$</th>
+                <th class="col-final">Final</th>
+                <th class="col-url">Link</th>
+                <th class="col-src">Source</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- Empty state -->
+        <div class="empty-state d-none" id="resultsEmpty">
+          <div class="empty-icon">Data</div>
+          <h3>No results yet</h3>
+          <p>Paste a category URL above and click <strong>Fetch Data</strong></p>
+        </div>
+
+        <!-- Pagination -->
+        <div class="results-footer d-none" id="resultsFooter">
+          <span class="page-info" id="pageInfo">Page 1 of 1</span>
+          <div class="page-btns">
+            <button id="prevPage" disabled>Prev</button>
+            <button id="nextPage" disabled>Next</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /page-shell -->
+
+  <!-- ── Loading Overlay ─────────────────────────────────── -->
+  <div id="loading" class="overlay d-none">
+    <div class="loader-box">
+      <div class="loader-spinner"></div>
+      <div class="loader-text" id="loaderText">Connecting...</div>
+      <div class="loader-sub" id="loaderSub">Establishing connection</div>
+      <div class="loader-bar-wrap">
+        <div class="loader-bar" id="loaderBar"></div>
+      </div>
+      <div class="loader-pct" id="loaderPct">0%</div>
+      <div class="loader-timer" id="loaderTimer">0.0s</div>
+    </div>
+  </div>
+
+  <div id="imageHoverPreview" class="image-hover-preview d-none" aria-hidden="true">
+    <img id="imageHoverPreviewImg" src="" alt="Product preview">
+  </div>
+
+  <script defer src="{{ asset_url('js/main.js') }}"></script>
+</body>
+
+</html>

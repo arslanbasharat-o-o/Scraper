@@ -70,6 +70,7 @@ jobs:
           RAILWAY_ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
         run: |
           set -euo pipefail
+          cd image-scraper
           CMD=(railway up --ci --detach --project "$RAILWAY_PROJECT_ID" --service "$RAILWAY_SERVICE_ID")
           if [ -n "${RAILWAY_ENVIRONMENT_ID:-}" ]; then
             CMD+=(--environment "$RAILWAY_ENVIRONMENT_ID")

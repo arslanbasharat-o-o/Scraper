@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Category Manager - Parts Extractor v8</title>
+  <link rel="icon" href="data:," />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0d0f14;
+      color: #e8eaf5;
+      min-height: 100vh
+    }
+
+    .page-shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: .75rem 1rem;
+      opacity: 0;
+      animation: fadeIn .25s ease forwards
+    }
+
+    @keyframes fadeIn {
+      to {
+        opacity: 1
+      }
+    }
+
+    .cy-card {
+      background: #13161e;
+      border: 1px solid #252a3d;
+      border-radius: 16px
+    }
+
+    .d-none {
+      display: none !important
+    }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="{{ asset_url('css/common.css') }}">
+  <link rel="stylesheet" href="{{ asset_url('css/category-manager.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div class="page-shell py-3">
+    <header class="app-header cy-card mb-3">
+      <div class="header-left">
+        <div class="app-logo">PE</div>
+        <div class="header-brand">
+          <h1 class="app-title">Parts Extractor</h1>
+          <p class="app-sub">Saved Targets - Group Review - Run Readiness</p>
+        </div>
+      </div>
+      <nav class="nav-pills">
+        <a href="/" class="nav-link">Extractor</a>
+        <a href="/history" class="nav-link">History</a>
+        <a href="/automation" class="nav-link">Automation</a>
+        <a href="/category-manager" class="nav-link active">Categories</a>
+        <a href="/image-converter" class="nav-link">Images</a>
+      </nav>
+      <div class="header-right">
+        <div class="theme-switch">
+          <span class="theme-label">Light</span>
+          <label class="switch-track">
+            <input type="checkbox" id="darkMode" checked>
+            <span class="switch-thumb"></span>
+          </label>
+          <span class="theme-label">Dark</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="alert" class="alert-banner d-none" role="alert"></div>
+
+    <section class="cy-card category-summary mb-3">
+      <div class="section-heading">
+        <div>
+          <h2 class="section-title">Category Manager</h2>
+          <p class="section-subtitle">Choose a saved job, trim the target list, and keep the next comparison focused.</p>
+        </div>
+        <div id="categoryDirtyState" class="category-summary__status">All changes saved.</div>
+      </div>
+      <div class="category-stats">
+        <div class="category-stat">
+          <span class="category-stat__value" id="categoryStatJobs">0</span>
+          <span class="category-stat__label">Jobs</span>
+        </div>
+        <div class="category-stat">
+          <span class="category-stat__value" id="categoryStatTargets">0</span>
+          <span class="category-stat__label">Saved Categories</span>
+        </div>
+        <div class="category-stat">
+          <span class="category-stat__value" id="categoryStatActive">0</span>
+          <span class="category-stat__label">Ready To Run</span>
+        </div>
+        <div class="category-stat">
+          <span class="category-stat__value" id="categoryStatSkipped">0</span>
+          <span class="category-stat__label">Skipped</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="category-layout">
+      <aside class="cy-card category-sidebar">
+        <div class="section-heading mb-3">
+          <div>
+            <h2 class="section-title">Saved Jobs</h2>
+            <p class="section-subtitle">Pick the job whose categories you want to tighten up.</p>
+          </div>
+        </div>
+        <div id="categoryJobs" class="category-job-list"></div>
+      </aside>
+
+      <section class="cy-card category-workspace">
+        <div id="categoryWorkspaceEmpty" class="category-empty">
+          <div>
+            <h3>No saved jobs yet</h3>
+            <p>Save a job from Automation and the categories will land here.</p>
+          </div>
+        </div>
+
+        <div id="categoryWorkspaceContent" class="d-none">
+          <div class="section-heading mb-3">
+            <div>
+              <h2 class="section-title" id="categoryCurrentName">Select a job</h2>
+              <p class="section-subtitle" id="categoryCurrentMeta">Saved targets will appear here.</p>
+            </div>
+            <div class="category-workspace__chips" id="categoryCurrentChips"></div>
+          </div>
+
+          <div class="category-overview" id="categoryCurrentStats"></div>
+
+          <div class="category-toolbar">
+            <div class="category-toolbar__filters">
+              <div class="field-item full-width">
+                <label class="field-label-sm" for="categorySearch">Search</label>
+                <input id="categorySearch" class="field-input" placeholder="Find a category, group, or URL">
+              </div>
+              <div class="field-item">
+                <label class="field-label-sm" for="categoryStatusFilter">Status</label>
+                <select id="categoryStatusFilter" class="field-input">
+                  <option value="all">All categories</option>
+                  <option value="active">Ready to run</option>
+                  <option value="skipped">Skipped</option>
+                </select>
+              </div>
+              <div class="field-item">
+                <label class="field-label-sm" for="categoryGroupFilter">Group</label>
+                <select id="categoryGroupFilter" class="field-input">
+                  <option value="">All groups</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="category-toolbar__actions">
+              <button id="categoryIncludeVisibleBtn" class="btn-export" type="button">Include Visible</button>
+              <button id="categorySkipVisibleBtn" class="btn-export" type="button">Skip Visible</button>
+              <button id="categoryRefreshBtn" class="btn-export" type="button">Refresh Links</button>
+              <button id="categoryRunBtn" class="btn-export" type="button">Run Now</button>
+              <button id="categorySaveBtn" class="btn-run" type="button"><span>Save Categories</span></button>
+            </div>
+          </div>
+
+          <div class="category-toolbar__summary">
+            <span id="categoryVisibleSummary">0 categories</span>
+            <button id="categoryClearFilters" class="btn-export" type="button">Clear Filters</button>
+          </div>
+
+          <div class="category-group-board" id="categoryGroupSummary"></div>
+
+          <div class="category-selection">
+            <div class="section-heading mb-2">
+              <div>
+                <h2 class="section-title">Selected Categories</h2>
+                <p class="section-subtitle" id="categorySelectionSummary">Nothing is selected yet.</p>
+              </div>
+            </div>
+            <div class="category-selection__chips" id="categorySelectionList"></div>
+          </div>
+
+          <div class="category-target-list" id="categoryTargets"></div>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <div id="overlay" class="overlay d-none">
+    <div class="loader-spinner"></div>
+  </div>
+
+  <script defer src="{{ asset_url('js/category-manager.js') }}"></script>
+</body>
+
+</html>

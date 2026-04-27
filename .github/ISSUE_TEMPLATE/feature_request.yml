@@ -4,12 +4,23 @@ title: "[Feature]: "
 labels:
   - enhancement
 body:
+  - type: dropdown
+    id: project_area
+    attributes:
+      label: Target area
+      options:
+        - image-scraper
+        - parts-extractor
+        - repository / CI
+        - not sure
+    validations:
+      required: true
   - type: input
     id: problem
     attributes:
       label: Problem statement
       description: What problem are you trying to solve?
-      placeholder: Operators cannot prioritize jobs by urgency
+      placeholder: Operators cannot easily tell whether an action belongs in image-scraper or parts-extractor
     validations:
       required: true
   - type: textarea
@@ -17,23 +28,23 @@ body:
     attributes:
       label: Proposed solution
       description: Describe your preferred implementation
-      placeholder: Add priority field to /scrape and priority queue scheduler
+      placeholder: Add clearer project-level guidance, workflow automation, or product behavior improvements
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
-      placeholder: Manual queue ordering via admin endpoint
+      placeholder: Manual steps, docs-only changes, or a smaller UI/API tweak
   - type: textarea
     id: scope
     attributes:
       label: Success criteria
       description: How do we know this feature is done?
       placeholder: |
-        - Priority accepted by API
-        - Queue executes high > normal > low
-        - Metrics exposed in /admin/api/overview
+        - Behavior is defined clearly
+        - UI/API/docs are updated where needed
+        - Validation steps are straightforward
     validations:
       required: true
   - type: dropdown

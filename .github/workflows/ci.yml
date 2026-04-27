@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Quality (Node 20, Python ${{ matrix.python-version }})
+  image-scraper-quality:
+    name: Image Scraper Quality (Node 20, Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -31,23 +31,26 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+          cache-dependency-path: image-scraper/package-lock.json
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: image-scraper/requirements.txt
 
       - name: Install Node dependencies
+        working-directory: image-scraper
         run: npm ci
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r image-scraper/requirements.txt
 
       - name: JavaScript syntax checks
+        working-directory: image-scraper
         run: |
           node -c server.js
           node -c start.js
@@ -56,9 +59,11 @@ jobs:
           done
 
       - name: Python syntax checks
+        working-directory: image-scraper
         run: python -m py_compile convert_image.py create_zip.py
 
       - name: Python smoke checks
+        working-directory: image-scraper
         run: |
           python convert_image.py --help
           mkdir -p /tmp/zip-ci
@@ -72,6 +77,34 @@ jobs:
           name: zip-smoke-py${{ matrix.python-version }}
           path: /tmp/zip-ci.zip
           if-no-files-found: error
+
+  parts-extractor-quality:
+    name: Parts Extractor Quality (Python 3.12)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: parts-extractor/requirements.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r parts-extractor/requirements.txt pytest
+
+      - name: Python syntax checks
+        working-directory: parts-extractor
+        run: python -m py_compile app.py automation_service.py database.py scrapers/*.py
+
+      - name: Test suite
+        working-directory: parts-extractor
+        run: pytest tests -q
 
   standards:
     name: Repository standards
@@ -101,19 +134,29 @@ jobs:
           test -f .github/labels.json
           test -f .github/workflows/release-drafter.yml
           test -f .github/workflows/labels-sync.yml
-          test -f requirements.txt
-          test -f docs/README.md
-          test -f docs/API_REFERENCE.md
-          test -f docs/DEPLOYMENT_RAILWAY.md
+          test -f image-scraper/README.md
+          test -f image-scraper/package.json
+          test -f image-scraper/server.js
+          test -f image-scraper/requirements.txt
+          test -f image-scraper/docs/README.md
+          test -f image-scraper/docs/API_REFERENCE.md
+          test -f image-scraper/docs/DEPLOYMENT_RAILWAY.md
+          test -f parts-extractor/README.md
+          test -f parts-extractor/app.py
+          test -f parts-extractor/requirements.txt
+          test -f parts-extractor/templates/index.html
 
   docker-smoke:
     name: Docker build smoke test
     runs-on: ubuntu-latest
-    needs: [quality]
+    needs: [image-scraper-quality, parts-extractor-quality]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t scraper-ci:${{ github.sha }} .
+      - name: Build Image Scraper Docker image
+        run: docker build -t image-scraper-ci:${{ github.sha }} ./image-scraper
+
+      - name: Build Parts Extractor Docker image
+        run: docker build -t parts-extractor-ci:${{ github.sha }} ./parts-extractor

@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>History — Parts Extractor v8</title>
+  <link rel="icon" href="data:," />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0d0f14;
+      color: #e8eaf5;
+      min-height: 100vh
+    }
+
+    .page-shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: .75rem 1rem;
+      opacity: 0;
+      animation: fadeIn .25s ease forwards
+    }
+
+    @keyframes fadeIn {
+      to {
+        opacity: 1
+      }
+    }
+
+    .cy-card {
+      background: #13161e;
+      border: 1px solid #252a3d;
+      border-radius: 16px
+    }
+
+    .d-none {
+      display: none !important
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: #0d0f14cc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999
+    }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #252a3d;
+      border-top-color: #4f8cff;
+      border-radius: 50%;
+      animation: spin .8s linear infinite
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="{{ asset_url('css/common.css') }}">
+  <link rel="stylesheet" href="{{ asset_url('css/history.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div class="page-shell py-3">
+
+    <!-- ── Unified Header ───────────────────────────────────────── -->
+    <header class="app-header cy-card mb-3">
+      <div class="header-left">
+        <div class="app-logo">PE</div>
+        <div class="header-brand">
+          <h1 class="app-title">Parts Extractor</h1>
+          <p class="app-sub">Fetch History &amp; Statistics</p>
+        </div>
+      </div>
+      <nav class="nav-pills">
+        <a href="/" class="nav-link">Extractor</a>
+        <a href="/history" class="nav-link active">History</a>
+        <a href="/automation" class="nav-link">Automation</a>
+        <a href="/category-manager" class="nav-link">Categories</a>
+        <a href="/image-converter" class="nav-link">Images</a>
+      </nav>
+      <div class="header-right">
+        <div class="theme-switch">
+          <span class="theme-label">Light</span>
+          <label class="switch-track">
+            <input type="checkbox" id="darkMode" checked>
+            <span class="switch-thumb"></span>
+          </label>
+          <span class="theme-label">Dark</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="alert" class="alert-banner d-none" role="alert"></div>
+
+    <!-- ── Stats Overview ───────────────────────────────────────── -->
+    <section class="cy-card p-3 mb-3">
+      <div class="section-heading mb-3">
+        <h2 class="section-title">Database Overview</h2>
+        <p class="section-subtitle">Real-time statistics from your scraping database</p>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="totalHistories">-</div>
+            <div class="stat-label">Total Sessions</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="totalItems">-</div>
+            <div class="stat-label">Items Scraped</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="uniqueModels">-</div>
+            <div class="stat-label">Unique Models</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="recentSessions">-</div>
+            <div class="stat-label">Recent (30d)</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="dbSize">-</div>
+            <div class="stat-label">Database Size</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="uniqueSites">-</div>
+            <div class="stat-label">Sites Scraped</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="avgPrice">-</div>
+            <div class="stat-label">Avg Price</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="successRate">-</div>
+            <div class="stat-label">Success Rate</div>
+          </div>
+        </div>
+        <div class="stat-card stat-card--highlight">
+          <div class="stat-content">
+            <div class="stat-value stat-value--large" id="topSite">-</div>
+            <div class="stat-label">Top Site</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="latestSession">-</div>
+            <div class="stat-label">Latest Session</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="highestPrice">-</div>
+            <div class="stat-label">Highest Price</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-content">
+            <div class="stat-value" id="lowestPrice">-</div>
+            <div class="stat-label">Lowest Price</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── History List ──────────────────────────────────────────── -->
+    <section class="cy-card p-3">
+      <div class="history-heading mb-3">
+        <div>
+          <h2 class="section-title">Fetch History</h2>
+          <p class="section-subtitle">Browse and manage your scraping sessions</p>
+        </div>
+        <div class="history-heading__right">
+          <div class="history-control-chip">
+            <div class="history-control-chip__actions">
+              <button type="button" id="refreshBtn"
+                class="history-control-chip__button history-control-chip__button--primary">Refresh</button>
+              <button type="button" id="cleanupBtn"
+                class="history-control-chip__button history-control-chip__button--danger">Cleanup</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="history-filters mb-4">
+        <div class="history-filter history-filter--full history-filter--search">
+          <label for="historySearch" class="history-filter__label">Search Sessions</label>
+          <input id="historySearch" type="text" class="history-filter__input"
+            placeholder="Search by URL, site, or session ID">
+        </div>
+        <div class="history-filter">
+          <label for="historyStartDate" class="history-filter__label">From Date</label>
+          <input id="historyStartDate" type="date" class="history-filter__input">
+        </div>
+        <div class="history-filter">
+          <label for="historyEndDate" class="history-filter__label">To Date</label>
+          <input id="historyEndDate" type="date" class="history-filter__input">
+        </div>
+        <div class="history-filter history-filter--range">
+          <label for="historyMinItems" class="history-filter__label">Min Items</label>
+          <div class="history-range-control">
+            <input id="historyMinItems" type="range" min="0" max="500" step="10" value="0">
+            <span class="history-range-value" id="historyMinItemsValue">0</span>
+          </div>
+        </div>
+        <div class="history-filter">
+          <label for="historySiteSelect" class="history-filter__label">Site</label>
+          <select id="historySiteSelect" class="history-filter__input">
+            <option value="">All sites</option>
+          </select>
+        </div>
+        <div class="history-filter history-filter--full history-filter--actions">
+          <div class="history-filter__actions">
+            <button type="button" id="historyClearFilters" class="btn btn-outline-secondary btn-ghost">Clear
+              Filters</button>
+            <span id="historyResultSummary" class="history-result-summary">--</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="historyContainer"></div>
+
+      <div id="emptyState" class="empty-state d-none">
+        <div class="empty-icon">Log</div>
+        <h3>No history yet</h3>
+        <p>Start by <a href="/" style="color:var(--primary)">running a fetch</a> to see your sessions here.</p>
+      </div>
+    </section>
+
+  </div><!-- /.page-shell -->
+
+  <!-- ── Detail Modal ─────────────────────────────────────────── -->
+  <div id="historyModal" class="history-detail-modal">
+    <div class="history-detail-content">
+      <button class="close-btn" id="closeModal">&times;</button>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <!-- ── Cleanup Modal ─────────────────────────────────────────── -->
+  <div id="cleanupModal" class="history-detail-modal">
+    <div class="history-detail-content cleanup-modal-content">
+      <button class="close-btn" id="closeCleanupModal">&times;</button>
+      <div class="cleanup-modal-body">
+        <h3 class="cleanup-modal-title">Cleanup Old Sessions</h3>
+        <p class="cleanup-modal-subtitle">Delete scraping sessions older than a specified date</p>
+        <div class="cleanup-options">
+          <div class="cleanup-option-group">
+            <label class="cleanup-label">Quick Select</label>
+            <div class="cleanup-quick-buttons">
+              <button type="button" class="cleanup-quick-btn" data-days="30">30 Days</button>
+              <button type="button" class="cleanup-quick-btn" data-days="60">60 Days</button>
+              <button type="button" class="cleanup-quick-btn active" data-days="90">90 Days</button>
+              <button type="button" class="cleanup-quick-btn" data-days="180">6 Months</button>
+              <button type="button" class="cleanup-quick-btn" data-days="365">1 Year</button>
+              <button type="button" class="cleanup-quick-btn cleanup-quick-btn--danger" data-days="99999">Delete
+                All</button>
+            </div>
+          </div>
+          <div class="cleanup-option-group">
+            <label for="cleanupDays" class="cleanup-label">Custom Days</label>
+            <input type="number" id="cleanupDays" class="cleanup-input" value="90" min="1" max="3650"
+              placeholder="Number of days">
+            <small class="cleanup-help">Sessions older than this will be deleted</small>
+          </div>
+          <div class="cleanup-option-group">
+            <label for="cleanupDate" class="cleanup-label">Or Specific Date</label>
+            <input type="date" id="cleanupDate" class="cleanup-input">
+            <small class="cleanup-help">Delete all sessions before this date</small>
+          </div>
+          <div class="cleanup-preview" id="cleanupPreview">
+            <div class="cleanup-preview-icon">Warn</div>
+            <div class="cleanup-preview-text">
+              <strong>Action Preview:</strong>
+              <span id="cleanupPreviewText">Sessions older than 90 days will be deleted</span>
+            </div>
+          </div>
+        </div>
+        <div class="cleanup-actions">
+          <button type="button" id="cancelCleanup" class="btn btn-outline-secondary">Cancel</button>
+          <button type="button" id="confirmCleanup" class="btn btn-danger">Delete Old Sessions</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirmModal" class="confirm-modal d-none" aria-hidden="true">
+    <div class="confirm-modal__dialog cy-card" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle"
+      aria-describedby="confirmModalMessage">
+      <div class="confirm-modal__eyebrow">Confirm Action</div>
+      <h3 id="confirmModalTitle" class="confirm-modal__title">Please confirm</h3>
+      <p id="confirmModalMessage" class="confirm-modal__message">Are you sure you want to continue?</p>
+      <div class="confirm-modal__actions">
+        <button id="confirmCancelBtn" class="btn-export" type="button">Cancel</button>
+        <button id="confirmConfirmBtn" class="btn-danger" type="button">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Spinner Overlay ───────────────────────────────────────── -->
+  <div id="overlay" class="overlay d-none">
+    <div class="spinner"></div>
+  </div>
+
+  <script defer src="{{ asset_url('js/history.js') }}"></script>
+  <script>
+    // Apply saved theme immediately
+    (function () {
+      const saved = sessionStorage.getItem('cy_theme') || 'dark';
+      document.documentElement.setAttribute('data-bs-theme', saved);
+      const dm = document.getElementById('darkMode');
+      if (dm) {
+        dm.checked = saved === 'dark';
+        dm.addEventListener('change', function (e) {
+          const t = e.target.checked ? 'dark' : 'light';
+          document.documentElement.setAttribute('data-bs-theme', t);
+          sessionStorage.setItem('cy_theme', t);
+        });
+      }
+    })();
+  </script>
+</body>
+
+</html>
