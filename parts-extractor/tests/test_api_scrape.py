@@ -201,6 +201,47 @@ def test_xcell_listing_does_not_auto_enable_slow_detail_scan(tmp_path, monkeypat
     assert calls["enrich_details"] is True
 
 
+def test_phase_two_pause_aborts_detail_enrichment(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    items = [
+        app_module.Item(
+            url="https://example.com/product-a",
+            site="example.com",
+            title="Product A",
+            price_value=1.0,
+            price_currency="USD",
+            price_text="$1.00",
+            discounted_value=1.0,
+            discounted_formatted="$1.00",
+            original_formatted="$1.00",
+            source="test",
+            image_url="",
+        )
+    ]
+
+    monkeypatch.setattr(app_module, "build_session", lambda **_kwargs: (object(), False))
+    monkeypatch.setattr(app_module, "enrich_standard_item_details", lambda _session, item, *_args, **_kwargs: item)
+
+    def pause_on_phase_two(progress):
+        if progress.get("phase") == 2 and progress.get("phase2_completed"):
+            raise app_module.AutomationRunPaused("Paused during detail enrichment.")
+
+    try:
+        app_module.enrich_scraped_items(
+            items,
+            rules={},
+            retries=1,
+            verify_ssl=True,
+            use_curl=True,
+            enrich_details=True,
+            progress_callback=pause_on_phase_two,
+        )
+    except app_module.AutomationRunPaused as exc:
+        assert "Paused during detail enrichment" in str(exc)
+    else:
+        raise AssertionError("Phase 2 enrichment swallowed AutomationRunPaused")
+
+
 def test_sparse_target_guard_blocks_bad_history_save(tmp_path, monkeypatch):
     monkeypatch.setenv("SCRAPER_ANOMALY_GUARD", "1")
     monkeypatch.setenv("SCRAPER_ANOMALY_MIN_PREVIOUS", "10")

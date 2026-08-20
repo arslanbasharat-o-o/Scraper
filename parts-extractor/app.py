@@ -700,6 +700,8 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 'phase2_total': total_to_enrich,
                 'current_items': len(items),
             })
+        except AutomationRunPaused:
+            raise
         except Exception:
             pass
 
@@ -713,6 +715,11 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 item_url = futures[future]
                 try:
                     _, enriched_data = future.result()
+                except AutomationRunPaused:
+                    for pending_future in futures:
+                        pending_future.cancel()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise
                 except Exception as exc:
                     if logger:
                         logger.warning(f"[detail] Failed to enrich {item_url}: {exc}")
@@ -732,6 +739,11 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                             'current_items': len(items),
                             'last_item_url': item_url,
                         })
+                    except AutomationRunPaused:
+                        for pending_future in futures:
+                            pending_future.cancel()
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        raise
                     except Exception:
                         pass
     finally:
