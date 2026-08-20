@@ -910,7 +910,8 @@
 
     const renderRunCard = run => {
       const summary = run.summary || {};
-      const selected = Number(run.id) === Number(state.selectedRunId) ? ' is-selected' : '';
+      const isSelectedRun = Number(run.id) === Number(state.selectedRunId);
+      const selected = isSelectedRun ? ' is-selected' : '';
       const runStatus = String(run.status || '').toLowerCase();
       const displayName = automationDisplayName(run);
       const totalTargets = Number(summary.total_targets || summary.target_count || (run.target_urls || []).length || 0);
@@ -968,7 +969,7 @@
                 <span class="automation-meta__value">${escapeHtml(timeValue)}</span>
               </div>
             </div>
-            ${activeRunStatus ? `
+            ${activeRunStatus && !isSelectedRun ? `
               <div class="automation-run-progress" aria-label="${escapeHtml(`${phaseName} ${progressPercentLabel}`)}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progressPct.toFixed(0)}">
                 <div class="automation-run-progress__track">
                   <div class="automation-run-progress__fill" style="width:${progressPct.toFixed(1)}%"></div>
