@@ -94,11 +94,17 @@ def test_automation_live_runs_keep_visible_progress_through_finalizing():
     assert "function getRunPhaseName(run)" in automation_script
     assert "function getRunActivityMessage(run)" in automation_script
     assert "const isSelectedRun = Number(run.id) === Number(state.selectedRunId);" in automation_script
+    assert "function hasPhase1CheckpointItems(run)" in automation_script
+    assert "Products Found" in automation_script
+    assert "products found" in automation_script
+    assert "Restoring Product Checkpoint" in automation_script
     assert "automation-run-progress__fill" in automation_script
     assert "automation-run-progress__label" in automation_script
     assert "activeRunStatus && !isSelectedRun" in automation_script
     assert "automation-run-progress__line" not in automation_script
     assert "Phase 4: Saving Snapshot" in app_source
+    assert "checkpoint_only_phase1" in app_source
+    assert "Collecting Product Checkpoint" in app_source
     assert "'status_message': 'Writing scraped products, comparison metadata, and run history to the database.'" in app_source
     assert ".automation-run-progress__track" in automation_styles
     assert ".automation-run-progress__label" in automation_styles

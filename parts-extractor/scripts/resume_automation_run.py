@@ -91,22 +91,30 @@ def resume_run(run_id: int) -> int:
             if len(history_items) >= base_items_count:
                 base_preview_items = history_items[:base_items_count]
     remaining_target_urls = target_urls[base_completed_targets:]
+    checkpoint_only_phase1 = base_items_count > 0 and base_completed_targets <= 0
+    phase_name = "Restoring Product Checkpoint" if checkpoint_only_phase1 else "Phase 1: Category Crawling"
     db_manager.mark_automation_run_resuming(
         run_id,
         target_urls=target_urls,
         previous_history_id=previous_history_id,
         summary={
+            "phase": 1,
+            "phase_name": phase_name,
             "target_count": total_target_count,
             "completed_targets": base_completed_targets,
             "total_targets": total_target_count,
             "current_items": base_items_count,
-            "progress_percent": round((base_completed_targets / max(1, total_target_count)) * 100, 1),
+            "progress_percent": 1.0 if checkpoint_only_phase1 else round((base_completed_targets / max(1, total_target_count)) * 100, 1),
             "last_target_url": str(original_summary.get("last_target_url") or ""),
             "last_target_items": int(original_summary.get("last_target_items") or 0),
             "resumed_run": True,
             "resumed_from_status": run.get("status") or "",
             "resumed_from_checkpoint": resume_from_checkpoint,
             "preview_items": base_preview_items[:base_items_count],
+            "phase1_completed": base_completed_targets,
+            "phase1_total": total_target_count,
+            "status_message": "Restoring saved products while category completion catches up." if checkpoint_only_phase1 else "Resuming category crawling.",
+            "activity_label": phase_name,
         },
     )
 
@@ -120,6 +128,8 @@ def resume_run(run_id: int) -> int:
         completed_targets = base_completed_targets + int(progress.get("completed_targets") or 0)
         total_targets_local = max(1, total_target_count)
         current_items = base_items_count + int(progress.get("current_items") or 0)
+        checkpoint_only_phase1 = current_items > 0 and completed_targets <= 0
+        phase_name = "Restoring Product Checkpoint" if checkpoint_only_phase1 else "Phase 1: Category Crawling"
         last_target_items = int(progress.get("last_target_items") or 0)
         preview_items = progress.get("preview_items") if isinstance(progress.get("preview_items"), list) else []
         checkpoint_preview_items = base_preview_items[:base_items_count]
@@ -139,11 +149,13 @@ def resume_run(run_id: int) -> int:
             run_id,
             items_count=current_items,
             summary={
+                "phase": 1,
+                "phase_name": phase_name,
                 "target_count": total_target_count,
                 "completed_targets": completed_targets,
                 "total_targets": total_targets_local,
                 "current_items": current_items,
-                "progress_percent": round((completed_targets / total_targets_local) * 100, 1),
+                "progress_percent": 1.0 if checkpoint_only_phase1 else round((completed_targets / total_targets_local) * 100, 1),
                 "last_target_url": str(progress.get("last_target_url") or ""),
                 "last_target_items": last_target_items,
                 "preview_items": checkpoint_preview_items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT],
@@ -152,6 +164,10 @@ def resume_run(run_id: int) -> int:
                 "recent_targets_per_min": round(recent_targets_per_min, 2),
                 "recent_items_per_min": round(recent_items_per_min, 2),
                 "recent_rate_window_seconds": 600,
+                "phase1_completed": completed_targets,
+                "phase1_total": total_targets_local,
+                "status_message": "Restoring saved products while category completion catches up." if checkpoint_only_phase1 else "Resuming category crawling.",
+                "activity_label": phase_name,
             },
         )
 

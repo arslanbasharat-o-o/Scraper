@@ -1864,6 +1864,22 @@ def execute_scrape_workflow(
         'checkpoint_items': 0,
     }
     total_targets = len(urls)
+    active_run_id_for_progress = int((automation_job or {}).get('_active_run_id') or 0)
+    if active_run_id_for_progress > 0:
+        try:
+            active_run = db_manager.get_automation_run(active_run_id_for_progress) or {}
+            active_summary = active_run.get('summary') if isinstance(active_run.get('summary'), dict) else {}
+            progress_state['completed_targets'] = max(
+                0,
+                int(active_summary.get('completed_targets') or active_summary.get('phase1_completed') or 0),
+            )
+            progress_state['items_found'] = max(
+                0,
+                int(active_summary.get('current_items') or active_run.get('items_count') or 0),
+            )
+            progress_state['checkpoint_items'] = max(0, int(active_summary.get('checkpoint_items') or 0))
+        except Exception as exc:
+            app.logger.debug(f"[automation] Could not seed live progress from existing run: {exc}")
 
     def _target_label_for(url: str) -> str:
         return target_labels.get(url, '')
@@ -1935,10 +1951,9 @@ def execute_scrape_workflow(
             if is_usable_scraped_item(item)
         ]
         with progress_lock:
-            active_run_id = int((automation_job or {}).get('_active_run_id') or 0)
-            if preview_items and active_run_id > 0:
+            if preview_items and active_run_id_for_progress > 0:
                 persisted_count = db_manager.append_automation_run_items(
-                    active_run_id,
+                    active_run_id_for_progress,
                     preview_items,
                 )
                 progress_state['checkpoint_items'] += persisted_count
@@ -2549,6 +2564,9 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
                 completed_targets = int(progress.get('completed_targets') if progress.get('completed_targets') is not None else latest_summary.get('completed_targets') or 0)
                 total_targets_local = max(1, int(progress.get('total_targets') if progress.get('total_targets') is not None else latest_summary.get('total_targets') or total_target_count or 1))
                 current_items = int(progress.get('current_items') if progress.get('current_items') is not None else latest_summary.get('current_items') or 0)
+                checkpoint_only_phase1 = current_phase == 1 and current_items > 0 and completed_targets <= 0
+                if checkpoint_only_phase1 and phase_name == 'Phase 1: Category Crawling':
+                    phase_name = 'Collecting Product Checkpoint'
                 last_target_items = int(progress.get('last_target_items') or 0)
                 preview_items = progress.get('preview_items') if isinstance(progress.get('preview_items'), list) else []
                 if not preview_items and isinstance(latest_summary.get('preview_items'), list):
@@ -2593,6 +2611,8 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
                     progress_percent = round((completed_targets / total_targets_local) * 100, 1) if current_phase == 1 else (
                         round((phase2_completed / max(1, phase2_total)) * 100, 1) if current_phase == 2 else 100.0
                     )
+                if checkpoint_only_phase1 and progress_percent == 0:
+                    progress_percent = 1.0
 
                 db_manager.update_automation_run_progress(
                     run_record['id'],

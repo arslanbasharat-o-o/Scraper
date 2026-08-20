@@ -368,6 +368,8 @@
     const phase2Completed = Number(summary.phase2_completed || 0);
     const recentItemsPerMin = Number(summary.recent_items_per_min || 0);
     const isPhase2 = ['running', 'resuming'].includes(status) && (currentPhase === 2 || phase2Total > 0);
+    const currentItems = Number(summary.current_items || run?.items_count || 0);
+    const checkpointOnlyPhase1 = hasPhase1CheckpointItems(run);
     const remainingUnits = isPhase2 ? Math.max(0, phase2Total - phase2Completed) : remainingTargets;
     const unitsPerMin = isPhase2 ? Math.max(recentItemsPerMin, 25) : Math.max(recentTargetsPerMin, 0.5);
     const etaMs = ['running', 'resuming'].includes(status) && unitsPerMin > 0 && remainingUnits > 0
@@ -378,7 +380,9 @@
       : `${recentTargetsPerMin.toFixed(1)} categories/min`;
     const progressText = isPhase2
       ? `${phase2Completed.toLocaleString()} / ${Math.max(phase2Total, phase2Completed).toLocaleString()} products`
-      : `${completedTargets.toLocaleString()} / ${Math.max(totalTargets, completedTargets).toLocaleString()} categories`;
+      : checkpointOnlyPhase1
+        ? `${currentItems.toLocaleString()} products found`
+        : `${completedTargets.toLocaleString()} / ${Math.max(totalTargets, completedTargets).toLocaleString()} categories`;
     return {
       completedTargets,
       totalTargets,
@@ -398,10 +402,23 @@
     return Math.max(0, Math.min(100, numeric));
   }
 
+  function hasPhase1CheckpointItems(run) {
+    const summary = run?.summary || {};
+    const status = String(run?.status || '').toLowerCase();
+    if (!['running', 'resuming'].includes(status)) return false;
+    const phase = Number(summary.phase || 1);
+    const phase2Total = Number(summary.phase2_total || 0);
+    if (phase === 2 || phase2Total > 0) return false;
+    const completedTargets = Number(summary.completed_targets || summary.phase1_completed || 0);
+    const currentItems = Number(summary.current_items || run?.items_count || 0);
+    return completedTargets <= 0 && currentItems > 0;
+  }
+
   function getRunProgressPercent(run) {
     const summary = run?.summary || {};
     if (summary.progress_percent !== undefined && summary.progress_percent !== null) {
-      return clampPercent(summary.progress_percent, 0);
+      const explicitProgress = clampPercent(summary.progress_percent, 0);
+      return hasPhase1CheckpointItems(run) && explicitProgress === 0 ? 1 : explicitProgress;
     }
     const phase = Number(summary.phase || 0);
     if (phase === 2) {
@@ -409,13 +426,17 @@
     }
     const totalTargets = Number(summary.total_targets || summary.target_count || (run?.target_urls || []).length || 0);
     if (totalTargets > 0) {
-      return clampPercent((Number(summary.completed_targets || 0) / totalTargets) * 100, 0);
+      const targetProgress = clampPercent((Number(summary.completed_targets || 0) / totalTargets) * 100, 0);
+      return hasPhase1CheckpointItems(run) && targetProgress === 0 ? 1 : targetProgress;
     }
     return String(run?.status || '').toLowerCase() === 'completed' ? 100 : 0;
   }
 
   function getRunPhaseName(run) {
     const summary = run?.summary || {};
+    if (hasPhase1CheckpointItems(run)) {
+      return summary.resumed_from_checkpoint ? 'Restoring Product Checkpoint' : 'Collecting Product Checkpoint';
+    }
     const explicit = compactAutomationLabel(summary.phase_name || summary.activity_label || '');
     if (explicit) return explicit;
     const status = String(run?.status || '').toLowerCase();
@@ -432,6 +453,11 @@
 
   function getRunActivityMessage(run) {
     const summary = run?.summary || {};
+    if (hasPhase1CheckpointItems(run)) {
+      return summary.resumed_from_checkpoint
+        ? 'Restoring saved products while category completion catches up.'
+        : 'Products are being captured before the category counter advances.';
+    }
     const explicit = compactAutomationLabel(summary.status_message || '');
     if (explicit) return explicit;
     const status = String(run?.status || '').toLowerCase();
@@ -2087,13 +2113,18 @@
         phaseName = getRunPhaseName(run);
         const p1Done = Number(runSummary.phase1_completed || completedTargets || 0);
         const p1Total = Number(runSummary.phase1_total || targetCount || 1);
+        const checkpointOnlyPhase1 = hasPhase1CheckpointItems(run);
         activeProgressPct = getRunProgressPercent(run);
-        activeProgressText = `${p1Done} / ${p1Total} categories`;
+        activeProgressText = checkpointOnlyPhase1
+          ? `${totalHarvested.toLocaleString()} products found`
+          : `${p1Done} / ${p1Total} categories`;
         activeSpeed = runSummary.phase1_speed || (timing.targetsPerMin ? `${timing.targetsPerMin} cats/min` : '~45 cats/min');
         activeEta = runSummary.phase1_eta || timing.etaLabel || '20.0m';
-        activeRemaining = `${Math.max(0, p1Total - p1Done)} categories`;
-        stepCountLabel = 'Categories Done';
-        stepCountValue = `${p1Done} / ${p1Total}`;
+        activeRemaining = checkpointOnlyPhase1
+          ? `${p1Total.toLocaleString()} categories queued`
+          : `${Math.max(0, p1Total - p1Done)} categories`;
+        stepCountLabel = checkpointOnlyPhase1 ? 'Products Found' : 'Categories Done';
+        stepCountValue = checkpointOnlyPhase1 ? totalHarvested.toLocaleString() : `${p1Done} / ${p1Total}`;
       } else {
         phaseName = getRunPhaseName(run);
         activeSpeed = currentPhase >= 4 ? 'Writing database' : 'Validating';
