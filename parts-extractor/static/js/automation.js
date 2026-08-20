@@ -919,11 +919,14 @@
       const activeRunStatus = isCurrentRunStatus(runStatus);
       const progressPct = getRunProgressPercent(run);
       const phaseName = getRunPhaseName(run);
-      const activityMessage = getRunActivityMessage(run);
       const runKind = activeRunStatus ? 'Active run' : 'Run snapshot';
       const progressValue = activeRunStatus
         ? timing.progressText
         : String(summary.target_count || (run.target_urls || []).length || 0);
+      const progressPercentLabel = `${progressPct.toFixed(0)}%`;
+      const progressInlineLabel = activeRunStatus
+        ? `${phaseName} - ${progressValue}`
+        : progressValue;
       const timeValue = ['running', 'resuming'].includes(runStatus)
         ? `${timing.etaLabel} left`
         : activeRunStatus
@@ -966,20 +969,15 @@
               </div>
             </div>
             ${activeRunStatus ? `
-              <div class="automation-run-progress" aria-label="${escapeHtml(`${phaseName} ${progressPct.toFixed(0)} percent`)}">
+              <div class="automation-run-progress" aria-label="${escapeHtml(`${phaseName} ${progressPercentLabel}`)}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progressPct.toFixed(0)}">
                 <div class="automation-run-progress__track">
                   <div class="automation-run-progress__fill" style="width:${progressPct.toFixed(1)}%"></div>
-                </div>
-                <div class="automation-run-progress__line">
-                  <span>${escapeHtml(progressValue)}</span>
-                  <strong>${escapeHtml(`${progressPct.toFixed(0)}%`)}</strong>
+                  <div class="automation-run-progress__label">
+                    <span>${escapeHtml(progressInlineLabel)}</span>
+                    <strong>${escapeHtml(progressPercentLabel)}</strong>
+                  </div>
                 </div>
               </div>
-            ` : ''}
-            ${['running', 'resuming'].includes(runStatus) ? `
-              <div class="automation-run__subtitle">${escapeHtml(`${activityMessage} Elapsed ${timing.elapsedLabel} - ${timing.rateLabel}${timing.finishLabel ? ` - finish around ${timing.finishLabel}` : ''}`)}</div>
-            ` : activeRunStatus ? `
-              <div class="automation-run__subtitle">${escapeHtml(activityMessage)}</div>
             ` : ''}
           </button>
           <div class="automation-job__actions" aria-label="Run actions">${actionButtons}</div>
@@ -2107,6 +2105,9 @@
       }
     }
 
+    const activeProgressPercentLabel = `${activeProgressPct.toFixed(0)}%`;
+    const activeProgressInlineLabel = `${phaseName} - ${activeProgressText}`;
+
     container.className = 'automation-run-detail';
     container.innerHTML = `
       <div class="automation-detail-summary">
@@ -2143,6 +2144,17 @@
           </div>
         ` : ''}
       </div>
+      ${liveRunStatus ? `
+        <div class="automation-run-progress automation-run-progress--detail" aria-label="${escapeHtml(`${phaseName} ${activeProgressPercentLabel}`)}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${activeProgressPct.toFixed(0)}">
+          <div class="automation-run-progress__track">
+            <div class="automation-run-progress__fill" style="width:${activeProgressPct.toFixed(1)}%"></div>
+            <div class="automation-run-progress__label">
+              <span>${escapeHtml(activeProgressInlineLabel)}</span>
+              <strong>${escapeHtml(activeProgressPercentLabel)}</strong>
+            </div>
+          </div>
+        </div>
+      ` : ''}
       ${Number(summary.excluded_previous_non_products || 0) || Number(summary.duplicate_current_rows || 0) || Number(summary.out_of_scope_previous_products || 0) ? `
         <div class="automation-comparison-note" role="status">
           ${escapeHtml(
@@ -2166,22 +2178,17 @@
           <span class="automation-meta__label">Started</span>
           <span class="automation-meta__value">${escapeHtml(formatDateTime(run.started_at))}</span>
         </div>
-        <div class="automation-meta">
-          <span class="automation-meta__label">${escapeHtml(completionLabel)}</span>
-          <span class="automation-meta__value">${escapeHtml(completionValue)}</span>
-        </div>
+        ${liveRunStatus ? '' : `
+          <div class="automation-meta">
+            <span class="automation-meta__label">${escapeHtml(completionLabel)}</span>
+            <span class="automation-meta__value">${escapeHtml(completionValue)}</span>
+          </div>
+        `}
         <div class="automation-meta">
           <span class="automation-meta__label">Targets</span>
           <span class="automation-meta__value">${escapeHtml(String(targetCount))}</span>
         </div>
         ${liveRunStatus ? `
-          <div class="automation-meta">
-            <span class="automation-meta__label">Progress</span>
-            <span class="automation-meta__value">
-              ${escapeHtml(activeProgressText)} (${activeProgressPct}%)
-              <div class="phase-pill__bar" style="height:4px; width:100%; margin-top:5px;"><div class="phase-pill__fill" style="width:${activeProgressPct}%;"></div></div>
-            </span>
-          </div>
           <div class="automation-meta">
             <span class="automation-meta__label">Elapsed</span>
             <span class="automation-meta__value">${escapeHtml(timing.elapsedLabel)}</span>

@@ -527,47 +527,87 @@ body {
 
 .automation-run-progress {
   display: grid;
-  gap: .32rem;
   margin-top: .55rem;
   padding-top: .2rem;
 }
 
 .automation-run-progress__track {
-  height: 7px;
+  position: relative;
+  height: 28px;
   overflow: hidden;
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface-3) 82%, var(--border) 18%);
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
 }
 
 .automation-run-progress__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
   height: 100%;
-  min-width: 8px;
+  min-width: 7px;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--primary), var(--accent));
-  box-shadow: 0 0 14px var(--primary-glow);
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 72%, var(--primary) 28%));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 42%, transparent);
   transition: width .55s cubic-bezier(.2, .8, .2, 1);
 }
 
-.automation-run-progress__line {
+.automation-run-progress__label {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: .6rem;
-  color: var(--text-2);
-  font-size: .7rem;
-  line-height: 1.25;
+  gap: .5rem;
+  height: 100%;
+  width: 100%;
+  padding: 0 .62rem;
+  color: var(--text);
+  font-size: .68rem;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 1px 0 color-mix(in srgb, var(--surface) 48%, transparent);
 }
 
-.automation-run-progress__line span {
+.automation-run-progress__label span {
+  display: inline-flex;
+  align-items: center;
+  min-height: calc(100% - 8px);
+  max-width: calc(100% - 3.4rem);
+  padding: 0 .5rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 74%, var(--primary) 26%));
+  color: #062116;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 28%, transparent);
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: none;
 }
 
-.automation-run-progress__line strong {
+.automation-run-progress__label strong {
   flex: 0 0 auto;
   color: var(--text);
   font-size: .72rem;
   font-variant-numeric: tabular-nums;
+}
+
+.automation-run-progress--detail {
+  margin: .95rem 0 .85rem;
+  padding-top: 0;
+}
+
+.automation-run-progress--detail .automation-run-progress__track {
+  height: 34px;
+}
+
+.automation-run-progress--detail .automation-run-progress__label {
+  padding: 0 .9rem;
+  font-size: .82rem;
+}
+
+.automation-run-progress--detail .automation-run-progress__label strong {
+  font-size: .86rem;
 }
 
 /* ── Job Actions ─────────────────────────────────────────────── */
