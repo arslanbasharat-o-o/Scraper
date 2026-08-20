@@ -89,6 +89,7 @@ def test_automation_live_runs_keep_visible_progress_through_finalizing():
     automation_script = (ROOT / "static" / "js" / "automation.js").read_text(encoding="utf-8")
     automation_styles = (ROOT / "static" / "css" / "automation.css").read_text(encoding="utf-8")
     app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+    resume_helper = (ROOT / "scripts" / "resume_automation_run.py").read_text(encoding="utf-8")
 
     assert "function getRunProgressPercent(run)" in automation_script
     assert "function getRunPhaseName(run)" in automation_script
@@ -109,6 +110,9 @@ def test_automation_live_runs_keep_visible_progress_through_finalizing():
     assert "checkpoint_only_phase1" in app_source
     assert "Collecting Product Checkpoint" in app_source
     assert "phase2_total = max(phase2_total, phase2_completed, current_items)" in app_source
+    assert "env.setdefault('XCELL_MAX_WORKERS', '16')" in app_source
+    assert "use_curl=True" in resume_helper
+    assert 'use_browser=bool(job.get("use_browser", False))' in resume_helper
     assert "'status_message': 'Writing scraped products, comparison metadata, and run history to the database.'" in app_source
     assert ".automation-run-progress__track" in automation_styles
     assert ".automation-run-progress__label" in automation_styles

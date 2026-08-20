@@ -2785,7 +2785,7 @@ def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
     env.setdefault('AUTOMATION_RECOVER_RUNNING', '0')
 
     if str(run.get('scraper_key') or '').strip().lower() == 'xcell':
-        env['XCELL_MAX_WORKERS'] = '6'
+        env.setdefault('XCELL_MAX_WORKERS', '16')
         env.setdefault('SCRAPER_USE_BROWSER', '0')
 
     try:
