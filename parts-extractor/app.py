@@ -2576,6 +2576,8 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
                 # Phase 2 metrics
                 phase2_completed = int(progress.get('phase2_completed') if progress.get('phase2_completed') is not None else latest_summary.get('phase2_completed') or 0)
                 phase2_total = int(progress.get('phase2_total') if progress.get('phase2_total') is not None else latest_summary.get('phase2_total') or 0)
+                if current_phase == 2 and phase2_completed > 0:
+                    phase2_total = max(phase2_total, phase2_completed, current_items)
 
                 cutoff = now - 10 * 60
                 if current_phase == 2:
@@ -2613,6 +2615,8 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
                     )
                 if checkpoint_only_phase1 and progress_percent == 0:
                     progress_percent = 1.0
+                if current_phase == 2 and phase2_total > 0:
+                    progress_percent = max(progress_percent, round((phase2_completed / phase2_total) * 100, 1))
 
                 db_manager.update_automation_run_progress(
                     run_record['id'],

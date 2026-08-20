@@ -364,8 +364,9 @@
     const rawRecent = Number(summary.recent_targets_per_min || 0);
     const recentTargetsPerMin = rawRecent > 0 ? rawRecent : (averageMsPerTarget > 0 && averageMsPerTarget < 5000 ? (60000 / averageMsPerTarget) : 45.0);
     const currentPhase = Number(summary.phase || 0);
-    const phase2Total = Number(summary.phase2_total || 0);
-    const phase2Completed = Number(summary.phase2_completed || 0);
+    const phase2Progress = getPhase2Progress(run);
+    const phase2Total = phase2Progress.total;
+    const phase2Completed = phase2Progress.completed;
     const recentItemsPerMin = Number(summary.recent_items_per_min || 0);
     const isPhase2 = ['running', 'resuming'].includes(status) && (currentPhase === 2 || phase2Total > 0);
     const currentItems = Number(summary.current_items || run?.items_count || 0);
@@ -414,15 +415,29 @@
     return completedTargets <= 0 && currentItems > 0;
   }
 
+  function getPhase2Progress(run) {
+    const summary = run?.summary || {};
+    const completed = Math.max(0, Number(summary.phase2_completed || 0));
+    const rawTotal = Math.max(0, Number(summary.phase2_total || 0));
+    const harvested = Math.max(0, Number(summary.current_items || run?.items_count || 0));
+    return {
+      completed,
+      total: Math.max(rawTotal, completed, harvested),
+    };
+  }
+
   function getRunProgressPercent(run) {
     const summary = run?.summary || {};
+    const phase = Number(summary.phase || 0);
+    if (phase === 2 || Number(summary.phase2_total || 0) > 0 || Number(summary.phase2_completed || 0) > 0) {
+      const phase2Progress = getPhase2Progress(run);
+      if (phase2Progress.total > 0) {
+        return clampPercent((phase2Progress.completed / phase2Progress.total) * 100, 0);
+      }
+    }
     if (summary.progress_percent !== undefined && summary.progress_percent !== null) {
       const explicitProgress = clampPercent(summary.progress_percent, 0);
       return hasPhase1CheckpointItems(run) && explicitProgress === 0 ? 1 : explicitProgress;
-    }
-    const phase = Number(summary.phase || 0);
-    if (phase === 2) {
-      return clampPercent((Number(summary.phase2_completed || 0) / Math.max(1, Number(summary.phase2_total || 1))) * 100, 0);
     }
     const totalTargets = Number(summary.total_targets || summary.target_count || (run?.target_urls || []).length || 0);
     if (totalTargets > 0) {
@@ -2100,12 +2115,14 @@
     if (liveRunStatus) {
       if (currentPhase === 2) {
         phaseName = getRunPhaseName(run);
-        const p2Done = Number(runSummary.phase2_completed || totalHarvested || 0);
-        const p2Total = Number(runSummary.phase2_total || totalHarvested || 1);
+        const phase2Progress = getPhase2Progress(run);
+        const p2Done = phase2Progress.completed;
+        const p2Total = Math.max(1, phase2Progress.total);
+        const phase2Complete = p2Done >= p2Total;
         activeProgressPct = getRunProgressPercent(run);
         activeProgressText = `${p2Done.toLocaleString()} / ${p2Total.toLocaleString()} products`;
         activeSpeed = runSummary.phase2_speed || (timing.itemsPerMin ? `${timing.itemsPerMin} items/min` : '~440 items/min');
-        activeEta = runSummary.phase2_eta || timing.etaLabel || '1.4m';
+        activeEta = phase2Complete ? 'Finalizing' : (runSummary.phase2_eta || timing.etaLabel || 'Estimating');
         activeRemaining = `${Math.max(0, p2Total - p2Done).toLocaleString()} products`;
         stepCountLabel = 'Products Enriched';
         stepCountValue = `${p2Done.toLocaleString()} / ${p2Total.toLocaleString()}`;
