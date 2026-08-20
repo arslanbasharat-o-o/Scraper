@@ -29,3 +29,453 @@ def test_scrape_requires_at_least_one_url(tmp_path, monkeypatch):
     assert payload["history_saved"] is False
     assert payload["count"] == 0
     assert app_module.db_manager.get_history_list(limit=10) == []
+
+
+def test_scrape_uses_http_first_when_browser_not_requested(tmp_path, monkeypatch):
+    """
+    Safari-TLS HTTP is the PRIMARY scraping transport.
+    When use_browser=False is passed, execute_scrape_workflow must report
+    using_browser=False regardless of other settings.
+
+    This test was previously named test_scrape_always_uses_botasaurus_mode and
+    incorrectly asserted using_browser=True even when use_browser=False.
+    That encoded an obsolete browser-first requirement. The authoritative
+    requirement is: HTTP scraping first, browser only as a fallback when HTTP
+    cannot retrieve usable supplier data.
+    """
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(app_module, "build_session", lambda **_kwargs: (object(), False))
+    monkeypatch.setattr(
+        app_module,
+        "scrape_url",
+        lambda *_args, **_kwargs: [app_module.Item(
+            url="https://example.com/product",
+            site="example.com",
+            title="Test Product",
+            price_value=1.0,
+            price_currency="USD",
+            price_text="$1.00",
+            discounted_value=1.0,
+            discounted_formatted="$1.00",
+            original_formatted="$1.00",
+            source="test",
+            image_url="",
+        )],
+    )
+
+    result = app_module.execute_scrape_workflow(
+        ["https://example.com/product"],
+        use_browser=False,
+        use_parallel=False,
+    )
+
+    # HTTP-first: when browser is not requested, using_browser must be False.
+    assert result["using_browser"] is False
+    assert result["count"] == 1
+
+
+def test_scrape_reports_browser_used_when_browser_requested(tmp_path, monkeypatch):
+    """When use_browser=True is explicitly requested, using_browser must be True."""
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(app_module, "build_session", lambda **_kwargs: (object(), False))
+    monkeypatch.setattr(
+        app_module,
+        "scrape_url",
+        lambda *_args, **_kwargs: [app_module.Item(
+            url="https://www.mobilesentrix.com/product",
+            site="mobilesentrix.com",
+            title="HTTP Fallback Product",
+            price_value=5.0,
+            price_currency="USD",
+            price_text="$5.00",
+            discounted_value=5.0,
+            discounted_formatted="$5.00",
+            original_formatted="$5.00",
+            source="test",
+            image_url="",
+        )],
+    )
+
+    result = app_module.execute_scrape_workflow(
+        ["https://www.mobilesentrix.com/product"],
+        use_browser=True,
+        use_parallel=False,
+    )
+
+    # When browser mode is explicitly requested, it is reflected in the result.
+    assert result["using_browser"] is True
+    assert result["count"] == 1
+
+
+def test_extractor_locks_botasaurus_rendering_on(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    with app_module.app.test_client() as client:
+        response = client.get("/")
+
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'id="useBrowserApi" class="toggle-cb" checked disabled' in html
+
+
+def test_error_placeholder_items_do_not_count_as_products(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    def fake_build_session(**_kwargs):
+        return object(), False
+
+    def fake_scrape_url(_session, url, _rules, _crawl_pagination, _max_pages, _delay_ms, _logger):
+        return [app_module.Item(
+            url=url,
+            site="example.com",
+            title="",
+            price_value=None,
+            price_currency=None,
+            price_text="fetch_failed: blocked",
+            discounted_value=None,
+            discounted_formatted="",
+            original_formatted="",
+            source="error",
+            image_url="",
+        )]
+
+    monkeypatch.setattr(app_module, "build_session", fake_build_session)
+    monkeypatch.setattr(app_module, "scrape_url", fake_scrape_url)
+
+    result = app_module.execute_scrape_workflow(
+        ["https://www.mobilesentrix.com/example"],
+        use_browser=False,
+        use_parallel=False,
+    )
+
+    assert result["count"] == 0
+    assert result["history_saved"] is False
+    assert result["target_errors"]
+
+
+def test_xcell_listing_does_not_auto_enable_slow_detail_scan(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    calls = {"enrich": 0, "enrich_details": None}
+
+    def fake_build_session(**_kwargs):
+        class Session:
+            xcell_last_error = ""
+            xcell_blocked = False
+
+        return Session(), False
+
+    def fake_scrape_url(_session, _url, _rules, _crawl_pagination, _max_pages, _delay_ms, _logger):
+        return [app_module.xcell_scraper_engine.Item(
+            title="Outer OLED Assembly for Samsung ZFold 7 5G",
+            url="https://xcellparts.com/product/outter-oled-assembly-without-frame-for-samsung-zfold-7-5g/",
+            original=12.0,
+            discounted=12.0,
+            original_formatted="$12.00",
+            discounted_formatted="$12.00",
+            stock_status="In Stock",
+        )]
+
+    def fake_enrich(*_args, **_kwargs):
+        calls["enrich"] += 1
+        calls["enrich_details"] = _kwargs.get("enrich_details")
+        return _args[0], 0
+
+    monkeypatch.setattr(app_module.xcell_scraper_engine, "build_session", fake_build_session)
+    monkeypatch.setattr(app_module.xcell_scraper_engine, "scrape_url", fake_scrape_url)
+    monkeypatch.setattr(app_module, "enrich_scraped_items", fake_enrich)
+
+    result = app_module.execute_scrape_workflow(
+        ["https://xcellparts.com/product-category/samsung/galaxy-z-series/galaxy-z-fold-7-5g/"],
+        use_browser=True,
+        use_parallel=False,
+    )
+
+    assert result["count"] == 1
+    assert result["auto_enrich_details"] is False
+    assert result["enrich_details"] is True
+    assert calls["enrich"] == 1
+    assert calls["enrich_details"] is True
+
+
+def test_sparse_target_guard_blocks_bad_history_save(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCRAPER_ANOMALY_GUARD", "1")
+    monkeypatch.setenv("SCRAPER_ANOMALY_MIN_PREVIOUS", "10")
+    monkeypatch.setenv("SCRAPER_ANOMALY_MAX_SPARSE_ITEMS", "2")
+    monkeypatch.setenv("SCRAPER_CHATGPT_AUTO_REPORT", "0")
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_module, "APP_ROOT", tmp_path)
+
+    target_url = "https://www.mobilesentrix.com/replacement-parts/apple/iphone-15"
+    previous_history = {
+        "id": "previous-history",
+        "timestamp": "2026-07-16T00:00:00+05:00",
+        "items": [
+            {
+                "title": f"Previous Product {idx}",
+                "url": f"https://www.mobilesentrix.com/product-{idx}",
+                "site": "mobilesentrix.com",
+                "price_value": 1.0,
+                "price_text": "$1.00",
+                "discounted_value": 1.0,
+                "discounted_formatted": "$1.00",
+                "original_formatted": "$1.00",
+                "extra": {"target_url": target_url, "target_label": "iPhone 15"},
+            }
+            for idx in range(12)
+        ],
+    }
+
+    def fake_build_session(**_kwargs):
+        return object(), False
+
+    def fake_scrape_url(_session, _url, _rules, _crawl_pagination, _max_pages, _delay_ms, _logger):
+        return [app_module.Item(
+            url="https://www.mobilesentrix.com/only-one-product",
+            site="mobilesentrix.com",
+            title="Only One Product",
+            price_value=1.0,
+            price_currency="USD",
+            price_text="$1.00",
+            discounted_value=1.0,
+            discounted_formatted="$1.00",
+            original_formatted="$1.00",
+            source="test",
+            image_url="",
+        )]
+
+    monkeypatch.setattr(app_module, "build_session", fake_build_session)
+    monkeypatch.setattr(app_module, "scrape_url", fake_scrape_url)
+
+    result = app_module.execute_scrape_workflow(
+        [target_url],
+        use_browser=False,
+        use_parallel=False,
+        previous_history_override=previous_history,
+    )
+
+    assert result["history_saved"] is False
+    assert result["guard_anomalies"]
+    assert result["guard_anomalies"][0]["previous_count"] == 12
+    assert result["guard_anomalies"][0]["current_count"] == 1
+    assert result["guard_incident"]["chatgpt_report"]["sent"] is False
+    assert "Scraper data-quality guard stopped" in result["error"]
+    assert app_module.db_manager.get_history_list(limit=10) == []
+    assert (tmp_path / "output" / "scraper_incidents").exists()
+
+
+def test_running_automation_run_exposes_live_product_preview(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    job = app_module.db_manager.save_automation_job({
+        "name": "GadgetFix Live",
+        "scraper_key": "gadgetfix",
+        "category_query": "iphone",
+        "root_url": "https://gadgetfix.com/",
+        "interval_minutes": 1440,
+        "enabled": True,
+        "auto_discover": False,
+        "crawl_pagination": True,
+        "max_pages": 10,
+        "delay_ms": 50,
+        "retries": 1,
+        "verify_ssl": True,
+        "use_parallel": True,
+        "enrich_details": False,
+        "drop_pct": 10,
+        "rules": {},
+    }, targets=[{
+        "label": "iPhone",
+        "url": "https://gadgetfix.com/category/iphone-1559.html",
+        "active": True,
+    }])
+    run = app_module.db_manager.create_automation_run(
+        job["id"],
+        trigger_type="manual",
+        target_urls=["https://gadgetfix.com/category/iphone-1559.html"],
+    )
+    app_module.db_manager.update_automation_run_progress(
+        run["id"],
+        items_count=1,
+        summary={
+            "target_count": 1,
+            "completed_targets": 1,
+            "current_items": 1,
+            "preview_items": [{
+                "title": "GadgetFix Screen",
+                "url": "https://gadgetfix.com/gadgetfix-screen-100.html",
+                "site": "gadgetfix.com",
+                "original_formatted": "$9.99",
+                "discounted_formatted": "$9.99",
+                "image_url": "",
+                "extra": {},
+            }],
+        },
+    )
+
+    with app_module.app.test_client() as client:
+        response = client.get(f"/api/automation/runs/{run['id']}")
+
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["current_history"]["is_live_preview"] is True
+    assert payload["current_history"]["items_count"] == 1
+    assert payload["current_history"]["items"][0]["title"] == "GadgetFix Screen"
+
+
+def test_automation_polling_is_compact_and_run_action_resumes_checkpoint(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    job = app_module.db_manager.save_automation_job({
+        "name": "XCell Resume Test",
+        "scraper_key": "xcell",
+        "category_query": "resume",
+        "root_url": "https://xcellparts.com/",
+        "interval_minutes": 1440,
+        "enabled": True,
+        "max_pages": 10,
+        "delay_ms": 50,
+    }, targets=[
+        {"label": "One", "url": "https://xcellparts.com/one", "active": True},
+        {"label": "Two", "url": "https://xcellparts.com/two", "active": True},
+    ])
+    run = app_module.db_manager.create_automation_run(
+        job["id"],
+        trigger_type="manual",
+        target_urls=["https://xcellparts.com/one", "https://xcellparts.com/two"],
+    )
+    app_module.db_manager.update_automation_run_progress(
+        run["id"],
+        items_count=1,
+        summary={
+            "target_count": 2,
+            "total_targets": 2,
+            "completed_targets": 1,
+            "current_items": 1,
+            "preview_items": [{"title": "Checkpoint item"}],
+        },
+    )
+    app_module.db_manager.pause_automation_run(run["id"], reason="Paused for test.")
+    monkeypatch.setattr(
+        app_module,
+        "_launch_existing_automation_run",
+        lambda run_id: (run_id == run["id"], ""),
+    )
+
+    with app_module.app.test_client() as client:
+        jobs_payload = client.get("/api/automation/jobs").get_json()
+        runs_payload = client.get("/api/automation/runs?scraper_key=xcell").get_json()
+        resume_response = client.post(f"/api/automation/jobs/{job['id']}/run", json={})
+        app_module.db_manager.complete_automation_run(
+            run["id"],
+            status="failed",
+            current_history_id="xcell:saved-partial-history",
+            target_urls=["https://xcellparts.com/one", "https://xcellparts.com/two"],
+            items_count=1,
+            summary={
+                "target_count": 2,
+                "total_targets": 2,
+                "completed_targets": 1,
+                "current_items": 1,
+                "preview_items": [{"title": "Checkpoint item"}],
+            },
+            error_text="Browser worker stopped.",
+        )
+        failed_resume_response = client.post(f"/api/automation/jobs/{job['id']}/run", json={})
+
+    compact_job = jobs_payload["jobs"][0]
+    compact_run = runs_payload["runs"][0]
+    resume_payload = resume_response.get_json()
+
+    assert compact_job["targets"] == []
+    assert "target_urls" not in compact_run
+    assert "preview_items" not in compact_run["summary"]
+    assert compact_run["summary"]["preview_item_count"] == 1
+    assert resume_response.status_code == 200
+    assert resume_payload["resumed"] is True
+    assert resume_payload["run_id"] == run["id"]
+    assert failed_resume_response.status_code == 200
+    assert failed_resume_response.get_json()["resumed"] is True
+
+
+def test_run_now_rejects_job_with_active_run(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    job = app_module.db_manager.save_automation_job({
+        "name": "XCell Active Test",
+        "scraper_key": "xcell",
+        "category_query": "active",
+        "root_url": "https://xcellparts.com/",
+        "interval_minutes": 1440,
+        "enabled": True,
+        "max_pages": 10,
+        "delay_ms": 50,
+    }, targets=[
+        {"label": "One", "url": "https://xcellparts.com/one", "active": True},
+    ])
+    run = app_module.db_manager.create_automation_run(
+        job["id"],
+        trigger_type="manual",
+        target_urls=["https://xcellparts.com/one"],
+    )
+
+    with app_module.app.test_client() as client:
+        response = client.post(f"/api/automation/jobs/{job['id']}/run", json={})
+
+    payload = response.get_json()
+    assert response.status_code == 409
+    assert payload["run_id"] == run["id"]
+    assert payload["status"] == "running"
+    assert "already running" in payload["error"]
+
+
+def test_local_browser_rendering_is_hidden_by_default(monkeypatch):
+    from scrapers import browser_fetcher
+
+    monkeypatch.delenv("SCRAPER_LOCAL_BROWSER_HEADLESS", raising=False)
+    monkeypatch.delenv("LOCAL_BROWSER_HEADLESS", raising=False)
+
+    assert browser_fetcher._local_browser_headless() is True
+
+
+def test_browser_fetch_uses_rendered_html_after_ready_timeout(monkeypatch):
+    import types
+
+    from scrapers import browser_fetcher
+
+    class FakeDriver:
+        page_html = "<html><body><div class='product-card'>Rendered product</div></body></html>"
+        current_url = "https://txpartscanada.ca/shop/iphone-16-pro-max"
+
+        def get(self, _url, timeout=60):
+            raise RuntimeError("Document did not become ready within 60 seconds")
+
+        def sleep(self, _seconds):
+            return None
+
+        def run_js(self, _script):
+            return False
+
+    def fake_browser(**_kwargs):
+        def decorate(fn):
+            def wrapper(data):
+                return fn(FakeDriver(), data)
+            return wrapper
+        return decorate
+
+    monkeypatch.setitem(
+        sys.modules,
+        "scrapers.botasaurus_wrapper",
+        types.SimpleNamespace(Driver=FakeDriver, browser=fake_browser),
+    )
+    monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_CHALLENGE_WAIT_SECONDS", "0")
+
+    result = browser_fetcher.fetch_html(
+        "https://txpartscanada.ca/shop/iphone-16-pro-max",
+        timeout=1,
+        wait_seconds=0,
+    )
+
+    assert result.final_url == "https://txpartscanada.ca/shop/iphone-16-pro-max"
+    assert "Rendered product" in result.html

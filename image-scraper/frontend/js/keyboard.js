@@ -70,11 +70,30 @@ export function setupKeyboardShortcuts() {
             return;
         }
 
-        // Don't trigger if typing in input
+        // Don't trigger global shortcuts while typing.
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
             if (e.key === 'Enter') {
-                const { startScrape } = window.appFunctions || {};
-                if (startScrape) startScrape();
+                const { startScrape, startBulkScrape } = window.appFunctions || {};
+                const targetId = e.target.id;
+
+                if (targetId === 'bulk-urls') {
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        if (startBulkScrape) startBulkScrape();
+                    }
+                    return;
+                }
+
+                if (targetId === 'bulk-title-filter' && state.bulkMode) {
+                    e.preventDefault();
+                    if (startBulkScrape) startBulkScrape();
+                    return;
+                }
+
+                if (targetId === 'url-input') {
+                    e.preventDefault();
+                    if (startScrape) startScrape();
+                }
             }
             return;
         }
@@ -112,6 +131,7 @@ export function setupKeyboardShortcuts() {
                 break;
             case 'b':
                 toggleBulkMode();
+                window.appFunctions?.updateBulkUrlCount?.();
                 break;
             case 'g':
                 cycleGridSize();

@@ -8,13 +8,22 @@ Author: Arslan
 Created for: TXParts
 """
 
+import os
 import requests
 import time
 import re
 from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
-from typing import List, Optional, Any
-from urllib.parse import urljoin, urlparse
+from typing import List, Optional
+from urllib.parse import urljoin, urlsplit, urlunsplit
+from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+
+try:
+    from curl_cffi import requests as curl_requests
+    HAS_CURL = True
+except Exception:
+    HAS_CURL = False
+
 
 @dataclass
 class Item:
@@ -84,33 +93,45 @@ def apply_price_rules(price: float, rules: dict | None = None) -> float:
         value -= absolute_off
     return round(max(0.0, value), 2)
 
-def build_session(retries: int = 2, verify_ssl: bool = True) -> tuple:
+def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = True) -> tuple:
     """Build HTTP session with retry logic"""
+    if use_curl and HAS_CURL:
+        session = curl_requests.Session(impersonate="safari15_5")
+        session.verify = verify_ssl
+        session.xcell_last_error = ''
+        return session, True
+
     from requests.adapters import HTTPAdapter
     from urllib3.util.retry import Retry
-    
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Referer': 'https://xcellparts.com/',
+    }
+
     session = requests.Session()
-    
+
     retry_strategy = Retry(
         total=retries,
         backoff_factor=0.5,
         status_forcelist=[429, 500, 502, 503, 504]
     )
-    
+
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
-    
+
     session.verify = verify_ssl
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-    })
-    
+    session.headers.update(headers)
+    session.xcell_last_error = ''
+
     return session, False  # False = not using curl_cffi
 
 def is_html_document(text: str) -> bool:
@@ -145,6 +166,57 @@ def extract_canonical_url(soup: BeautifulSoup, fallback: str) -> str:
 def extract_meta_description(soup: BeautifulSoup) -> str:
     meta = soup.select_one('meta[name="description"]')
     return strip_markup(meta.get('content', '')) if meta else ""
+
+
+def extract_xcell_sku(soup: Optional[BeautifulSoup] = None, html: str = "") -> str:
+    """Extract authoritative SKU from an XCell product detail page."""
+    # 1. Primary on XCell: [data-xcell-copy] chip attribute (sub-millisecond regex)
+    if html:
+        m = re.search(r'data-xcell-copy=["\']([^"\']+)["\']', html)
+        if m and m.group(1).strip():
+            return clean_text(m.group(1))
+
+        # 2. Main product summary SKU badge (severed before related products carousel)
+        main_html = html.split('related products')[0].split('class="related')[0].split('class="up-sells')[0]
+        m = re.search(r'SKU\s*(?:[:\-])?\s*<b>([^<]+)</b>', main_html, re.I)
+        if m and m.group(1).strip():
+            return clean_text(m.group(1))
+
+    # 3. DOM Fallback via BeautifulSoup
+    if soup:
+        copy_chip = soup.select_one('[data-xcell-copy]')
+        if copy_chip and copy_chip.get('data-xcell-copy'):
+            sku = clean_text(copy_chip.get('data-xcell-copy'))
+            if sku:
+                return sku
+
+        for chip in soup.select('.xcell-pdp-meta__chip, .xcell-pdp-meta span, .xcell-meta span, .xcell-pdp-copy'):
+            b_tag = chip.select_one('b, strong')
+            if b_tag:
+                sku = clean_text(b_tag.get_text())
+                if sku:
+                    return sku
+            txt = clean_text(chip.get_text())
+            if txt.upper().startswith('SKU'):
+                sku = txt[3:].strip()
+                if sku:
+                    return sku
+
+        summary = soup.select_one('.summary, .elementor-widget-woocommerce-product-summary, .xcell-pdp__meta-row, .entry-summary')
+        if summary:
+            sku_el = summary.select_one('.sku, .product_meta .sku, [itemprop="sku"]')
+            if sku_el:
+                sku = clean_text(sku_el.get_text())
+                if sku:
+                    return sku
+
+        sku_elem = soup.select_one('.product_meta .sku_wrapper .sku, .product_meta .sku, [itemprop="sku"]')
+        if sku_elem:
+            sku = clean_text(sku_elem.get('content') or sku_elem.get_text() or '')
+            if sku:
+                return sku
+
+    return ""
 
 
 def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional[Item]:
@@ -188,13 +260,8 @@ def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional
     if img_elem:
         item.image_url = urljoin(url, img_elem.get('src') or img_elem.get('content') or img_elem.get('data-src') or '')
 
-    sku_elem = (
-        soup.select_one('.product_meta .sku_wrapper .sku') or
-        soup.select_one('.sku') or
-        soup.select_one('[itemprop="sku"]')
-    )
-    if sku_elem:
-        item.sku = clean_text(sku_elem.get_text() or sku_elem.get('content', ''))
+    # Authoritative SKU extraction for XCell WooCommerce Elementor pages
+    item.sku = extract_xcell_sku(soup, html)
 
     stock_elem = soup.select_one('.stock')
     if stock_elem:
@@ -207,6 +274,9 @@ def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional
         '.woocommerce-product-details__short-description',
         '.woocommerce-Tabs-panel--description',
         '#tab-description',
+        '.entry-summary .woocommerce-product-details__short-description',
+        '#tab-panel-description',
+        '.product-description',
     ):
         el = soup.select_one(sel)
         if not el:
@@ -218,6 +288,11 @@ def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional
         meta_description = extract_meta_description(soup)
         if meta_description:
             description_parts.append(meta_description)
+    # Last resort: og:description
+    if not description_parts:
+        og_desc = soup.select_one('meta[property="og:description"]')
+        if og_desc and og_desc.get('content'):
+            description_parts.append(strip_markup(og_desc['content']))
     item.description = ' '.join(description_parts).strip()
 
     adjusted_price = apply_price_rules(item.original, rules)
@@ -261,33 +336,98 @@ def enrich_item_details(session, item: Item, rules: dict | None = None, logger=N
     return item
 
 def get_html(session, url: str) -> Optional[str]:
-    """Fetch HTML content from URL"""
+    """Fetch HTML content from URL.
+
+    Uses fast impersonated curl HTTP session first. If direct HTTP is blocked
+    or unavailable and browser mode is active, it falls back to Botasaurus.
+    """
+    session.xcell_last_error = ''
+    session.xcell_blocked = False
+
+    is_curl_sess = HAS_CURL and isinstance(session, curl_requests.Session)
+    if is_curl_sess:
+        try:
+            response = session.get(url, timeout=20, allow_redirects=True)
+            status_code = int(getattr(response, 'status_code', 0) or 0)
+            response_text = getattr(response, 'text', '') or ''
+            if status_code == 200 and is_html_document(response_text):
+                session.xcell_last_error = ''
+                return response_text
+            if status_code in {401, 403, 429}:
+                try:
+                    session.get("https://xcellparts.com/", timeout=10)
+                    retry_resp = session.get(url, timeout=20, allow_redirects=True)
+                    if retry_resp.status_code == 200 and is_html_document(retry_resp.text):
+                        session.xcell_last_error = ''
+                        return retry_resp.text
+                except Exception:
+                    pass
+        except Exception as curl_exc:
+            session.xcell_last_error = f"curl fetch error: {curl_exc}"
+
+    if should_use_browser_fetch():
+        try:
+            result = fetch_html_with_browser(url)
+            if result and result.html:
+                return result.html
+        except Exception as e:
+            browser_error_prefix = f"Botasaurus failed: {e}; "
+            session.xcell_last_error = browser_error_prefix.rstrip('; ')
     try:
-        response = session.get(url, timeout=30)  # Increased from 30 to 30 (keep consistent)
+        response = session.get(url, timeout=30, allow_redirects=True)
+        status_code = int(getattr(response, 'status_code', 0) or 0)
+        response_text = getattr(response, 'text', '') or ''
+        if status_code in {401, 403, 429}:
+            lowered = response_text[:1000].lower()
+            if 'just a moment' in lowered or 'cloudflare' in lowered:
+                browser_error = session.xcell_last_error
+                session.xcell_blocked = True
+                block_error = f'blocked by Cloudflare challenge ({status_code})'
+                session.xcell_last_error = f"{browser_error}; {block_error}" if browser_error else block_error
+                return None
         response.raise_for_status()
-        html = response.text
+        html = response_text
         if is_html_document(html):
+            session.xcell_last_error = ''
             return html
 
         # Some XCell responses come back Brotli-encoded if "br" is advertised upstream.
         retry_headers = dict(session.headers)
         retry_headers['Accept-Encoding'] = 'gzip, deflate'
-        retry_response = session.get(url, timeout=30, headers=retry_headers)
+        retry_response = session.get(url, timeout=30, headers=retry_headers, allow_redirects=True)
+        retry_status_code = int(getattr(retry_response, 'status_code', 0) or 0)
+        retry_text = getattr(retry_response, 'text', '') or ''
+        if retry_status_code in {401, 403, 429}:
+            lowered = retry_text[:1000].lower()
+            if 'just a moment' in lowered or 'cloudflare' in lowered:
+                browser_error = session.xcell_last_error
+                session.xcell_blocked = True
+                block_error = f'blocked by Cloudflare challenge ({retry_status_code})'
+                session.xcell_last_error = f"{browser_error}; {block_error}" if browser_error else block_error
+                return None
         retry_response.raise_for_status()
-        retry_html = retry_response.text
+        retry_html = retry_text
         if is_html_document(retry_html):
+            session.xcell_last_error = ''
             return retry_html
 
-        print(f"[xcell] Response for {url} did not look like HTML after retry")
+        browser_error = session.xcell_last_error
+        session.xcell_last_error = (
+            f"{browser_error}; response did not look like HTML after retry"
+            if browser_error
+            else 'response did not look like HTML after retry'
+        )
         return None
     except Exception as e:
-        print(f"[xcell] Failed to fetch {url}: {e}")
+        browser_error = session.xcell_last_error
+        fetch_error = str(e)
+        session.xcell_last_error = f"{browser_error}; direct fetch failed: {fetch_error}" if browser_error else fetch_error
         return None
 
 def extract_product_from_listing(product_elem, base_url: str) -> Optional[Item]:
     """
     Extract product data from a product listing element on xcellparts.com
-    
+
     HTML Structure (Actual from xcellparts.com):
     <li class="product">
         <a class="woocommerce-LoopProduct-link" href="PRODUCT_URL">
@@ -302,36 +442,37 @@ def extract_product_from_listing(product_elem, base_url: str) -> Optional[Item]:
     try:
         item = Item()
         item.site = "xcellparts.com"
-        
+
         # Extract title - xcellparts has title directly in h2 (not inside a link)
         title_elem = (
             product_elem.select_one('h2.woocommerce-loop-product__title') or
             product_elem.select_one('.woocommerce-loop-product__title') or
             product_elem.select_one('h2')
         )
-        
+
         if title_elem:
             item.title = clean_text(title_elem.get_text())
-        
+
         # Extract URL - separate from title
         link_elem = (
             product_elem.select_one('a.woocommerce-LoopProduct-link') or
             product_elem.select_one('a[href*="/product/"]') or
             product_elem.find('a', href=True)
         )
-        
+
         if link_elem:
             item.url = urljoin(base_url, link_elem.get('href', ''))
-        
+            item.extra["canonical_url"] = normalize_product_url(item.url, base_url)
+
         # If still no title, try getting from link or img alt
         if not item.title and link_elem:
             img = link_elem.find('img', alt=True)
             if img:
                 item.title = clean_text(img.get('alt', ''))
-        
+
         if not item.title or not item.url:
             return None
-        
+
         # Extract image URL
         img_elem = product_elem.select_one('img')
         if img_elem:
@@ -339,7 +480,7 @@ def extract_product_from_listing(product_elem, base_url: str) -> Optional[Item]:
             img_url = img_elem.get('data-src') or img_elem.get('src') or ''
             if img_url:
                 item.image_url = urljoin(base_url, img_url)
-        
+
         # Extract price
         price_elem = (
             product_elem.select_one('.price .woocommerce-Price-amount') or
@@ -347,7 +488,7 @@ def extract_product_from_listing(product_elem, base_url: str) -> Optional[Item]:
             product_elem.select_one('.price .amount') or
             product_elem.select_one('.price')
         )
-        
+
         if price_elem:
             price_text = clean_text(price_elem.get_text())
             price_val = parse_price_number(price_text)
@@ -357,21 +498,223 @@ def extract_product_from_listing(product_elem, base_url: str) -> Optional[Item]:
             item.discounted_formatted = fmt_price(price_val)
 
         # SKU is exposed in the add-to-cart button on listing pages.
+        # In extract_product_from_listing the product_elem IS the <li class="product">
+        # so [data-product_sku] search is safely scoped to this one product.
         sku_elem = product_elem.select_one('[data-product_sku]')
         if sku_elem:
             item.sku = clean_text(sku_elem.get('data-product_sku', ''))
+        product_id_elem = product_elem.select_one('[data-product_id], [data-product-id], [name="add-to-cart"]')
+        if product_id_elem:
+            item.extra["product_id"] = clean_text(
+                product_id_elem.get('data-product_id')
+                or product_id_elem.get('data-product-id')
+                or product_id_elem.get('value')
+                or ''
+            )
+
+        # Try to extract description from JSON-LD embedded inside the product element
+        # WooCommerce injects <script type="application/ld+json"> per product on some themes
+        import json as _json
+        for script_tag in product_elem.select('script[type="application/ld+json"]'):
+            try:
+                ld = _json.loads(script_tag.string or '')
+                entries = ld if isinstance(ld, list) else [ld]
+                for entry in entries:
+                    desc = str(entry.get('description') or '').strip()
+                    if desc and desc.lower() != 'n/a':
+                        item.description = strip_markup(desc)
+                        break
+            except Exception:
+                pass
+            if item.description:
+                break
 
         # Check stock status - xcellparts shows "out-of-stock" class or text
-        if (product_elem.select_one('.out-of-stock') or 
+        if (product_elem.select_one('.out-of-stock') or
             'outofstock' in ' '.join(product_elem.get('class', [])).lower() or
             'OUT OF STOCK' in product_elem.get_text().upper()):
             item.stock_status = "Out of Stock"
-        
+
         return item if item.title and item.url else None
-        
+
     except Exception as e:
         print(f"[xcell] Failed to parse product element: {e}")
         return None
+
+
+def normalize_product_url(url: str, base_url: str) -> str:
+    absolute = urljoin(base_url, url or "")
+    parsed = urlsplit(absolute)
+    return urlunsplit(parsed._replace(query="", fragment="")).rstrip("/") + "/"
+
+
+def is_product_href(href: str) -> bool:
+    if not href:
+        return False
+    path = urlsplit(href).path.lower()
+    return "/product/" in path and "/product-category/" not in path
+
+
+def choose_product_title(anchors) -> str:
+    rejected = {
+        "add to cart",
+        "read more",
+        "select options",
+        "quick view",
+        "view cart",
+    }
+    candidates = []
+    for anchor in anchors:
+        for value in (
+            anchor.get_text(" ", strip=True),
+            anchor.get("title", ""),
+            (anchor.find("img") or {}).get("alt", "") if anchor.find("img") else "",
+            anchor.get("aria-label", ""),
+        ):
+            text = clean_text(value)
+            if not text:
+                continue
+            lowered = text.lower()
+            if lowered in rejected or any(lowered.startswith(f"{word}:") for word in rejected):
+                continue
+            candidates.append(text)
+    if not candidates:
+        return ""
+    return max(candidates, key=len)
+
+
+def find_product_card(anchor, normalized_url: str, base_url: str):
+    current = anchor
+    best = anchor.parent
+    for _depth in range(8):
+        current = current.parent
+        if current is None or getattr(current, "name", None) in {"body", "html"}:
+            break
+        product_urls = {
+            normalize_product_url(a.get("href", ""), base_url)
+            for a in current.select('a[href*="/product/"]')
+            if is_product_href(a.get("href", ""))
+        }
+        if product_urls == {normalized_url}:
+            best = current
+        elif normalized_url in product_urls and len(product_urls) > 1:
+            break
+    return best or anchor
+
+
+def extract_product_from_link_group(anchors, url: str, base_url: str, rules: dict) -> Optional[Item]:
+    normalized_url = normalize_product_url(url, base_url)
+    title = choose_product_title(anchors)
+    card = find_product_card(anchors[0], normalized_url, base_url)
+
+    item = Item(site="xcellparts.com", url=normalized_url, title=title)
+    item.extra["canonical_url"] = normalized_url
+
+    if not item.title:
+        item.title = choose_product_title(card.select('a[href*="/product/"]'))
+    if not item.title:
+        return None
+
+    img_elem = None
+    for anchor in anchors:
+        img_elem = anchor.find("img")
+        if img_elem:
+            break
+    if not img_elem and card:
+        img_elem = card.select_one("img")
+    if img_elem:
+        img_url = (
+            img_elem.get("data-src")
+            or img_elem.get("data-lazy-src")
+            or img_elem.get("src")
+            or img_elem.get("srcset", "").split(" ")[0]
+            or ""
+        )
+        if img_url:
+            item.image_url = urljoin(base_url, img_url)
+
+    price_elem = (
+        card.select_one(".price .woocommerce-Price-amount")
+        or card.select_one(".woocommerce-Price-amount")
+        or card.select_one("[data-price-amount]")
+        or card.select_one(".price .amount")
+        or card.select_one(".price")
+    )
+    price_text = ""
+    if price_elem:
+        price_text = price_elem.get("data-price-amount") or clean_text(price_elem.get_text(" ", strip=True))
+    else:
+        price_match = re.search(r"(?:US)?\$\s*[\d,]+(?:\.\d{2})?", card.get_text(" ", strip=True) if card else "")
+        if price_match:
+            price_text = price_match.group(0)
+    price_val = parse_price_number(price_text)
+    if price_val > 0:
+        item.original = price_val
+        item.discounted = price_val
+        item.original_formatted = fmt_price(price_val)
+        item.discounted_formatted = fmt_price(price_val)
+
+    # SKU on listing page (must be strictly scoped to this product's anchor/card)
+    item.sku = ""
+    for anchor in anchors:
+        sku_val = anchor.get("data-xcell-copy", "") or anchor.get("data-product_sku", "")
+        if sku_val and clean_text(sku_val):
+            item.sku = clean_text(sku_val)
+            break
+
+    # Fallback: trust the card ONLY if it uniquely wraps this one product
+    if not item.sku and card:
+        card_product_urls = {
+            normalize_product_url(a.get("href", ""), base_url)
+            for a in card.select('a[href*="/product/"]')
+            if is_product_href(a.get("href", ""))
+        }
+        if card_product_urls == {normalized_url}:
+            sku_elem = card.select_one("[data-xcell-copy], [data-product_sku]")
+            if sku_elem:
+                item.sku = clean_text(sku_elem.get("data-xcell-copy") or sku_elem.get("data-product_sku") or "")
+
+    product_id_elem = card.select_one('[data-product_id], [data-product-id], [name="add-to-cart"]') if card else None
+    if product_id_elem:
+        item.extra["product_id"] = clean_text(
+            product_id_elem.get("data-product_id")
+            or product_id_elem.get("data-product-id")
+            or product_id_elem.get("value")
+            or ""
+        )
+
+    card_text = card.get_text(" ", strip=True) if card else ""
+    card_classes = " ".join(card.get("class", [])) if card else ""
+    if "out of stock" in card_text.lower() or "outofstock" in card_classes.lower():
+        item.stock_status = "Out of Stock"
+
+    adjusted_price = apply_price_rules(item.original, rules)
+    if adjusted_price != round(float(item.original or 0.0), 2):
+        item.discounted = adjusted_price
+        item.discounted_formatted = fmt_price(item.discounted)
+
+    return item
+
+
+def extract_items_from_product_links(soup: BeautifulSoup, url: str, rules: dict) -> List[Item]:
+    grouped = {}
+    order = []
+    for anchor in soup.select('a[href*="/product/"]'):
+        href = anchor.get("href", "")
+        if not is_product_href(href):
+            continue
+        normalized_url = normalize_product_url(href, url)
+        if normalized_url not in grouped:
+            grouped[normalized_url] = []
+            order.append(normalized_url)
+        grouped[normalized_url].append(anchor)
+
+    items = []
+    for product_url in order:
+        item = extract_product_from_link_group(grouped[product_url], product_url, url, rules)
+        if item:
+            items.append(item)
+    return items
 
 def extract_items_from_category_soup(soup: BeautifulSoup, url: str, rules: dict, logger=None) -> List[Item]:
     """Extract product listing items from an already-fetched category page."""
@@ -380,10 +723,34 @@ def extract_items_from_category_soup(soup: BeautifulSoup, url: str, rules: dict,
     # XCellParts uses WooCommerce structure
     # Products are in <ul class="products"> with <li class="product"> items
     product_containers = soup.select('ul.products li.product') or soup.select('.products .product')
-    
+    if not product_containers:
+        seen_containers = set()
+        for link in soup.select('a[href*="/product/"]'):
+            container = (
+                link.find_parent(['li', 'article'], class_=re.compile(r'product|type-product|item', re.I)) or
+                link.find_parent(['div', 'section'], class_=re.compile(r'product|type-product|item|card|grid', re.I)) or
+                link.find_parent(['li', 'article', 'div'])
+            )
+            if not container:
+                continue
+            key = id(container)
+            if key in seen_containers:
+                continue
+            seen_containers.add(key)
+            product_containers.append(container)
+
+    link_items = extract_items_from_product_links(soup, url, rules)
+    if len(link_items) > len(product_containers):
+        if logger:
+            logger.info(
+                f"[xcell] Found {len(link_items)} products from rendered product links on page: {url}"
+            )
+        _enrich_items_from_jsonld(soup, url, link_items)
+        return link_items
+
     if logger:
         logger.info(f"[xcell] Found {len(product_containers)} products on page: {url}")
-    
+
     for product_elem in product_containers:
         item = extract_product_from_listing(product_elem, url)
         if item:
@@ -392,42 +759,97 @@ def extract_items_from_category_soup(soup: BeautifulSoup, url: str, rules: dict,
             if adjusted_price != round(float(item.original or 0.0), 2):
                 item.discounted = adjusted_price
                 item.discounted_formatted = fmt_price(item.discounted)
-            
+
             items.append(item)
-    
+
+    # Enrich items from page-level JSON-LD (WooCommerce injects this for all products)
+    _enrich_items_from_jsonld(soup, url, items)
+
     return items
+
+
+def _enrich_items_from_jsonld(soup: BeautifulSoup, base_url: str, items: List[Item]) -> None:
+    """Parse JSON-LD blocks from the page and apply description/SKU to matching items."""
+    import json as _json
+    # Build lookup: normalised_url -> {description, sku}
+    ld_map: dict = {}
+    for script_tag in soup.select('script[type="application/ld+json"]'):
+        try:
+            ld = _json.loads(script_tag.string or '')
+        except Exception:
+            continue
+        entries = ld if isinstance(ld, list) else [ld]
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            # Individual product entry
+            product_url = str(entry.get('url') or '').strip()
+            if product_url and entry.get('@type') in ('Product', 'product'):
+                norm = normalize_product_url(product_url, base_url)
+                desc = strip_markup(str(entry.get('description') or '').strip())
+                sku = clean_text(str(entry.get('sku') or entry.get('mpn') or ''))
+                if desc or sku:
+                    ld_map[norm] = {'description': desc, 'sku': sku}
+            # ItemList wrapping multiple products
+            elif entry.get('@type') == 'ItemList':
+                for element in (entry.get('itemListElement') or []):
+                    if not isinstance(element, dict):
+                        continue
+                    item_data = element.get('item') or element
+                    product_url = str(item_data.get('url') or '').strip()
+                    if product_url:
+                        norm = normalize_product_url(product_url, base_url)
+                        desc = strip_markup(str(item_data.get('description') or '').strip())
+                        sku = clean_text(str(item_data.get('sku') or item_data.get('mpn') or ''))
+                        if desc or sku:
+                            ld_map[norm] = {'description': desc, 'sku': sku}
+
+    if not ld_map:
+        return
+
+    for item in items:
+        norm = normalize_product_url(item.url, base_url)
+        match = ld_map.get(norm)
+        if not match:
+            continue
+        if not item.description and match.get('description'):
+            item.description = match['description']
+        # Only fill SKU from LD if SKU is still empty (scraper result takes precedence)
+        if not item.sku and match.get('sku'):
+            item.sku = match['sku']
 
 def scrape_category_page(session, url: str, rules: dict, logger=None) -> List[Item]:
     """
     Scrape a single category page from xcellparts.com
-    
+
     Args:
         session: HTTP session
         url: Category page URL
         rules: Discount rules (percent_off, absolute_off)
         logger: Optional logger instance
-    
+
     Returns:
         List of Item objects
     """
     html = get_html(session, url)
     if not html:
         if logger:
-            logger.warning(f"[xcell] Failed to fetch HTML from {url}")
+            suffix = f": {session.xcell_last_error}" if getattr(session, 'xcell_last_error', '') else ''
+            logger.warning(f"[xcell] Failed to fetch HTML from {url}{suffix}")
         return []
-    
+
     soup = parse_html_document(html)
     if not soup:
         if logger:
             logger.warning(f"[xcell] Failed to parse HTML from {url}")
         return []
-    
+
     return extract_items_from_category_soup(soup, url, rules, logger)
 
 def find_next_page_url(soup, current_url: str) -> Optional[str]:
     """
     Find the next pagination page URL
-    
+
     XCellParts uses WooCommerce pagination:
     <nav class="woocommerce-pagination">
         <a class="next page-numbers" href="NEXT_PAGE_URL">Next</a>
@@ -440,16 +862,16 @@ def find_next_page_url(soup, current_url: str) -> Optional[str]:
         soup.select_one('.pagination .next') or
         soup.find('a', string=re.compile(r'Next|→', re.I))
     )
-    
+
     if next_link and next_link.get('href'):
         return urljoin(current_url, next_link['href'])
-    
+
     return None
 
 def scrape_category_all_pages(session, url: str, rules: dict, max_pages: int = 20, delay_ms: int = 200, logger=None) -> List[Item]:
     """
     Scrape all pagination pages from a category
-    
+
     Args:
         session: HTTP session
         url: Initial category URL
@@ -457,62 +879,107 @@ def scrape_category_all_pages(session, url: str, rules: dict, max_pages: int = 2
         max_pages: Maximum pages to scrape
         delay_ms: Delay between page requests (milliseconds)
         logger: Optional logger
-    
+
     Returns:
         Combined list of items from all pages
     """
     all_items = []
     current_url = url
     page_num = 1
-    
+    session.xcell_page_stats = []
+    session.xcell_incomplete = False
+
     while current_url and page_num <= max_pages:
         if logger:
             logger.info(f"[xcell] Scraping page {page_num}/{max_pages}: {current_url}")
 
         html = get_html(session, current_url)
         if not html:
+            session.xcell_incomplete = True
+            session.xcell_page_stats.append({
+                "page": page_num,
+                "url": current_url,
+                "status": "fetch_failed",
+                "item_count": 0,
+                "error": getattr(session, "xcell_last_error", "") or "No HTML returned",
+            })
             if logger:
-                logger.warning(f"[xcell] Failed to fetch HTML from {current_url}")
+                suffix = f": {session.xcell_last_error}" if getattr(session, 'xcell_last_error', '') else ''
+                logger.warning(f"[xcell] Failed to fetch HTML from {current_url}{suffix}")
             break
 
         soup = parse_html_document(html)
         if not soup:
+            session.xcell_incomplete = True
+            session.xcell_last_error = f"Failed to parse HTML from {current_url}"
+            session.xcell_page_stats.append({
+                "page": page_num,
+                "url": current_url,
+                "status": "parse_failed",
+                "item_count": 0,
+                "error": session.xcell_last_error,
+            })
             if logger:
                 logger.warning(f"[xcell] Failed to parse HTML from {current_url}")
             break
 
         page_items = extract_items_from_category_soup(soup, current_url, rules, logger)
+        for item in page_items:
+            if not isinstance(getattr(item, "extra", None), dict):
+                item.extra = {}
+            item.extra["xcell_page"] = page_num
+            item.extra["xcell_page_url"] = current_url
         all_items.extend(page_items)
-        
+        session.xcell_page_stats.append({
+            "page": page_num,
+            "url": current_url,
+            "status": "ok" if page_items else "empty",
+            "item_count": len(page_items),
+            "error": "",
+        })
+
         if not page_items:
+            session.xcell_incomplete = True
+            session.xcell_last_error = f"No products parsed on page {page_num}: {current_url}"
             if logger:
                 logger.info(f"[xcell] No items found on page {page_num}, stopping pagination")
             break
 
         next_url = find_next_page_url(soup, current_url)
-        
+
         if not next_url:
             if logger:
                 logger.info(f"[xcell] No more pages found after page {page_num}")
             break
-        
+
         current_url = next_url
         page_num += 1
-        
+
         # Delay before next request
         if delay_ms > 0:
             time.sleep(delay_ms / 1000.0)
-    
+
+    if current_url and page_num > max_pages:
+        session.xcell_incomplete = True
+        session.xcell_last_error = f"Pagination reached max_pages={max_pages} before natural completion"
+        session.xcell_page_stats.append({
+            "page": page_num,
+            "url": current_url,
+            "status": "max_pages_reached",
+            "item_count": 0,
+            "error": session.xcell_last_error,
+        })
+
     if logger:
         logger.info(f"[xcell] Total items scraped: {len(all_items)} from {page_num} pages")
-    
+
     return all_items
 
-def scrape_url(session, url: str, rules: dict, crawl_pagination: bool = True, 
+def scrape_url(session, url: str, rules: dict, crawl_pagination: bool = True,
                max_pages: int = 20, delay_ms: int = 200, logger=None) -> List[Item]:
     """
     Main entry point for scraping XCellParts URLs
-    
+
     Args:
         session: HTTP session
         url: Product or category URL
@@ -521,13 +988,13 @@ def scrape_url(session, url: str, rules: dict, crawl_pagination: bool = True,
         max_pages: Max pages to crawl
         delay_ms: Delay between requests
         logger: Optional logger
-    
+
     Returns:
         List of Item objects
     """
     if logger:
         logger.info(f"[xcell] Starting scrape of: {url}")
-    
+
     # Determine if it's a category or product page
     if '/product-category/' in url:
         # Category page

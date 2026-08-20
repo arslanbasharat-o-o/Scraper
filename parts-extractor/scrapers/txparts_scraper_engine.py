@@ -1,3 +1,5 @@
+import threading
+_CURL_LOCK = threading.Lock()
 """
 TXParts Scraper Engine
 
@@ -9,13 +11,19 @@ Created for: TXParts
 """
 
 import requests
-import time
 import re
 import json
 from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse
+from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+
+try:
+    from curl_cffi import requests as curl_requests
+    HAS_CURL = True
+except Exception:
+    HAS_CURL = False
 
 @dataclass
 class Item:
@@ -39,6 +47,51 @@ def clean_text(text: str) -> str:
         return ""
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
+
+
+def title_from_product_url(value: str) -> str:
+    """Build a readable fallback title from a product URL slug."""
+    path = urlparse(str(value or "")).path.rstrip("/")
+    slug = path.rsplit("/", 1)[-1] if path else ""
+    if not slug:
+        return ""
+    parts = [part for part in slug.split("-") if part]
+    while len(parts) > 3 and parts[-1] == "1" and parts[-2] != "in":
+        parts = parts[:-1]
+    return clean_text(" ".join(parts).title())
+
+
+def clean_product_title_suffix(title: str, url: str) -> str:
+    """Remove TXParts duplicate slug suffixes that leak into fallback titles."""
+    cleaned = clean_text(title)
+    path = urlparse(str(url or "")).path.rstrip("/")
+    if re.search(r"/product/[^?#]+-1$", path, re.IGNORECASE):
+        while re.search(r"\s+1$", cleaned):
+            parts = cleaned.split()
+            if len(parts) > 1 and parts[-2].lower() == "in":
+                break
+            cleaned = re.sub(r"\s+1$", "", cleaned)
+        return cleaned
+    return cleaned
+
+
+def product_link_title_candidates(link) -> List[str]:
+    """Return likely product title text from a TXParts product anchor."""
+    candidates = [
+        clean_text(link.get_text(" ", strip=True)),
+        clean_text(link.get("title", "")),
+    ]
+    image = link.find("img")
+    if image:
+        candidates.extend([
+            clean_text(image.get("alt", "")),
+            clean_text(image.get("title", "")),
+        ])
+    return [
+        candidate
+        for candidate in candidates
+        if candidate and len(candidate) > 5 and "$" not in candidate
+    ]
 
 
 def strip_markup(text: str) -> str:
@@ -161,44 +214,79 @@ def apply_price_rules(price: float, rules: dict | None = None) -> float:
         value -= absolute_off
     return round(max(0.0, value), 2)
 
-def build_session(retries: int = 2, verify_ssl: bool = True) -> tuple:
+def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = True) -> tuple:
     """Build HTTP session with retry logic"""
+    if use_curl and HAS_CURL:
+        try:
+            with _CURL_LOCK:
+                session = curl_requests.Session(impersonate="safari15_5")
+            session.verify = verify_ssl
+            return session, True
+        except Exception:
+            pass
+
     from requests.adapters import HTTPAdapter
     from urllib3.util.retry import Retry
-    
+
     session = requests.Session()
-    
+
     retry_strategy = Retry(
         total=retries,
         backoff_factor=0.5,
         status_forcelist=[429, 500, 502, 503, 504]
     )
-    
+
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
-    
+
     session.verify = verify_ssl
     session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
         'Accept-Encoding': 'gzip, deflate, br',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1'
     })
-    
+
     return session, False
 
+
+def _looks_like_block_page(html: str) -> bool:
+    sample = (html or '').strip().lower()
+    if not sample:
+        return True
+    if len(sample) < 500 and any(marker in sample for marker in ('forbidden', 'access denied', '403')):
+        return True
+    head = sample[:30_000]
+    return any(marker in head for marker in (
+        '<title>just a moment',
+        '<title>attention required',
+        'id="challenge-form"',
+        "id='challenge-form'",
+        'cf-browser-verification',
+        'performing security verification',
+        'enable javascript and cookies to continue',
+    ))
+
 def get_html(session, url: str) -> Optional[str]:
-    """Fetch HTML content from URL"""
-    try:
-        response = session.get(url, timeout=30)  # Consistent 30s timeout
-        response.raise_for_status()
-        return response.text
-    except Exception as e:
-        print(f"[txparts] Failed to fetch {url}: {e}")
-        return None
+    """Fetch HTML with Safari TLS curl_cffi session, fallback to browser if blocked."""
+    if session is not None:
+        try:
+            r = session.get(url, timeout=25)
+            if r.status_code == 200 and r.text and not _looks_like_block_page(r.text):
+                return r.text
+        except Exception:
+            pass
+    if should_use_browser_fetch():
+        try:
+            browser_html = fetch_html_with_browser(url).html
+            if browser_html and not _looks_like_block_page(browser_html):
+                return browser_html
+        except Exception as exc:
+            print(f"[txparts] Fetch failed for {url}: {exc}")
+    return None
 
 
 def extract_canonical_url(soup: BeautifulSoup, fallback: str) -> str:
@@ -342,36 +430,39 @@ def enrich_item_details(session, item: Item, rules: dict | None = None, logger=N
 def extract_products_from_page(soup, base_url: str) -> List[Item]:
     """
     Extract all products from a TXParts category page
-    
+
     TXParts Structure:
     - Product images in <div class="flipper">
     - Product titles and prices after the flipper
     - Links with /product/ in href
     """
     items = []
-    
-    # Find all product links (excluding stretched-link which is for the image)
+
+    # Find all product links. TXParts often has more than one anchor per product,
+    # so keep all links for a URL and prefer the one with real title text.
     product_links = soup.find_all('a', href=lambda x: x and '/product/' in x)
-    
-    # Group links - TXParts has 2 links per product (image link + title link)
-    seen_urls = {}
-    
+    links_by_url = {}
     for link in product_links:
         url = urljoin(base_url, link.get('href', ''))
-        
-        if url in seen_urls:
-            continue
-        
+        links_by_url.setdefault(url, []).append(link)
+
+    for url, links in links_by_url.items():
+        link = links[0]
+        title_candidates = []
+        for candidate_link in links:
+            title_candidates.extend(product_link_title_candidates(candidate_link))
+        if title_candidates:
+            link = max(links, key=lambda candidate_link: len(product_link_title_candidates(candidate_link)))
+
         # Create item
         item = Item()
         item.site = "txparts.com"
         item.url = url
-        
-        # Get title from link text
-        title_text = clean_text(link.get_text())
-        if title_text and len(title_text) > 5:  # Valid title
-            item.title = title_text
-        
+
+        # Get title from link text or metadata.
+        if title_candidates:
+            item.title = clean_product_title_suffix(max(title_candidates, key=len), item.url)
+
         # If no title yet, try to find it nearby
         if not item.title:
             # Look for title in parent or sibling elements
@@ -380,10 +471,11 @@ def extract_products_from_page(soup, base_url: str) -> List[Item]:
                 # Try finding a text node with product name
                 for elem in parent.find_all(['h6', 'h5', 'h4', 'a']):
                     text = clean_text(elem.get_text())
-                    if text and len(text) > 10 and '/product/' in elem.get('href', ''):
-                        item.title = text
+                    href = elem.get('href') or ''
+                    if text and len(text) > 10 and (not href or '/product/' in href):
+                        item.title = clean_product_title_suffix(text, item.url)
                         break
-        
+
         # Find price - look in parent container
         price_found = False
         search_parent = link.parent
@@ -402,21 +494,21 @@ def extract_products_from_page(soup, base_url: str) -> List[Item]:
                     break
             search_parent = search_parent.parent
             attempts += 1
-        
+
         # Find image - look backwards for flipper div with image OR any img in parent
         img_found = False
         if link.parent:
             # Look for previous sibling or parent with flipper class
             container = link.parent.parent if link.parent.parent else link.parent
             flipper = container.find('div', class_='flipper') if container else None
-            
+
             if not flipper:
                 # Try finding in previous siblings
                 for prev_sibling in link.parent.find_previous_siblings():
                     flipper = prev_sibling.find('div', class_='flipper')
                     if flipper:
                         break
-            
+
             if flipper:
                 img = flipper.find('img')
                 if img:
@@ -424,7 +516,7 @@ def extract_products_from_page(soup, base_url: str) -> List[Item]:
                     if img_url:
                         item.image_url = urljoin(base_url, img_url)
                         img_found = True
-            
+
             # If no flipper found, search for any product image in parent/grandparent
             if not img_found and link.parent:
                 # Search in parent
@@ -439,20 +531,15 @@ def extract_products_from_page(soup, base_url: str) -> List[Item]:
                                 img_found = True
                                 break
                         search_container = search_container.parent
-        
+
         # Only add item if we have at least title or URL
         if item.title or (item.url and price_found):
             # If no title, use a default from URL
             if not item.title:
-                # Extract title from URL
-                url_parts = item.url.split('/')
-                if url_parts:
-                    slug = url_parts[-1]
-                    item.title = slug.replace('-', ' ').title()
-            
-            seen_urls[url] = True
+                item.title = title_from_product_url(item.url)
+
             items.append(item)
-    
+
     return items
 
 def scrape_category_page(session, url: str, rules: dict, logger=None) -> List[Item]:
@@ -460,28 +547,28 @@ def scrape_category_page(session, url: str, rules: dict, logger=None) -> List[It
     Scrape a single category page from txparts.com
     """
     items = []
-    
+
     html = get_html(session, url)
     if not html:
         if logger:
             logger.warning(f"[txparts] Failed to fetch HTML from {url}")
         return items
-    
+
     soup = BeautifulSoup(html, 'lxml')
-    
+
     # Extract products
     items = extract_products_from_page(soup, url)
-    
+
     if logger:
         logger.info(f"[txparts] Found {len(items)} products on page: {url}")
-    
+
     # Apply discount rules
     for item in items:
         adjusted_price = apply_price_rules(item.original, rules)
         if adjusted_price != round(float(item.original or 0.0), 2):
             item.discounted = adjusted_price
             item.discounted_formatted = fmt_price(item.discounted)
-    
+
     return items
 
 def scrape_url(session, url: str, rules: dict, crawl_pagination: bool = True,
@@ -491,7 +578,7 @@ def scrape_url(session, url: str, rules: dict, crawl_pagination: bool = True,
     """
     if logger:
         logger.info(f"[txparts] Starting scrape of: {url}")
-    
+
     if '/product/' in url:
         item = scrape_product_page(session, url, rules, logger)
         return [item] if item else []

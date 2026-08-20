@@ -9,6 +9,12 @@ node_modules/
 ## Runtime artifacts
 downloads/
 .tmp/
+backups/
+error_logs/
+browser_profiles/
+data/browser_profiles/
+work-match-skus/outputs/
+**/work-match-skus/outputs/
 
 ## Python cache
 __pycache__/

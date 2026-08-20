@@ -29,7 +29,8 @@ npm run start:windows
 The startup script verifies and then starts the server:
 
 - Node.js and npm availability
-- Installed dependencies (`express`, `selenium-webdriver`, `chromedriver`, `archiver`)
+- Installed dependencies (`express`, `archiver`)
+- Python dependencies (`botasaurus`, `beautifulsoup4`, `lxml`, `Pillow`)
 - Chrome/Chromium availability (recommended)
 - Required directories (`downloads/`, `frontend/`)
 
@@ -59,11 +60,11 @@ The startup script verifies and then starts the server:
 npm install
 ```
 
-### Selenium cannot launch browser
+### Botasaurus cannot launch a browser
 
 - Install Chrome/Chromium
-- Keep `CHROME_HEADLESS=true` in hosted environments
-- If needed, set `CHROME_BIN` and `CHROMEDRIVER_PATH`
+- Install the Python requirements with `python -m pip install -r requirements.txt`
+- Keep a Chrome-compatible browser available; rendered tasks always run headless
 
 ### Port already in use
 
@@ -84,10 +85,12 @@ Install Python 3 and ensure `python3` is in `PATH`, or set `PYTHON_BIN` explicit
 
 ```env
 PORT=3001
-PERSIST_JOBS=false
+HOST=127.0.0.1
+PERSIST_JOBS=true
+PERSIST_JOB_LIMIT=0
+AUTO_RESUME_RESTORED_JOBS=false
+IMAGE_CLEANUP_ENABLED=false
 MAX_ACTIVE_SCRAPES=3
-CHROME_HEADLESS=true
-PRODUCTS_PER_BROWSER=8
 IMAGE_DOWNLOAD_CONCURRENCY=3
 ```
 

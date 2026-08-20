@@ -17,7 +17,7 @@ APP_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export NODE_PATH="$APP_DIR/node_modules${NODE_PATH:+:$NODE_PATH}"
 
 # Fast scrape defaults (can be overridden by pre-set env vars)
-: "${IMAGE_DOWNLOAD_CONCURRENCY:=6}"
+: "${IMAGE_DOWNLOAD_CONCURRENCY:=3}"
 : "${PRODUCT_DELAY_MIN_MS:=40}"
 : "${PRODUCT_DELAY_MAX_MS:=120}"
 : "${IMAGE_SELECTOR_TIMEOUT_MS:=7000}"
@@ -61,15 +61,15 @@ if [ ! -d "node_modules" ]; then
     echo -e "${GREEN}✓ npm packages installed${NC}"
 else
     # Check if all required packages are installed
-    REQUIRED_PACKAGES=("express" "selenium-webdriver" "sharp" "webdriver-manager" "chromedriver")
+    REQUIRED_PACKAGES=("express" "archiver")
     MISSING_PACKAGES=()
-    
+
     for package in "${REQUIRED_PACKAGES[@]}"; do
         if [ ! -d "node_modules/$package" ]; then
             MISSING_PACKAGES+=("$package")
         fi
     done
-    
+
     if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
         echo "  → Missing packages: ${MISSING_PACKAGES[*]}"
         echo "  → Installing npm packages..."

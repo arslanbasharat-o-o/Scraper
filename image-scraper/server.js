@@ -14,15 +14,41 @@ if (!nodePathEntries.includes(localNodeModulesPath)) {
 }
 
 const express = require('express');
-const { Builder, By, until } = require('selenium-webdriver');
-const chrome = require('selenium-webdriver/chrome');
 const archiver = require('archiver');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
+const crypto = require('node:crypto');
+const { envBoolean, retainJobs } = require('./lib/runtime-config');
+const {
+  fetchWithValidatedRedirects,
+  isSafeJobId,
+  parseAllowedHosts,
+  resolveWithinRoot,
+  validatePublicHttpUrl
+} = require('./lib/security');
 const execFileAsync = promisify(execFile);
 
 const app = express();
 const PORT = Number.parseInt(process.env.PORT || '', 10) || 3001;
+const HOST = String(process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1')).trim();
+const APP_ACCESS_TOKEN = String(process.env.APP_ACCESS_TOKEN || '').trim();
+const CORS_ALLOWED_ORIGINS = new Set(
+  String(process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim().replace(/\/+$/, ''))
+    .filter(Boolean)
+);
+const SCRAPE_ALLOWED_HOSTS = parseAllowedHosts(
+  process.env.SCRAPE_ALLOWED_HOSTS,
+  ['mobilesentrix.com', 'mobilesentrix.ca', 'xcellparts.com']
+);
+const DESTRUCTIVE_CONFIRMATION = 'permanently-delete';
+
+if (process.env.NODE_ENV === 'production' && !APP_ACCESS_TOKEN) {
+  throw new Error('APP_ACCESS_TOKEN is required when NODE_ENV=production.');
+}
+
+app.set('trust proxy', true);
 
 function envInt(name, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
   const raw = process.env[name];
@@ -37,19 +63,14 @@ const PRODUCT_DELAY_MAX_MS = Math.max(
   PRODUCT_DELAY_MIN_MS,
   envInt('PRODUCT_DELAY_MAX_MS', 120, PRODUCT_DELAY_MIN_MS, 10000)
 );
-const SELECTOR_TIMEOUT_MS = envInt('SELECTOR_TIMEOUT_MS', 15000, 3000, 120000);
 const CHALLENGE_WAIT_MS = envInt('CHALLENGE_WAIT_MS', 25000, 5000, 180000);
 const LOG_HISTORY_LIMIT = 200; // Reduced from 500 for lower memory usage
 const SSE_HEARTBEAT_MS = 35000; // Reduced heartbeat frequency for less network traffic
-const IMAGE_HTTP_TIMEOUT_MS = envInt('IMAGE_HTTP_TIMEOUT_MS', 20000, 3000, 120000);
-const IMAGE_CONVERT_TIMEOUT_MS = envInt('IMAGE_CONVERT_TIMEOUT_MS', 25000, 3000, 120000);
-const IMAGE_SELECTOR_TIMEOUT_MS = envInt('IMAGE_SELECTOR_TIMEOUT_MS', 8000, 2000, 60000);
-const MAX_ACTIVE_SCRAPES = envInt('MAX_ACTIVE_SCRAPES', 3, 1, 10);
-const MAX_RETRIES = envInt('IMAGE_EXTRACT_RETRIES', 0, 0, 5); // Single retry only
-const EMPTY_RESULT_RETRIES = envInt('IMAGE_EMPTY_RETRIES', 0, 0, 3);
-const PRODUCTS_PER_BROWSER = envInt('PRODUCTS_PER_BROWSER', 8, 4, 100); // Lower memory footprint
-const DRIVER_RECOVERY_RETRIES = 1;
-const IMAGE_DOWNLOAD_CONCURRENCY = envInt('IMAGE_DOWNLOAD_CONCURRENCY', 3, 1, 10); // Reduced for stability
+const IMAGE_HTTP_TIMEOUT_MS = envInt('IMAGE_HTTP_TIMEOUT_MS', 45000, 3000, 180000);
+const IMAGE_CONVERT_TIMEOUT_MS = envInt('IMAGE_CONVERT_TIMEOUT_MS', 60000, 3000, 180000);
+const MAX_ACTIVE_SCRAPES = envInt('MAX_ACTIVE_SCRAPES', 3, 1, 4);
+const SCRAPE_TRANSIENT_RETRIES = envInt('SCRAPE_TRANSIENT_RETRIES', 1, 0, 3);
+const IMAGE_DOWNLOAD_CONCURRENCY = envInt('IMAGE_DOWNLOAD_CONCURRENCY', 3, 1, 4);
 const JOB_MAX_RUNTIME_MS = envInt('JOB_MAX_RUNTIME_MS', 45 * 60 * 1000, 5 * 60 * 1000, 24 * 60 * 60 * 1000);
 const MEMORY_WARN_HEAP_PERCENT = envInt('MEMORY_WARN_HEAP_PERCENT', 90, 50, 99);
 const MEMORY_WARN_MIN_HEAP_TOTAL_MB = envInt('MEMORY_WARN_MIN_HEAP_TOTAL_MB', 256, 16, 8192);
@@ -58,7 +79,12 @@ const MEMORY_WARN_COOLDOWN_MS = envInt('MEMORY_WARN_COOLDOWN_MS', 30 * 60 * 1000
 
 const DOWNLOAD_ROOT = path.join(__dirname, 'downloads');
 const JOB_DB_PATH = path.join(DOWNLOAD_ROOT, 'jobs-db.json');
-const PERSIST_JOBS_ENABLED = String(process.env.PERSIST_JOBS || 'false').toLowerCase() === 'true';
+const PERSIST_JOBS_ENABLED = envBoolean(process.env.PERSIST_JOBS, true);
+const PERSIST_JOB_LIMIT = envInt('PERSIST_JOB_LIMIT', 0, 0, 100000);
+const IMAGE_CLEANUP_ENABLED = envBoolean(process.env.IMAGE_CLEANUP_ENABLED, false);
+const IMAGE_MAX_AGE_HOURS = envInt('IMAGE_MAX_AGE_HOURS', 24 * 30, 24, 24 * 3650);
+const AUTO_RESUME_RESTORED_JOBS = envBoolean(process.env.AUTO_RESUME_RESTORED_JOBS, false);
+const USE_PYTHON_BULK_ZIP = envBoolean(process.env.USE_PYTHON_BULK_ZIP, false);
 const PERSIST_INTERVAL_MS = 5000; // Only persist every 5 seconds max
 const PYTHON_CANDIDATES = (() => {
   const candidates = [];
@@ -74,6 +100,8 @@ const PYTHON_CANDIDATES = (() => {
 
   // Explicit override for constrained environments.
   add(process.env.PYTHON_BIN || '');
+  add(path.join(__dirname, '..', 'parts-extractor', '.venv', 'Scripts', 'python.exe'));
+  add(path.join(__dirname, '..', 'parts-extractor', '.venv', 'bin', 'python'));
 
   if (process.platform === 'win32') {
     add('python');
@@ -97,19 +125,28 @@ const PYTHON_CANDIDATES = (() => {
 })();
 const PYTHON_CONVERT_SCRIPT_PATH = path.join(__dirname, 'convert_image.py');
 const PYTHON_ZIP_SCRIPT_PATH = path.join(__dirname, 'create_zip.py');
+const PYTHON_BULK_ZIP_SCRIPT_PATH = path.join(__dirname, 'create_bulk_zip.py');
+const BOTASAURUS_WORKER_PATH = path.join(__dirname, 'botasaurus_worker.py');
+const BOTASAURUS_TASK_ROOT = path.join(__dirname, '.tmp', 'botasaurus-tasks');
+const BOTASAURUS_TIMEOUT_SECONDS = Math.ceil(NAVIGATION_TIMEOUT_MS / 1000);
 
 const eventClients = new Set();
 const logClients = new Set();
 const jobs = new Map();
 const stopRequestedJobIds = new Set();
 const deletedJobIds = new Set();
+const deletedImageIdsByJob = new Map();
 const logHistory = [];
 const scrapeQueue = [];
+const activeScrapeJobIds = new Set();
 let activeScrapes = 0;
 let lastPersistTime = 0;
 let lastMemoryWarningAt = 0;
 let cachedPythonRuntime; // undefined=not checked, null=unavailable, object=resolved
+let cachedBotasaurusRuntime;
+let cachedBulkZipPythonRuntime;
 let pythonMissingLogged = false;
+let activeBulkZipBuild = null;
 let pythonConvertScriptMissingLogged = false;
 
 async function resolvePythonRuntime(jobId = null) {
@@ -123,7 +160,7 @@ async function resolvePythonRuntime(jobId = null) {
     try {
       await execFileAsync(
         candidate.command,
-        [...candidate.argsPrefix, '--version'],
+        [...candidate.argsPrefix, '-c', 'import PIL; print("ok")'],
         { timeout: 5000, maxBuffer: 1024 * 1024 }
       );
       cachedPythonRuntime = candidate;
@@ -138,7 +175,7 @@ async function resolvePythonRuntime(jobId = null) {
     const tried = PYTHON_CANDIDATES.map((item) => item.command).join(', ');
     writeLog(
       'warning',
-      `No Python runtime found (${tried}). Image conversion disabled; original image URLs will be stored.`,
+      `No Pillow-capable Python runtime found (${tried}). Image conversion disabled; original image URLs will not be stored as product images.`,
       'image',
       jobId
     );
@@ -147,29 +184,203 @@ async function resolvePythonRuntime(jobId = null) {
   return null;
 }
 
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  
-  // Set request timeout
-  req.setTimeout(60000); // 60 second timeout
-  
-  // Add request size limits
-  if (req.method === 'POST') {
-    req.on('data', (chunk) => {
-      if (req.headers['content-length'] > 1024 * 100) { // 100KB limit
-        res.status(413).json({ success: false, error: 'Payload too large' });
-        req.connection.destroy();
-      }
-    });
+async function resolveBulkZipPythonRuntime() {
+  if (cachedBulkZipPythonRuntime !== undefined) return cachedBulkZipPythonRuntime;
+
+  const venvPathFragment = `${path.sep}parts-extractor${path.sep}.venv${path.sep}`;
+  const candidates = [
+    ...PYTHON_CANDIDATES.filter((candidate) => !String(candidate.command).includes(venvPathFragment)),
+    ...PYTHON_CANDIDATES
+  ];
+
+  for (const candidate of candidates) {
+    if (path.isAbsolute(candidate.command) && !fs.existsSync(candidate.command)) continue;
+    try {
+      await execFileAsync(
+        candidate.command,
+        [...candidate.argsPrefix, '-c', 'import json, zipfile; print("ok")'],
+        { timeout: 5000, maxBuffer: 1024 * 1024 }
+      );
+      cachedBulkZipPythonRuntime = candidate;
+      return candidate;
+    } catch {
+      // try next candidate
+    }
   }
-  
+
+  cachedBulkZipPythonRuntime = null;
+  return null;
+}
+
+async function resolveBotasaurusRuntime(jobId = null) {
+  if (cachedBotasaurusRuntime !== undefined) return cachedBotasaurusRuntime;
+
+  for (const candidate of PYTHON_CANDIDATES) {
+    if (path.isAbsolute(candidate.command) && !fs.existsSync(candidate.command)) continue;
+    try {
+      await execFileAsync(
+        candidate.command,
+        [...candidate.argsPrefix, '-c', 'import botasaurus, bs4'],
+        { timeout: 10000, maxBuffer: 1024 * 1024 }
+      );
+      cachedBotasaurusRuntime = candidate;
+      return candidate;
+    } catch {
+      // Try the next configured Python runtime.
+    }
+  }
+
+  cachedBotasaurusRuntime = null;
+  writeLog(
+    'error',
+    'Botasaurus runtime is unavailable. Install the Python requirements before resuming.',
+    'scrape',
+    jobId
+  );
+  return null;
+}
+
+async function runBotasaurusTask(action, rawUrl, jobId) {
+  if (!['category', 'images', 'title'].includes(action)) {
+    throw new Error(`Unsupported Botasaurus action: ${action}`);
+  }
+  if (!fs.existsSync(BOTASAURUS_WORKER_PATH)) {
+    throw new Error('Botasaurus worker script is missing.');
+  }
+
+  const safeUrl = await validatePublicHttpUrl(rawUrl, { allowedHosts: SCRAPE_ALLOWED_HOSTS });
+  const runtime = await resolveBotasaurusRuntime(jobId);
+  if (!runtime) {
+    throw new Error('Botasaurus runtime is unavailable.');
+  }
+
+  const taskId = `${String(jobId)}_${action}_${crypto.randomUUID()}`;
+  const taskDir = resolveWithinRoot(BOTASAURUS_TASK_ROOT, taskId);
+  const outputPath = resolveWithinRoot(taskDir, 'result.json');
+  const profilePath = resolveWithinRoot(taskDir, 'profile');
+  await fsp.mkdir(profilePath, { recursive: true });
+
+  try {
+    await execFileAsync(
+      runtime.command,
+      [
+        ...runtime.argsPrefix,
+        BOTASAURUS_WORKER_PATH,
+        action,
+        safeUrl,
+        outputPath,
+        profilePath,
+        String(BOTASAURUS_TIMEOUT_SECONDS)
+      ],
+      {
+        timeout: NAVIGATION_TIMEOUT_MS + CHALLENGE_WAIT_MS + 30000,
+        maxBuffer: 10 * 1024 * 1024,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          BOTASAURUS_HEADLESS: 'true'
+        }
+      }
+    );
+
+    const payload = JSON.parse(await fsp.readFile(outputPath, 'utf8'));
+    if (!payload?.success) {
+      throw new Error(payload?.error || 'Botasaurus extraction failed.');
+    }
+    return payload;
+  } catch (err) {
+    if (fs.existsSync(outputPath)) {
+      try {
+        const payload = JSON.parse(await fsp.readFile(outputPath, 'utf8'));
+        if (payload?.error) throw new Error(payload.error);
+      } catch (payloadError) {
+        if (payloadError?.message && payloadError.message !== err.message) {
+          throw payloadError;
+        }
+      }
+    }
+    throw err;
+  } finally {
+    await fsp.rm(taskDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }).catch(() => {});
+  }
+}
+
+function tokenMatches(candidate) {
+  const value = Buffer.from(String(candidate || ''));
+  const expected = Buffer.from(APP_ACCESS_TOKEN);
+  return value.length === expected.length && crypto.timingSafeEqual(value, expected);
+}
+
+function requestToken(req) {
+  const authorization = String(req.get('authorization') || '');
+  if (/^Bearer\s+/i.test(authorization)) return authorization.replace(/^Bearer\s+/i, '').trim();
+  if (/^Basic\s+/i.test(authorization)) {
+    try {
+      const decoded = Buffer.from(authorization.replace(/^Basic\s+/i, ''), 'base64').toString('utf8');
+      return decoded.includes(':') ? decoded.slice(decoded.indexOf(':') + 1) : decoded;
+    } catch {
+      return '';
+    }
+  }
+  return String(req.get('x-api-key') || '');
+}
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+  if (APP_ACCESS_TOKEN && !tokenMatches(requestToken(req))) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Scraper", charset="UTF-8"');
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  const origin = String(req.get('origin') || '').replace(/\/+$/, '');
+  const forwardedProto = String(req.get('x-forwarded-proto') || '').split(',', 1)[0].trim();
+  const forwardedHost = String(req.get('x-forwarded-host') || '').split(',', 1)[0].trim();
+  const publicProtocol = forwardedProto || req.protocol;
+  const publicHost = forwardedHost || req.get('host');
+  const sameOrigin =
+    !origin ||
+    origin === `${req.protocol}://${req.get('host')}` ||
+    origin === `${publicProtocol}://${publicHost}`;
+  if (!sameOrigin && !CORS_ALLOWED_ORIGINS.has(origin)) {
+    return res.status(403).json({ success: false, error: 'Origin is not allowed' });
+  }
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+  }
+  res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-API-Key, X-Confirm-Destructive, X-Requested-With');
+  req.setTimeout(60000);
+
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
   next();
 });
+
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+
+app.param('id', (req, res, next, value) => {
+  if (!isSafeJobId(value)) {
+    return res.status(400).json({ success: false, error: 'Invalid job id' });
+  }
+  next();
+});
+
+function requireDestructiveConfirmation(req, res, next) {
+  if (String(req.get('x-confirm-destructive') || '') !== DESTRUCTIVE_CONFIRMATION) {
+    return res.status(428).json({
+      success: false,
+      error: 'Explicit destructive-action confirmation is required.'
+    });
+  }
+  next();
+}
 
 app.use(express.static(path.join(__dirname, 'frontend')));
 app.use('/downloads', express.static(DOWNLOAD_ROOT));
@@ -190,12 +401,12 @@ function monitorMemory() {
   if (global.gc) {
     global.gc();
   }
-  
+
   const memUsage = process.memoryUsage();
   const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
   const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
   const externalMB = Math.round(memUsage.external / 1024 / 1024);
-  
+
   const heapUsagePercent = heapTotalMB > 0 ? Math.round((heapUsedMB / heapTotalMB) * 100) : 0;
 
   // Avoid false positives on tiny heaps (e.g. 14MB/15MB) and rate-limit warnings.
@@ -211,7 +422,7 @@ function monitorMemory() {
       writeLog('warning', `High memory usage: ${heapUsedMB}MB / ${heapTotalMB}MB (${heapUsagePercent}%)`, 'memory');
     }
   }
-  
+
   return { heapUsedMB, heapTotalMB, externalMB, heapUsagePercent };
 }
 
@@ -277,12 +488,107 @@ function inferModelFromUrl(url) {
   }
 }
 
+function sanitizeDisplayName(value) {
+  return String(value || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[<>:"/\\|?*\x00-\x1F]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+}
+
+function normalizeSearchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function compactSearchText(value) {
+  return normalizeSearchText(value).replace(/\s+/g, '');
+}
+
+function parseTitleFilterTerms(rawFilter) {
+  const rawTerms = String(rawFilter || '')
+    .split(/[\n,;|]+/)
+    .map((term) => normalizeSearchText(term))
+    .filter(Boolean);
+
+  const terms = new Set(rawTerms);
+
+  // MobileSentrix display products are not always titled "Display Assembly".
+  // Expand that intent to common equivalent title wording used by parts suppliers.
+  if (rawTerms.some((term) => /\bdisplay\b/.test(term) && /\bassembly\b/.test(term))) {
+    [
+      'display assembly',
+      'screen assembly',
+      'oled assembly',
+      'lcd assembly',
+      'soft oled assembly',
+      'hard oled assembly',
+      'soft assembly',
+      'hard assembly',
+      'incell assembly',
+      'touch screen assembly',
+      'digitizer assembly',
+      'display lcd',
+      'lcd screen',
+      'oled screen',
+    ].forEach((term) => terms.add(normalizeSearchText(term)));
+  }
+
+  return Array.from(terms);
+}
+
+function titleMatchesFilter(value, rawFilter) {
+  const terms = parseTitleFilterTerms(rawFilter);
+  if (!terms.length) return true;
+
+  const haystack = normalizeSearchText(value);
+  if (!haystack) return false;
+  const compactHaystack = compactSearchText(value);
+
+  return terms.some((term) => {
+    const words = term.split(' ').filter(Boolean);
+    if (!words.length) return false;
+    if (words.every((word) => haystack.includes(word))) return true;
+    const compactTerm = compactSearchText(term);
+    return compactTerm.length > 1 && compactHaystack.includes(compactTerm);
+  });
+}
+
+function productMatchesTitleFilter(product, rawFilter) {
+  if (!rawFilter) return true;
+  const haystack = [
+    product?.name,
+    product?.title,
+    product?.product_url,
+    product?.url,
+  ].filter(Boolean).join(' ');
+  if (!titleMatchesFilter(haystack, rawFilter)) return false;
+
+  const normalizedHaystack = normalizeSearchText(haystack);
+  const filterTerms = parseTitleFilterTerms(rawFilter).join(' ');
+  const isDisplayFilter = /\b(display|screen|lcd|oled|amoled|digitizer|incell)\b/.test(filterTerms);
+  if (!isDisplayFilter) return true;
+
+  // A broad display filter can accidentally match parts like "LCD flex cable".
+  // Keep complete screens/assemblies, but reject clearly separate components.
+  return !/\b(screen protector|tempered glass|battery|charging port|charge port|camera|back glass|back cover|housing|speaker|microphone|sim tray|adhesive|sticker|repair tool|tool kit|case|flex cable|lcd flex|connector|board|motherboard|fingerprint|home button|earpiece|vibrator|antenna)\b/.test(normalizedHaystack);
+}
+
+
 function summarizeJob(job, includeProducts = false) {
   const summary = {
     id: String(job.id),
     url: String(job.url || ''),
     status: String(job.status || 'queued'),
     model: String(job.model || ''),
+    folder_name: String(job.folder_name || ''),
+    download_folder: String(job.download_folder || ''),
+    title_filter: String(job.title_filter || ''),
     images: Number.isFinite(Number(job.images)) ? Number(job.images) : 0,
     total_items: Number.isFinite(Number(job.total_items)) ? Number(job.total_items) : 0,
     processed_items: Number.isFinite(Number(job.processed_items)) ? Number(job.processed_items) : 0,
@@ -298,6 +604,28 @@ function summarizeJob(job, includeProducts = false) {
   return summary;
 }
 
+function getDeletedImageIds(jobId) {
+  const id = String(jobId);
+  if (!deletedImageIdsByJob.has(id)) {
+    deletedImageIdsByJob.set(id, new Set());
+  }
+  return deletedImageIdsByJob.get(id);
+}
+
+function filterDeletedImagesForJob(jobId, products = []) {
+  if (!Array.isArray(products)) return [];
+  const deletedIds = deletedImageIdsByJob.get(String(jobId));
+  if (!deletedIds || deletedIds.size === 0) return products;
+
+  return products.map((product) => {
+    if (!product || !Array.isArray(product.images)) return product;
+    return {
+      ...product,
+      images: product.images.filter((image) => !deletedIds.has(String(image?.id || '')))
+    };
+  });
+}
+
 function getOrCreateJob(jobId, url = '') {
   const id = String(jobId);
   if (deletedJobIds.has(id)) return null;
@@ -307,6 +635,8 @@ function getOrCreateJob(jobId, url = '') {
       id,
       url,
       status: 'queued',
+      folder_name: '',
+      download_folder: '',
       model: inferModelFromUrl(url),
       images: 0,
       total_items: 0,
@@ -323,26 +653,37 @@ function getOrCreateJob(jobId, url = '') {
 }
 
 let persistPromise = Promise.resolve();
+let persistTimer = null;
 
-function schedulePersistJobsDb() {
+function schedulePersistJobsDb({ immediate = false } = {}) {
   // Skip persistence if disabled
   if (!PERSIST_JOBS_ENABLED) return;
-  
-  // Debounce persistence - only write if 5+ seconds since last write
+
   const now = Date.now();
-  if (now - lastPersistTime < PERSIST_INTERVAL_MS) {
+  const elapsed = now - lastPersistTime;
+  if (!immediate && elapsed < PERSIST_INTERVAL_MS) {
+    if (!persistTimer) {
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        schedulePersistJobsDb({ immediate: true });
+      }, PERSIST_INTERVAL_MS - elapsed);
+    }
     return;
   }
-  lastPersistTime = now;
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  lastPersistTime = Date.now();
 
   persistPromise = persistPromise
     .then(async () => {
       try {
         await fsp.mkdir(DOWNLOAD_ROOT, { recursive: true });
-        const allJobs = Array.from(jobs.values())
-          .filter(job => job.status === 'completed' || job.status === 'failed') // Only persist terminal states
-          .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-          .slice(0, 100) // Keep only last 100 jobs
+        const sortedJobs = Array.from(jobs.values())
+          .filter(job => !deletedJobIds.has(String(job.id)))
+          .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+        const allJobs = retainJobs(sortedJobs, PERSIST_JOB_LIMIT)
           .map((job) => summarizeJob(job, true));
 
         const payload = {
@@ -350,21 +691,96 @@ function schedulePersistJobsDb() {
           jobs: allJobs
         };
 
-        await fsp.writeFile(JOB_DB_PATH, JSON.stringify(payload, null, 2), 'utf8');
+        const tempPath = `${JOB_DB_PATH}.tmp`;
+        const backupPath = `${JOB_DB_PATH}.bak`;
+        if (fs.existsSync(JOB_DB_PATH)) {
+          await fsp.copyFile(JOB_DB_PATH, backupPath).catch(() => {});
+        }
+        await fsp.writeFile(tempPath, JSON.stringify(payload, null, 2), 'utf8');
+        await fsp.rename(tempPath, JOB_DB_PATH);
       } catch (err) {
         writeLog('error', `Failed to persist jobs DB: ${err.message}`, 'db');
       }
     });
 }
 
+function summarizeManifestJob(manifest, folderName) {
+  const products = Array.isArray(manifest?.products) ? manifest.products : [];
+  const imageCount = products.reduce(
+    (sum, product) => sum + (Array.isArray(product?.images) ? product.images.length : 0),
+    0
+  );
+  const totalItems = Number.isFinite(Number(manifest?.total_items))
+    ? Number(manifest.total_items)
+    : products.length;
+  const processedItems = Number.isFinite(Number(manifest?.processed_items))
+    ? Number(manifest.processed_items)
+    : String(manifest?.status || '') === 'completed'
+      ? totalItems
+      : products.filter((product) => Array.isArray(product?.images) || Array.isArray(product?.source_images)).length;
+
+  return {
+    id: String(manifest?.job_id || folderName),
+    url: String(manifest?.url || ''),
+    status: String(manifest?.status || 'completed'),
+    model: sanitizeDisplayName(manifest?.folder_name || manifest?.download_folder || folderName),
+    folder_name: sanitizeDisplayName(manifest?.folder_name || manifest?.download_folder || folderName),
+    download_folder: sanitizeDownloadFolderName(manifest?.download_folder || folderName, folderName),
+    title_filter: String(manifest?.title_filter || ''),
+    images: imageCount,
+    total_items: totalItems,
+    processed_items: processedItems,
+    error: manifest?.error || null,
+    products,
+    stop_requested: false,
+    pause_requested: false,
+    created_at: manifest?.created_at || nowIso(),
+    updated_at: manifest?.updated_at || manifest?.completed_at || nowIso()
+  };
+}
+
+async function loadJobsFromManifests(reason = '') {
+  const entries = await fsp.readdir(DOWNLOAD_ROOT, { withFileTypes: true }).catch(() => []);
+  let restored = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const manifestPath = path.join(DOWNLOAD_ROOT, entry.name, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) continue;
+    try {
+      const manifest = JSON.parse(await fsp.readFile(manifestPath, 'utf8'));
+      const job = summarizeManifestJob(manifest, entry.name);
+      if (!job.id) continue;
+      jobs.set(String(job.id), job);
+      restored++;
+    } catch (err) {
+      writeLog('warning', `Could not restore manifest ${entry.name}: ${err.message}`, 'startup');
+    }
+  }
+  if (restored > 0) {
+    writeLog(
+      'warning',
+      `Rebuilt ${restored} job(s) from manifests${reason ? ` after ${reason}` : ''}`,
+      'startup'
+    );
+    schedulePersistJobsDb({ immediate: true });
+  }
+  return restored;
+}
+
 async function loadPersistedJobs() {
   try {
     await fsp.mkdir(DOWNLOAD_ROOT, { recursive: true });
-    if (!fs.existsSync(JOB_DB_PATH)) return;
+    if (!fs.existsSync(JOB_DB_PATH)) {
+      await loadJobsFromManifests('missing jobs DB');
+      return;
+    }
 
-    const raw = await fsp.readFile(JOB_DB_PATH, 'utf8');
+    const raw = (await fsp.readFile(JOB_DB_PATH, 'utf8')).replace(/^\uFEFF/, '');
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.jobs)) return;
+    if (!Array.isArray(parsed.jobs)) {
+      await loadJobsFromManifests('invalid jobs DB shape');
+      return;
+    }
 
     for (const job of parsed.jobs) {
       if (!job || job.id == null) continue;
@@ -382,6 +798,46 @@ async function loadPersistedJobs() {
     }
   } catch (err) {
     writeLog('warning', `Could not load persisted jobs: ${err.message}`, 'startup');
+    await loadJobsFromManifests('jobs DB parse failure').catch((fallbackErr) => {
+      writeLog('error', `Manifest restore fallback failed: ${fallbackErr.message}`, 'startup');
+    });
+  }
+}
+
+function recoverRestoredActiveJobs() {
+  const restoredActiveJobs = Array.from(jobs.values()).filter((job) => {
+    const status = String(job?.status || '');
+    return ['queued', 'running'].includes(status) && job?.url;
+  });
+
+  for (const job of restoredActiveJobs) {
+    const jobId = String(job.id);
+    const folderName = sanitizeDisplayName(job.folder_name || job.model || '');
+    const titleFilter = String(job.title_filter || '').trim();
+    const downloadFolder = getJobDownloadFolderName(jobId, folderName || inferModelFromUrl(job.url));
+
+    job.stop_requested = false;
+    job.pause_requested = !AUTO_RESUME_RESTORED_JOBS;
+    updateJob(jobId, {
+      status: AUTO_RESUME_RESTORED_JOBS ? 'queued' : 'paused',
+      error: AUTO_RESUME_RESTORED_JOBS ? null : 'Recovered after restart; waiting for manual resume.',
+      pause_requested: !AUTO_RESUME_RESTORED_JOBS,
+      folder_name: folderName,
+      download_folder: downloadFolder,
+      model: folderName || job.model || inferModelFromUrl(job.url)
+    });
+    if (AUTO_RESUME_RESTORED_JOBS) {
+      writeLog('info', `Resuming restored job for ${job.url}`, 'queue', jobId);
+      runScrapeJobInBackground({ jobId, url: job.url, folderName, titleFilter, downloadFolder });
+    } else {
+      writeLog('warning', `Recovered job is paused and ready for manual resume: ${job.url}`, 'queue', jobId);
+    }
+  }
+
+  if (restoredActiveJobs.length > 0) {
+    const action = AUTO_RESUME_RESTORED_JOBS ? 're-queued' : 'paused';
+    writeLog('info', `${action} ${restoredActiveJobs.length} restored active job(s)`, 'startup');
+    schedulePersistJobsDb({ immediate: true });
   }
 }
 
@@ -397,7 +853,15 @@ function updateJob(jobId, patch = {}, { emit = true, persist = true } = {}) {
 
   const job = getOrCreateJob(id, patch.url || '');
   if (!job) return null;
-  Object.assign(job, patch);
+  const nextPatch = { ...patch };
+  if (Array.isArray(nextPatch.products)) {
+    nextPatch.products = filterDeletedImagesForJob(id, nextPatch.products);
+    nextPatch.images = nextPatch.products.reduce(
+      (sum, product) => sum + (Array.isArray(product?.images) ? product.images.length : 0),
+      0
+    );
+  }
+  Object.assign(job, nextPatch);
   job.id = String(job.id || id);
   job.updated_at = nowIso();
 
@@ -431,8 +895,17 @@ function processNextQueuedScrape() {
 function executeWithScrapeSlot(jobId, runTask) {
   return new Promise((resolve, reject) => {
     const start = async () => {
-      activeScrapes++;
       const id = String(jobId);
+      const queuedJob = jobs.get(id);
+      if (queuedJob?.pause_requested || queuedJob?.status === 'paused') {
+        updateJob(id, { status: 'paused' });
+        scrapeQueue.push(start);
+        setTimeout(processNextQueuedScrape, 2000);
+        return;
+      }
+
+      activeScrapes++;
+      activeScrapeJobIds.add(id);
       let runtimeTimer = null;
       let didTimeout = false;
 
@@ -470,6 +943,7 @@ function executeWithScrapeSlot(jobId, runTask) {
         if (didTimeout) {
           updateJob(id, { status: 'failed', error: `Job timed out after ${Math.round(JOB_MAX_RUNTIME_MS / 60000)} minutes` });
         }
+        activeScrapeJobIds.delete(id);
         activeScrapes = Math.max(0, activeScrapes - 1);
         processNextQueuedScrape();
       }
@@ -487,6 +961,46 @@ function executeWithScrapeSlot(jobId, runTask) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientScrapeError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  if (!message) return false;
+
+  return [
+    'timeout',
+    'timed out',
+    'navigation',
+    'net::',
+    'connection',
+    'econnreset',
+    'econnrefused',
+    'etimedout',
+    'socket hang up',
+    'protocol error',
+    'target closed',
+    'browser disconnected',
+    'page crashed',
+    'temporarily unavailable',
+    'too many requests',
+    'http 429',
+    'http 500',
+    'http 502',
+    'http 503',
+    'http 504'
+  ].some((needle) => message.includes(needle));
+}
+
+function withTimeout(promise, timeoutMs, label = 'Operation') {
+  let timer = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    timer.unref?.();
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 function randomInt(min, max) {
@@ -579,148 +1093,257 @@ function sanitizeSegment(value, fallback = 'item') {
   return normalized || fallback;
 }
 
+function sanitizeDownloadFolderName(value, fallback = 'Scrape Job') {
+  const cleaned = sanitizeDisplayName(value)
+    .replace(/[. ]+$/g, '')
+    .slice(0, 100);
+  return cleaned || fallback;
+}
+
+function getJobDownloadFolderName(jobId, preferredName = '') {
+  const id = String(jobId);
+  const job = jobs.get(id);
+  if (job?.download_folder) {
+    return sanitizeDownloadFolderName(job.download_folder, `job_${sanitizeSegment(id, 'job')}`);
+  }
+
+  const name = sanitizeDownloadFolderName(
+    preferredName || job?.folder_name || job?.model || `job_${id}`,
+    `job_${sanitizeSegment(id, 'job')}`
+  );
+  return name;
+}
+
+function getJobDownloadDir(jobId, preferredName = '') {
+  return path.join(DOWNLOAD_ROOT, getJobDownloadFolderName(jobId, preferredName));
+}
+
+function ensureJobDownloadMetadata(jobId, preferredName = '') {
+  const id = String(jobId);
+  const folder = getJobDownloadFolderName(id, preferredName);
+  const job = jobs.get(id);
+  if (job) {
+    job.download_folder = folder;
+    job.download_url = `/downloads/${encodeURIComponent(folder)}`;
+  }
+  return {
+    folder,
+    dir: path.join(DOWNLOAD_ROOT, folder),
+    url: `/downloads/${encodeURIComponent(folder)}`
+  };
+}
+
+function extensionFromUrl(value, fallback = '.jpg') {
+  try {
+    const pathname = new URL(value).pathname;
+    const ext = path.extname(pathname).toLowerCase();
+    if (/^\.(jpg|jpeg|png|webp|bmp|tiff|heic)$/.test(ext)) return ext;
+  } catch {}
+  return fallback;
+}
+
+function imageDedupeKey(value, baseUrl = '') {
+  const absolute = toAbsoluteUrl(value, baseUrl || value);
+  if (!absolute) return '';
+
+  try {
+    const parsed = new URL(absolute);
+    parsed.hash = '';
+
+    // MobileSentrix commonly exposes the same asset with cache/version query
+    // variants. Keep the first real URL for download, but dedupe by asset path.
+    if (parsed.pathname.match(/\.(jpg|jpeg|png|webp|bmp|tiff|heic)$/i)) {
+      parsed.pathname = normalizeWordpressImageSizePath(parsed.pathname);
+      parsed.search = '';
+    } else {
+      for (const key of ['v', 'ver', 'version', 'cache', 'ts', 'timestamp', 'width', 'height', 'w', 'h', 'q', 'quality']) {
+        parsed.searchParams.delete(key);
+      }
+    }
+
+    parsed.hostname = parsed.hostname.toLowerCase();
+    return parsed.href;
+  } catch {
+    return absolute.split('#')[0].replace(/[?&](v|ver|version|cache|ts|timestamp|width|height|w|h|q|quality)=[^&]+/gi, '');
+  }
+}
+
+function normalizeWordpressImageSizePath(pathname) {
+  return String(pathname || '').replace(/-\d{2,5}x\d{2,5}(?=\.(?:jpe?g|png|webp)$)/i, '');
+}
+
+function normalizeProductImageSourceUrl(value) {
+  const absolute = toAbsoluteUrl(value, value);
+  if (!absolute) return '';
+
+  try {
+    const parsed = new URL(absolute);
+    const pathname = parsed.pathname;
+    const lowerPath = pathname.toLowerCase();
+
+    if (!/\.(jpg|jpeg|png|webp|bmp|tiff|heic)$/i.test(lowerPath)) return '';
+    const isMobileSentrixCatalogImage = lowerPath.includes('/catalog/product/');
+    const isXcellUploadImage =
+      parsed.hostname.toLowerCase().endsWith('xcellparts.com') &&
+      lowerPath.includes('/wp-content/uploads/');
+    if (!isMobileSentrixCatalogImage && !isXcellUploadImage) return '';
+    if (lowerPath.includes('/thumbnail/')) return '';
+    if (/\/(?:cache|placeholder|badge|badges|logo|logos|icon|icons)\//i.test(lowerPath)) return '';
+
+    parsed.pathname = isXcellUploadImage
+      ? normalizeWordpressImageSizePath(pathname)
+      : pathname.replace(/\/catalog\/product\/small_image\//i, '/catalog/product/image/');
+    parsed.hash = '';
+    for (const key of ['width', 'height', 'w', 'h', 'q', 'quality', 'cache', 'ts', 'timestamp']) {
+      parsed.searchParams.delete(key);
+    }
+    return parsed.href;
+  } catch {
+    return '';
+  }
+}
+
+function buildExistingJobImageKeys(jobId) {
+  const keys = new Set();
+  const job = jobs.get(String(jobId));
+  if (!job || !Array.isArray(job.products)) return keys;
+
+  for (const product of job.products) {
+    if (!product || !Array.isArray(product.images)) continue;
+    for (const image of product.images) {
+      const key = image?.source_dedupe_key || imageDedupeKey(image?.original_url || image?.url || '');
+      if (key) keys.add(key);
+    }
+  }
+
+  return keys;
+}
+
 function extractCatalogImageUrlsFromHtml(html, baseUrl = '') {
   if (!html || typeof html !== 'string') return [];
 
-  const needle = '/catalog/product/image/';
-  const separators = new Set(['"', "'", ' ', '\n', '\r', '\t', '<', '>', '(', ')']);
-  const found = new Set();
+  const normalizedHtml = html
+    .replace(/\\\//g, '/')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x2F;/gi, '/')
+    .replace(/&amp;/g, '&');
 
-  let index = html.indexOf(needle);
+  const needle = '/catalog/product/image/';
+  const separators = new Set(['"', "'", ' ', '\n', '\r', '\t', '<', '>', '(', ')', ',', ';']);
+  const found = new Set();
+  const galleryContextPattern = /(MagicZoom|MagicToolbox|MagicZoomPlusImage|product-img-box|product\.media|more-views|gallery|fotorama|og:image|image_src)/i;
+  const nonProductAssetPattern = /(logo|brandmark|flag|country|canada|united[-_ ]?states|usa|all[-_ ]?colors|placeholder|favicon|apple-touch-icon|banner|sprite|icon)/i;
+
+  let index = normalizedHtml.indexOf(needle);
   while (index !== -1) {
     let start = index;
-    while (start > 0 && !separators.has(html[start - 1])) {
+    while (start > 0 && !separators.has(normalizedHtml[start - 1])) {
       start--;
     }
 
     let end = index + needle.length;
-    while (end < html.length && !separators.has(html[end])) {
+    while (end < normalizedHtml.length && !separators.has(normalizedHtml[end])) {
       end++;
     }
 
-    let candidate = html.slice(start, end).trim();
+    let candidate = normalizedHtml.slice(start, end).trim();
     if (candidate) {
-      candidate = candidate.split('&amp;').join('&');
+      const context = normalizedHtml.slice(Math.max(0, start - 500), Math.min(normalizedHtml.length, end + 500));
       const absolute = toAbsoluteUrl(candidate, baseUrl || 'https://www.mobilesentrix.com');
-      if (absolute && absolute.includes('/catalog/product/image/')) {
+      if (
+        absolute
+        && absolute.includes('/catalog/product/image/')
+        && galleryContextPattern.test(context)
+        && !nonProductAssetPattern.test(`${absolute} ${context}`)
+      ) {
         found.add(absolute);
       }
     }
 
-    index = html.indexOf(needle, index + needle.length);
+    index = normalizedHtml.indexOf(needle, index + needle.length);
   }
 
   return Array.from(found);
 }
 
-async function waitForChallengeToClear(driver, timeoutMs = CHALLENGE_WAIT_MS) {
-  const startedAt = Date.now();
+async function extractImagesFromProductHtml(productUrl, jobId) {
+  const normalizedUrl = toAbsoluteUrl(productUrl, productUrl);
+  if (!normalizedUrl) return [];
 
-  while (Date.now() - startedAt < timeoutMs) {
-    let title = '';
-    try {
-      title = (await driver.getTitle()) || '';
-    } catch {}
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), IMAGE_HTTP_TIMEOUT_MS);
 
-    const lowerTitle = title.toLowerCase();
-    const isChallengeTitle =
-      lowerTitle.includes('just a moment') ||
-      lowerTitle.includes('attention required') ||
-      lowerTitle.includes('checking your browser');
-
-    if (!isChallengeTitle) return true;
-    await driver.sleep(1000);
-  }
-
-  return false;
-}
-
-function resolveChromeDriverPath() {
-  const binaryName = process.platform === 'win32' ? 'chromedriver.exe' : 'chromedriver';
-  const candidates = [
-    process.env.CHROMEDRIVER_PATH,
-    '/usr/bin/chromedriver',
-    (() => {
-      try {
-        const chromedriver = require('chromedriver');
-        return chromedriver?.path || '';
-      } catch {
-        return '';
+  try {
+    const response = await fetchWithValidatedRedirects(normalizedUrl, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36'
       }
-    })(),
-    path.join(__dirname, '.tmp/chromedriver/chromedriver-mac-x64/chromedriver'),
-    path.join(__dirname, '.tmp/chromedriver/chromedriver-mac-arm64/chromedriver'),
-    path.join(__dirname, 'chromedriver'),
-    path.join(__dirname, 'node_modules/chromedriver/lib/chromedriver', binaryName),
-    path.join(__dirname, 'node_modules/.bin', binaryName)
-  ].filter(Boolean);
+    }, {
+      allowedHosts: SCRAPE_ALLOWED_HOSTS
+    });
 
-  for (const candidate of candidates) {
-    try {
-      const resolved = path.resolve(candidate);
-      if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
-        return resolved;
-      }
-    } catch {}
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    const urls = extractCatalogImageUrlsFromHtml(html, normalizedUrl);
+    if (urls.length) {
+      writeLog('info', `Recovered ${urls.length} image link(s) from direct HTML fetch: ${normalizedUrl}`, 'scrape', jobId);
+    }
+    return urls;
+  } catch (err) {
+    writeLog('warning', `Direct HTML image fallback failed for ${normalizedUrl}: ${err.message}`, 'scrape', jobId);
+    return [];
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return null;
 }
 
-function isDriverSessionError(error) {
-  const message = String(error?.message || error || '').toLowerCase();
-  return (
-    message.includes('invalid session id') ||
-    message.includes('session deleted') ||
-    message.includes('not connected to devtools') ||
-    message.includes('disconnected') ||
-    message.includes('no such window')
-  );
-}
 
 function isSingleProductUrl(url) {
   if (!url || typeof url !== 'string') return false;
-  
+
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase();
     const pathname = urlObj.pathname.toLowerCase();
     const search = urlObj.search.toLowerCase();
-    
-    // Explicit single product patterns
-    if (pathname.includes('/product/')) return true;
-    if (/\/(p|item|sku|product-|view|details|product-detail|pd)\//i.test(pathname)) return true;
-    if (/\/(apple|samsung|iphone|galaxy|ipad|airpods|watch)\//i.test(pathname)) return true;
-    
-    // Product ID parameters
-    if (search.includes('product_id=') || search.includes('?id=') || search.includes('?sku=') || search.includes('?item_id=')) {
-      return true;
-    }
-    
-    // Single numeric ID in pathname (e.g., /products/12345)
-    if (/\/(products?|items?|listings?|offers?|deals?)\/\d+/.test(pathname)) {
-      return true;
-    }
 
-    // MobileSentrix category trees (e.g. /replacement-parts/.../g-series/...)
-    // often end with slug-like segments that can look like product URLs.
+    // MobileSentrix category/model trees must be scanned as categories.
     if (hostname.includes('mobilesentrix.') && pathname.includes('/replacement-parts/')) {
       return false;
     }
     if (/(^|\/)[a-z0-9-]+-series(\/|$)/i.test(pathname)) {
       return false;
     }
-    
-    // Exclude obvious category/collection URLs
     if (/(category|collection|catalog|shop|browse|search|results|list|page)\//i.test(pathname)) {
       return false;
     }
-    
+
+    // Explicit single product patterns
+    if (pathname.includes('/product/')) return true;
+    if (/\/(p|item|sku|product-|view|details|product-detail|pd)\//i.test(pathname)) return true;
+    if (/\/(products?|items?)\/(apple|samsung|iphone|galaxy|ipad|airpods|watch)-/i.test(pathname)) return true;
+
+    // Product ID parameters
+    if (search.includes('product_id=') || search.includes('?id=') || search.includes('?sku=') || search.includes('?item_id=')) {
+      return true;
+    }
+
+    // Single numeric ID in pathname (e.g., /products/12345)
+    if (/\/(products?|items?|listings?|offers?|deals?)\/\d+/.test(pathname)) {
+      return true;
+    }
     // Check for typical product name patterns (with model/SKU after)
     if (/[a-z0-9]+-[a-z0-9]+-[a-z0-9]+/i.test(pathname) && !search.includes('category')) {
       return true;
     }
-    
+
     return false;
   } catch {
     return false;
@@ -743,7 +1366,7 @@ async function cleanupOldImages(maxAgeHours = 24) {
         const beforeCount = product.images.length;
         product.images = product.images.filter((image) => {
           if (!image.created_at) return true; // Keep images without timestamp
-          
+
           const imageAge = now - new Date(image.created_at).getTime();
           if (imageAge > maxAgeMs) {
             deletedCount++;
@@ -770,7 +1393,7 @@ async function cleanupOldImages(maxAgeHours = 24) {
             try {
               const stats = await fsp.stat(dirPath);
               const dirAge = now - stats.mtimeMs;
-              
+
               if (dirAge > maxAgeMs) {
                 await fsp.rm(dirPath, { recursive: true, force: true });
                 deletedCount++;
@@ -794,488 +1417,32 @@ async function cleanupOldImages(maxAgeHours = 24) {
   }
 }
 
-function createChromeOptions(profileDir) {
-  const options = new chrome.Options();
-  options.setPageLoadStrategy('eager');
-  options.excludeSwitches('enable-automation');
-
-  const headlessEnabled = String(process.env.CHROME_HEADLESS || 'true').toLowerCase() !== 'false';
-  if (headlessEnabled) {
-    options.addArguments('--headless=new');
-  }
-
-  if (process.env.CHROME_BIN) {
-    options.setChromeBinaryPath(process.env.CHROME_BIN);
-  }
-
-  options.addArguments(
-    '--no-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-gpu',
-    '--disable-extensions',
-    '--disable-plugins',
-    '--disable-default-apps',
-    '--disable-preconnect',
-    '--disable-component-extensions-with-background-pages',
-    '--disable-background-networking',
-    '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-    '--window-size=1366,768',  // Smaller window to save memory
-    '--disable-blink-features=AutomationControlled',
-    '--disable-sync',
-    '--disable-translate',
-    '--disable-client-side-phishing-detection',
-    '--mute-audio',
-    '--single-process=false',
-    '--memory-pressure-off',
-    '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
-  );
-
-  if (profileDir) {
-    options.addArguments(`--user-data-dir=${profileDir}`);
-  }
-
-  return options;
-}
-
-async function createDriverInstance(chromeDriverPath, profileDir) {
-  const options = createChromeOptions(profileDir);
-  const builder = new Builder().forBrowser('chrome').setChromeOptions(options);
-  builder.setChromeService(new chrome.ServiceBuilder(chromeDriverPath));
-
-  const driver = await builder.build();
-  await driver.manage().setTimeouts({
-    pageLoad: NAVIGATION_TIMEOUT_MS,
-    script: NAVIGATION_TIMEOUT_MS
-  });
-
-  return driver;
-}
-
-async function openProductTab(driver, categoryTabHandle, jobId) {
-  try {
-    await driver.switchTo().newWindow('tab');
-    return await driver.getWindowHandle();
-  } catch (tabErr) {
-    writeLog('warning', `Could not open product tab, using category tab: ${tabErr.message}`, 'scrape', jobId);
-    if (categoryTabHandle) return categoryTabHandle;
-    return await driver.getWindowHandle();
-  }
-}
-
-async function autoScrollUntilStable(driver, maxRounds = 25, waitMs = 1200) {
-  let prevCount = 0;
-  let stableRounds = 0;
-
-  for (let round = 0; round < maxRounds; round++) {
-    await driver.executeScript('window.scrollTo(0, document.body.scrollHeight);');
-    await driver.sleep(waitMs);
-
-    let count = 0;
-    try {
-      count = await driver.executeScript('return document.querySelectorAll("li.item").length;');
-    } catch {
-      count = 0;
-    }
-
-    if (count === prevCount) {
-      stableRounds++;
-      if (stableRounds >= 5) break;
-    } else {
-      stableRounds = 0;
-      prevCount = count;
-    }
-  }
-}
-
-async function extractCategoryProducts(driver, categoryUrl) {
-  const rawProducts = await driver.executeScript(() => {
-    const attrs = ['src', 'data-src', 'srcset', 'data-lazy', 'data-original'];
-    const extractFirstImage = (val) => {
-      if (!val) return '';
-      const first = String(val).split(',')[0].trim();
-      return first.split(' ')[0].trim();
-    };
-
-    // Try primary selector first
-    let items = document.querySelectorAll('li.item');
-    
-    // Fallback selectors if primary doesn't match
-    if (!items.length) {
-      items = document.querySelectorAll('[data-product-id]');
-    }
-    if (!items.length) {
-      items = document.querySelectorAll('div.product-item');
-    }
-    if (!items.length) {
-      items = document.querySelectorAll('article.product');
-    }
-    if (!items.length) {
-      items = document.querySelectorAll('div.product');
-    }
-
-    return Array.from(items).map((item) => {
-      const name = (item.querySelector('h2.product-name')?.textContent || item.querySelector('h2')?.textContent || item.querySelector('[data-name]')?.textContent || '').trim();
-      const priceNode = item.querySelector('span.regular-price') || item.querySelector('.price') || item.querySelector('[data-price]');
-      const price = (priceNode?.textContent || '').trim();
-
-      let img = '';
-      const imgEl = item.querySelector('img.small-img') || item.querySelector('img[data-src]') || item.querySelector('img');
-      if (imgEl) {
-        for (const attr of attrs) {
-          const val = imgEl.getAttribute(attr);
-          if (val && String(val).trim()) {
-            img = extractFirstImage(val);
-            if (img) break;
-          }
-        }
-      }
-
-      const productUrl = 
-        item.querySelector('a.product-image.figure')?.getAttribute('href') || 
-        item.querySelector('a[href*="/product"]')?.getAttribute('href') ||
-        item.querySelector('a[data-url]')?.getAttribute('data-url') ||
-        '';
-
-      return {
-        name,
-        price,
-        img,
-        product_url: productUrl
-      };
-    });
-  });
-
-  return rawProducts.map((product) => ({
-    name: String(product.name || '').trim(),
-    price: String(product.price || '').trim(),
-    product_url: toAbsoluteUrl(product.product_url, categoryUrl),
-    img: toAbsoluteUrl(product.img, categoryUrl) || String(product.img || '').trim(),
-    images: [],
-    source_images: []
-  }));
-}
-
-async function extractImagesWithDriver(driver, productUrl, productTabHandle, jobId) {
-  if (!productUrl) return [];
-
-  const normalizedUrl = toAbsoluteUrl(productUrl, productUrl);
-  if (!normalizedUrl) {
-    writeLog('error', `Invalid product URL: ${productUrl}`, 'scrape', jobId);
-    return [];
-  }
-
-  await sleep(randomInt(PRODUCT_DELAY_MIN_MS, PRODUCT_DELAY_MAX_MS));
-
-  const imageSet = new Set();
-
-  try {
-    await driver.switchTo().window(productTabHandle);
-    try {
-      await driver.get(normalizedUrl);
-    } catch (navigationErr) {
-      if (isDriverSessionError(navigationErr)) {
-        throw navigationErr;
-      }
-
-      const navMessage = String(navigationErr?.message || '');
-      if (/timed out receiving message from renderer|timeout/i.test(navMessage)) {
-        writeLog(
-          'warning',
-          `Product navigation timed out, attempting extraction from partial DOM: ${normalizedUrl}`,
-          'scrape',
-          jobId
-        );
-      } else {
-        throw navigationErr;
-      }
-    }
-
-    const challengeCleared = await waitForChallengeToClear(driver, CHALLENGE_WAIT_MS);
-    if (!challengeCleared) {
-      writeLog('warning', `Challenge page did not clear: ${normalizedUrl}`, 'scrape', jobId);
-      return [];
-    }
-
-    const collectCandidateUrls = async () =>
-      driver.executeScript(async () => {
-        const out = [];
-        const seen = new Set();
-
-        const push = (value) => {
-          if (!value) return;
-          const trimmed = String(value).trim();
-          // Accept common image formats, reject GIFs and data URIs
-          if (trimmed && !seen.has(trimmed) && (trimmed.match(/^https?:\/\/|^\//) && !trimmed.match(/\.(gif|svg)$/i) && !trimmed.startsWith('data:'))) {
-            out.push(trimmed);
-            seen.add(trimmed);
-          }
-        };
-
-        // Trigger lazy loading by scrolling
-        window.scrollTo(0, 0);
-        await new Promise(r => setTimeout(r, 800));
-        
-        let scrollHeight = document.documentElement.scrollHeight;
-        for (let i = 0; i < 5; i++) {
-          window.scrollBy(0, scrollHeight / 5);
-          await new Promise(r => setTimeout(r, 300));
-        }
-        window.scrollTo(0, 0);
-        await new Promise(r => setTimeout(r, 500));
-
-        // 1. MagicZoom/MagicScroll (internal catalog system)
-        for (const selector of ['div.MagicScroll a.mz-thumb[href]', 'div.MagicToolboxContainer a.MagicZoom[href]', 'a.MagicZoom[href]', 'a[id^="MagicZoomPlusImage"][href]', 'a[href*="/catalog/product/image/"]']) {
-          for (const node of document.querySelectorAll(selector)) {
-            push(node.getAttribute('href') || node.href);
-          }
-        }
-
-        // 2. Generic product image galleries (Slick, Swiper, etc.)
-        if (out.length < 20) {
-          for (const selector of ['.gallery img[src]', '.product-gallery img[src]', '.product-images img[src]', '.product-image-container img[src]', '.images img[src]', '.photos img[src]', '.fotorama__img', '.slick-slide img', '.swiper-slide img', '.product-photo img', '.product-pic img']) {
-            for (const node of document.querySelectorAll(selector)) {
-              push(node.src || node.getAttribute('data-src') || node.getAttribute('data-zoom-image') || node.getAttribute('data-original'));
-            }
-          }
-        }
-
-        // 3. Picture elements and srcset images
-        if (out.length < 20) {
-          for (const picture of document.querySelectorAll('picture')) {
-            for (const source of picture.querySelectorAll('source[srcset]')) {
-              const srcset = source.getAttribute('srcset');
-              if (srcset) {
-                push(srcset.split(',')[0]?.trim()?.split(' ')[0]);
-              }
-            }
-            const img = picture.querySelector('img');
-            if (img) {
-              push(img.src);
-              push(img.getAttribute('data-src'));
-              push(img.getAttribute('data-zoom-image'));
-            }
-          }
-        }
-
-        // 4. All img tags with all possible attributes
-        if (out.length < 30) {
-          for (const img of document.querySelectorAll('img:not([src*="logo"]):not([src*="icon"]):not([src*="svg"])')) {
-            push(img.src);
-            push(img.getAttribute('data-src'));
-            push(img.getAttribute('data-zoom-image'));
-            push(img.getAttribute('data-image'));
-            push(img.getAttribute('data-original'));
-            push(img.getAttribute('data-large'));
-            push(img.getAttribute('data-original-src'));
-            push(img.getAttribute('data-img-url'));
-            push(img.getAttribute('data-full'));
-            push(img.getAttribute('x-src'));
-            // Check srcset
-            const srcset = img.getAttribute('srcset');
-            if (srcset) {
-              push(srcset.split(',')[0]?.trim()?.split(' ')[0]);
-            }
-          }
-        }
-
-        // 5. Background images on divs/sections
-        if (out.length < 20) {
-          for (const el of document.querySelectorAll('[style*="background-image"], [class*="gallery"], [class*="image"], [class*="photo"], [class*="product"]')) {
-            const style = window.getComputedStyle(el);
-            const bgImg = style.backgroundImage;
-            if (bgImg && bgImg.includes('url')) {
-              const match = bgImg.match(/url\(['"]?([^'")]+)['"]?\)/);
-              if (match) push(match[1]);
-            }
-          }
-        }
-
-        // 6. Structured data (JSON-LD, microdata)
-        if (out.length < 20) {
-          const collectImageValue = (value) => {
-            if (!value) return;
-            if (typeof value === 'string') {
-              push(value);
-              return;
-            }
-            if (Array.isArray(value)) {
-              for (const item of value) {
-                collectImageValue(item);
-              }
-              return;
-            }
-            if (typeof value === 'object') {
-              push(value.url);
-              push(value.contentUrl);
-              push(value.image);
-              if (value.images) {
-                collectImageValue(value.images);
-              }
-            }
-          };
-
-          for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
-            try {
-              const payload = JSON.parse(script.textContent || '{}');
-              const nodes = Array.isArray(payload) ? payload : [payload];
-              for (const node of nodes) {
-                if (node && typeof node === 'object') {
-                  collectImageValue(node.image);
-                  if (node.offers) collectImageValue(node.offers);
-                }
-              }
-            } catch {}
-          }
-
-          // Schema.org microdata
-          for (const img of document.querySelectorAll('[itemtype*="schema.org/Product"] img[src], [itemtype*="schema.org/Product"] [itemprop="image"]')) {
-            push(img.src || img.getAttribute('content') || img.getAttribute('data-src'));
-          }
-        }
-
-        // 7. Meta tags and link elements
-        push(document.querySelector('meta[property="og:image"]')?.getAttribute('content'));
-        push(document.querySelector('meta[name="twitter:image"]')?.getAttribute('content'));
-        push(document.querySelector('meta[name="thumbnail"]')?.getAttribute('content'));
-        push(document.querySelector('meta[property="og:image:url"]')?.getAttribute('content'));
-        push(document.querySelector('link[rel="image_src"]')?.getAttribute('href'));
-        push(document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href'));
-
-        // 8. Data attributes on parent containers
-        if (out.length < 30) {
-          for (const el of document.querySelectorAll('[data-image], [data-images], [data-src], [data-zoom-image], [data-product-img], [data-img], [data-image-url]')) {
-            push(el.getAttribute('data-image'));
-            push(el.getAttribute('data-images'));
-            push(el.getAttribute('data-src'));
-            push(el.getAttribute('data-zoom-image'));
-            push(el.getAttribute('data-product-img'));
-            push(el.getAttribute('data-img'));
-            push(el.getAttribute('data-image-url'));
-          }
-        }
-
-        // 9. Video thumbnails (in case of video product images)
-        for (const video of document.querySelectorAll('video, [data-video], [data-video-poster]')) {
-          push(video.getAttribute('poster'));
-          push(video.getAttribute('data-video-poster'));
-          push(video.getAttribute('data-thumbnail'));
-        }
-
-        // 10. Links to images (common on some sites)
-        if (out.length < 30) {
-          for (const a of document.querySelectorAll('a[href*=".jpg"], a[href*=".jpeg"], a[href*=".png"], a[href*=".webp"]')) {
-            push(a.getAttribute('href'));
-            push(a.getAttribute('data-src'));
-            push(a.getAttribute('data-image'));
-          }
-        }
-
-        return Array.from(new Set(out)).filter(url => url && (url.match(/^https?:\/\/|^\//) && !url.match(/\.(gif|svg)$/i)));
-      });
-
-    let hrefs = [];
-    try {
-      const initial = await collectCandidateUrls();
-      hrefs = Array.isArray(initial) ? initial : [];
-      if (hrefs.length) {
-        writeLog('debug', `Image extraction found ${hrefs.length} candidate URL(s) for: ${normalizedUrl}`, 'scrape', jobId);
-      }
-    } catch (err) {
-      writeLog('error', `Image collection failed: ${err.message}`, 'scrape', jobId);
-      hrefs = [];
-    }
-
-    if (!hrefs.length) {
-      hrefs = await driver.wait(
-        async () => {
-          const values = await collectCandidateUrls();
-          return Array.isArray(values) && values.length ? values : false;
-        },
-        IMAGE_SELECTOR_TIMEOUT_MS
-      ).catch(async () => {
-        try {
-          const values = await collectCandidateUrls();
-          return Array.isArray(values) ? values : [];
-        } catch {
-          return [];
-        }
-      });
-      if (hrefs.length) {
-        writeLog('info', `Image extraction recovered ${hrefs.length} URL(s) after wait: ${normalizedUrl}`, 'scrape', jobId);
-      }
-    }
-
-    let effectiveHrefs = Array.isArray(hrefs) ? hrefs : [];
-    if (!effectiveHrefs.length) {
-      try {
-        const html = await driver.getPageSource();
-        const fromSource = extractCatalogImageUrlsFromHtml(html, normalizedUrl);
-        if (fromSource.length) {
-          writeLog(
-            'info',
-            `Recovered ${fromSource.length} image link(s) from page source fallback: ${normalizedUrl}`,
-            'scrape',
-            jobId
-          );
-          effectiveHrefs = fromSource;
-        }
-      } catch {
-        // ignore source fallback errors
-      }
-    }
-
-    if (!effectiveHrefs.length) {
-      writeLog('warning', `No full-resolution image links found after all methods: ${normalizedUrl}`, 'scrape', jobId);
-      return [];
-    }
-
-    const preFilterCount = effectiveHrefs.length;
-    for (const href of effectiveHrefs) {
-      const absoluteHref = toAbsoluteUrl(href, normalizedUrl);
-      if (!absoluteHref) continue;
-      
-      // Skip thumbnails and small images
-      if (absoluteHref.includes('/small_image/') || absoluteHref.includes('/thumbnail/')) continue;
-      if (absoluteHref.match(/\.(gif|svg)$/i)) continue;
-      
-      // For single product URLs, be inclusive - accept any URL that looks like an image
-      const hasImageExtension = absoluteHref.match(/\.(jpg|jpeg|png|webp|bmp|tiff|heic)$/i);
-      const hasImageParam = absoluteHref.match(/[?&](image|img|photo|picture|src|url|file|content)\=/i);
-      const hasImagePath = absoluteHref.match(/\/(image|img|photo|picture|asset|media|cdn|static|content|media)\//i);
-      const isImageUrl = absoluteHref.match(/^https?:\/\/.*\.(jpg|jpeg|png|webp|bmp|tiff|heic)/i);
-      
-      // Accept catalog images OR any image-like URL
-      if (absoluteHref.includes('/catalog/product/image/') || hasImageExtension || hasImageParam || hasImagePath || isImageUrl) {
-        imageSet.add(absoluteHref);
-      }
-    }
-
-    if (imageSet.size < preFilterCount) {
-      writeLog('debug', `Image filter: ${preFilterCount} candidates → ${imageSet.size} kept for: ${normalizedUrl}`, 'scrape', jobId);
-    }
-  } catch (err) {
-    if (isDriverSessionError(err)) {
-      throw err;
-    }
-    writeLog('error', `Product page failed: ${normalizedUrl} (${err.message})`, 'scrape', jobId);
-    return [];
-  }
-
-  return Array.from(imageSet);
-}
 
 async function fetchImageBuffer(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), IMAGE_HTTP_TIMEOUT_MS);
+  const parsed = (() => {
+    try {
+      return new URL(url);
+    } catch {
+      return null;
+    }
+  })();
+  const hostname = parsed?.hostname || 'www.mobilesentrix.ca';
+  const refererHost = hostname.startsWith('static.mobilesentrix.')
+    ? hostname.replace('static.', 'www.')
+    : hostname;
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithValidatedRedirects(url, {
       method: 'GET',
-      redirect: 'follow',
       signal: controller.signal,
       headers: {
+        'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': `https://${refererHost}/`,
         'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36'
       }
     });
 
@@ -1294,7 +1461,29 @@ async function fetchImageBuffer(url) {
   }
 }
 
-async function convertImageToPythonJpg(imageUrl, jobId, quality = 85) {
+function isExpectedImageAccessError(reason) {
+  return /HTTP(?: error)?\s+(403|404|410|429)\b/i.test(String(reason || ''));
+}
+
+function isExpectedImageSkip(reason) {
+  return (
+    isExpectedImageAccessError(reason) ||
+    /^Skipped non-product image:/i.test(String(reason || '')) ||
+    /Python (script|runtime) not available/i.test(String(reason || ''))
+  );
+}
+
+function formatPythonConversionError(err) {
+  if (err?.killed || err?.signal) {
+    return `Python conversion timed out or was killed after ${Math.round(IMAGE_CONVERT_TIMEOUT_MS / 1000)}s`;
+  }
+  if (/maxBuffer/i.test(String(err?.message || ''))) {
+    return 'Python conversion output exceeded Node buffer';
+  }
+  return err?.message || 'Unknown Python conversion error';
+}
+
+async function convertImageToPythonPng(imageUrl, jobId, quality = 85) {
   // Check if Python script exists
   if (!fs.existsSync(PYTHON_CONVERT_SCRIPT_PATH)) {
     if (!pythonConvertScriptMissingLogged) {
@@ -1322,20 +1511,22 @@ async function convertImageToPythonJpg(imageUrl, jobId, quality = 85) {
   }
 
   try {
+    const safeImageUrl = await validatePublicHttpUrl(imageUrl);
     const timeout = IMAGE_CONVERT_TIMEOUT_MS;
-    
+
     // Execute Python script with timeout
     const { stdout } = await execFileAsync(
       pythonRuntime.command,
-      [...pythonRuntime.argsPrefix, PYTHON_CONVERT_SCRIPT_PATH, imageUrl, String(quality), String(IMAGE_HTTP_TIMEOUT_MS / 1000)],
+      [...pythonRuntime.argsPrefix, PYTHON_CONVERT_SCRIPT_PATH, safeImageUrl, String(quality), String(IMAGE_HTTP_TIMEOUT_MS / 1000)],
       { timeout, maxBuffer: 50 * 1024 * 1024 }
     );
 
     // Parse JSON response from Python
     const result = JSON.parse(stdout);
-    
+
     if (!result.success) {
-      writeLog('warning', `Python conversion failed for ${imageUrl}: ${result.error}`, 'image', jobId);
+      const level = isExpectedImageAccessError(result.error) ? 'info' : 'warning';
+      writeLog(level, `Python conversion skipped for ${imageUrl}: ${result.error}`, 'image', jobId);
       return {
         success: true,
         data: null,
@@ -1347,7 +1538,8 @@ async function convertImageToPythonJpg(imageUrl, jobId, quality = 85) {
 
     return {
       success: true,
-      data: result.data,              // base64 encoded JPG
+      data: result.data,
+      format: result.format || 'png',
       url: imageUrl,
       converted: true,
       size: result.size,
@@ -1361,18 +1553,61 @@ async function convertImageToPythonJpg(imageUrl, jobId, quality = 85) {
         pythonMissingLogged = true;
       }
     } else {
-      writeLog('warning', `Python image conversion error for ${imageUrl}: ${err.message}`, 'image', jobId);
+      writeLog('warning', `Python image conversion error for ${imageUrl}: ${formatPythonConversionError(err)}`, 'image', jobId);
     }
-    
+
     // Fallback: return URL for later processing
     return {
       success: true,
       data: null,
       url: imageUrl,
       converted: false,
-      reason: `Python error: ${err.message}`
+      reason: `Python error: ${formatPythonConversionError(err)}`
     };
   }
+}
+
+async function saveImageFileForJob({ jobId, productName, productIndex, imageIndex, sourceUrl, converted }) {
+  const folderMeta = ensureJobDownloadMetadata(jobId);
+  await fsp.mkdir(folderMeta.dir, { recursive: true });
+
+  const productPart = sanitizeSegment(productName, `product_${productIndex + 1}`).slice(0, 72).replace(/_+$/g, '');
+  const imagePart = String(imageIndex + 1).padStart(3, '0');
+
+  let buffer = null;
+  let ext = '.jpg';
+  let convertedOnDisk = false;
+
+  if (converted?.data) {
+    buffer = Buffer.from(converted.data, 'base64');
+    ext = `.${String(converted.format || 'png').replace(/^\./, '')}`;
+    convertedOnDisk = true;
+  } else if (isExpectedImageSkip(converted?.reason)) {
+    return {
+      saved_to_disk: false,
+      disk_converted: false,
+      skipped_save: true,
+      skip_reason: converted.reason,
+      size: 0
+    };
+  } else {
+    buffer = await fetchImageBuffer(sourceUrl);
+    ext = extensionFromUrl(sourceUrl, '.jpg');
+  }
+
+  const fileName = `${String(productIndex + 1).padStart(2, '0')}_${productPart}_image_${imagePart}${ext}`;
+  const filePath = path.join(folderMeta.dir, fileName);
+  await fsp.writeFile(filePath, buffer);
+
+  return {
+    file_name: fileName,
+    file_path: filePath,
+    download_folder: folderMeta.folder,
+    download_url: `${folderMeta.url}/${encodeURIComponent(fileName)}`,
+    saved_to_disk: true,
+    disk_converted: convertedOnDisk,
+    size: buffer.length
+  };
 }
 
 async function storeProductImagesInDb({ jobId, productName, productIndex, sourceImages }) {
@@ -1380,28 +1615,87 @@ async function storeProductImagesInDb({ jobId, productName, productIndex, source
     return [];
   }
 
-  const uniqueSources = Array.from(new Set(sourceImages.filter(Boolean)));
+  const existingJobKeys = buildExistingJobImageKeys(jobId);
+  const seenKeys = new Set(existingJobKeys);
+  const uniqueSources = [];
+  let duplicateCount = 0;
+  let filteredCount = 0;
+
+  for (const rawSourceUrl of sourceImages.filter(Boolean)) {
+    const sourceUrl = normalizeProductImageSourceUrl(rawSourceUrl);
+    if (!sourceUrl) {
+      filteredCount++;
+      continue;
+    }
+    const key = imageDedupeKey(sourceUrl);
+    if (!key) continue;
+    if (seenKeys.has(key)) {
+      duplicateCount++;
+      continue;
+    }
+    seenKeys.add(key);
+    uniqueSources.push({ sourceUrl, sourceKey: key });
+  }
+
+  if (duplicateCount > 0) {
+    writeLog(
+      'info',
+      `Skipped ${duplicateCount} duplicate image URL${duplicateCount !== 1 ? 's' : ''} for ${productName || `product ${productIndex + 1}`}`,
+      'image',
+      jobId
+    );
+  }
+
+  if (filteredCount > 0) {
+    writeLog(
+      'info',
+      `Skipped ${filteredCount} non-product image URL${filteredCount !== 1 ? 's' : ''} for ${productName || `product ${productIndex + 1}`}`,
+      'image',
+      jobId
+    );
+  }
+
   if (!uniqueSources.length) {
     return [];
   }
 
   // Convert images using Python concurrently for speed
-  const conversions = await mapWithConcurrency(uniqueSources, IMAGE_DOWNLOAD_CONCURRENCY, async (sourceUrl, index) => {
+  const conversions = await mapWithConcurrency(uniqueSources, IMAGE_DOWNLOAD_CONCURRENCY, async ({ sourceUrl, sourceKey }, index) => {
     try {
-      const converted = await convertImageToPythonJpg(sourceUrl, jobId);
+      const converted = await convertImageToPythonPng(sourceUrl, jobId);
+      let fileMeta = {};
+      try {
+        fileMeta = await saveImageFileForJob({
+          jobId,
+          productName,
+          productIndex,
+          imageIndex: index,
+          sourceUrl,
+          converted
+        });
+      } catch (saveErr) {
+        writeLog('warning', `Could not save image file for ${sourceUrl}: ${saveErr.message}`, 'image', jobId);
+      }
+
+      const keepInlineData = !fileMeta.saved_to_disk && converted.data;
+
       return {
         id: `${jobId}_${productIndex}_${index}`,
         url: sourceUrl,
         original_url: sourceUrl,
+        source_dedupe_key: sourceKey,
         index: index + 1,
         product_index: productIndex,
         product_name: productName,
         created_at: nowIso(),
-        jpg_data: converted.data,        // base64 encoded JPG or null
+        image_data: keepInlineData ? converted.data : null,
+        image_format: converted.format || (converted.converted ? 'png' : null),
+        jpg_data: keepInlineData && converted.format === 'jpeg' ? converted.data : null,
         converted: converted.converted,
         size: converted.size || null,
         quality: converted.quality || null,
-        error: converted.reason || null
+        error: converted.reason || null,
+        ...fileMeta
       };
     } catch (err) {
       // Fallback: create image object without conversion
@@ -1409,6 +1703,7 @@ async function storeProductImagesInDb({ jobId, productName, productIndex, source
         id: `${jobId}_${productIndex}_${index}`,
         url: sourceUrl,
         original_url: sourceUrl,
+        source_dedupe_key: imageDedupeKey(sourceUrl),
         index: index + 1,
         product_index: productIndex,
         product_name: productName,
@@ -1420,394 +1715,233 @@ async function storeProductImagesInDb({ jobId, productName, productIndex, source
     }
   });
 
-  return conversions;
+  return conversions.filter((image) => !image?.skipped_save);
+}
+
+function stripInlineImageDataFromProducts(products = []) {
+  if (!Array.isArray(products)) return [];
+
+  return products.map((product) => ({
+    ...product,
+    images: Array.isArray(product?.images)
+      ? product.images.map((image) => ({
+          ...image,
+          image_data: undefined,
+          jpg_data: undefined
+        }))
+      : []
+  }));
 }
 
 async function writeJobManifest(jobId, payload) {
-  const jobDir = path.join(DOWNLOAD_ROOT, String(jobId));
+  const jobDir = getJobDownloadDir(jobId, payload?.folder_name || payload?.model || '');
   await fsp.mkdir(jobDir, { recursive: true });
   const manifestPath = path.join(jobDir, 'manifest.json');
-  await fsp.writeFile(manifestPath, JSON.stringify(payload, null, 2), 'utf8');
+  const tempPath = `${manifestPath}.tmp`;
+  const backupPath = `${manifestPath}.bak`;
+  const products = filterDeletedImagesForJob(jobId, payload?.products);
+  if (fs.existsSync(manifestPath)) {
+    await fsp.copyFile(manifestPath, backupPath).catch(() => {});
+  }
+  await fsp.writeFile(
+    tempPath,
+    JSON.stringify({ ...payload, products: stripInlineImageDataFromProducts(products) }, null, 2),
+    'utf8'
+  );
+  await fsp.rename(tempPath, manifestPath);
 }
 
-async function scrape(url, jobId) {
-  const chromeDriverPath = resolveChromeDriverPath();
-  if (!chromeDriverPath) {
-    const suggestedNodePath = path.join(__dirname, 'node_modules');
-    throw new Error(
-      'ChromeDriver binary not found. Run `npm start` or install dependencies with ' +
-      `\`NODE_PATH=${suggestedNodePath} npm install\`.`
-    );
+async function waitWhileJobPaused(jobId) {
+  const id = String(jobId);
+  while (jobs.get(id)?.pause_requested) {
+    writeLog('info', 'Job paused; waiting for resume...', 'scrape', id);
+    await sleep(2000);
+    const job = jobs.get(id);
+    if (deletedJobIds.has(id) || stopRequestedJobIds.has(id) || job?.stop_requested) {
+      throw new Error('Stopped by user');
+    }
   }
-  writeLog('info', `Using ChromeDriver at ${chromeDriverPath}`, 'scrape', jobId);
-  writeLog(
-    'info',
-    `Speed profile: delay ${PRODUCT_DELAY_MIN_MS}-${PRODUCT_DELAY_MAX_MS}ms, image-concurrency ${IMAGE_DOWNLOAD_CONCURRENCY}, retries ${MAX_RETRIES}, empty-retries ${EMPTY_RESULT_RETRIES}`,
-    'scrape',
-    jobId
+}
+
+function assertJobCanContinue(jobId) {
+  const id = String(jobId);
+  const job = jobs.get(id);
+  if (deletedJobIds.has(id) || stopRequestedJobIds.has(id) || job?.stop_requested) {
+    throw new Error('Stopped by user');
+  }
+}
+
+async function checkpointImageJob(jobId, details) {
+  const products = Array.isArray(details.products) ? details.products : [];
+  updateJob(jobId, {
+    processed_items: products.length,
+    total_items: details.totalItems,
+    images: details.imageCount,
+    products
+  });
+  await writeJobManifest(jobId, {
+    job_id: jobId,
+    url: details.url,
+    folder_name: details.folderName,
+    download_folder: details.downloadFolder,
+    status: 'running',
+    created_at: jobs.get(String(jobId))?.created_at || nowIso(),
+    updated_at: nowIso(),
+    products
+  });
+}
+
+async function scrapeWithBotasaurus(url, jobId, options = {}) {
+  const titleFilter = String(options.titleFilter || '').trim();
+  const folderName = sanitizeDisplayName(options.folderName || '');
+  const downloadMeta = ensureJobDownloadMetadata(jobId, folderName || inferModelFromUrl(url));
+  const existingProducts = Array.isArray(jobs.get(String(jobId))?.products)
+    ? jobs.get(String(jobId)).products
+    : [];
+  const singleProduct = isSingleProductUrl(url);
+
+  writeLog('info', 'Browser engine: headless Botasaurus', 'scrape', jobId);
+
+  let products;
+  if (singleProduct) {
+    products = [{
+      name: inferModelFromUrl(url),
+      price: '',
+      product_url: url,
+      img: '',
+      images: [],
+      source_images: []
+    }];
+  } else {
+    const categoryResult = await runBotasaurusTask('category', url, jobId);
+    products = Array.isArray(categoryResult.products) ? categoryResult.products : [];
+  }
+
+  if (titleFilter) {
+    products = products.filter((product) => productMatchesTitleFilter(product, titleFilter));
+  }
+
+  const checkpointByUrl = new Map(
+    existingProducts
+      .filter((product) => product?.product_url)
+      .map((product) => [String(product.product_url), product])
   );
+  let restoredCount = 0;
+  for (const product of products) {
+    const checkpoint = checkpointByUrl.get(String(product.product_url || ''));
+    if (!checkpoint) continue;
+    Object.assign(product, checkpoint, { checkpoint_complete: true });
+    restoredCount++;
+  }
 
-  const profileRoot = path.join(__dirname, '.tmp', 'chrome-profile');
-  await fsp.mkdir(profileRoot, { recursive: true });
+  updateJob(jobId, {
+    status: 'running',
+    folder_name: folderName,
+    download_folder: downloadMeta.folder,
+    model: folderName || inferModelFromUrl(url),
+    total_items: products.length,
+    processed_items: restoredCount,
+    images: existingProducts.reduce(
+      (sum, product) => sum + (Array.isArray(product?.images) ? product.images.length : 0),
+      0
+    ),
+    error: null,
+    products: existingProducts
+  });
 
-  const profileDirs = [];
-  const createProfileDir = async (tag) => {
-    const safeTag = sanitizeSegment(tag, 'profile');
-    const profileDir = path.join(profileRoot, `${String(jobId)}_${Date.now()}_${safeTag}`);
-    await fsp.mkdir(profileDir, { recursive: true });
-    profileDirs.push(profileDir);
-    return profileDir;
-  };
+  writeLog('info', `Found ${products.length} product(s)`, 'scrape', jobId);
+  if (restoredCount) {
+    writeLog('info', `Reusing ${restoredCount} durable product checkpoint(s)`, 'scrape', jobId);
+  }
 
-  let driver = null;
-  let products = [];
-  let categoryTabHandle = null;
-  let productTabHandle = null;
+  let downloadedCount = 0;
+  for (let index = 0; index < products.length; index++) {
+    assertJobCanContinue(jobId);
+    await waitWhileJobPaused(jobId);
 
-  const restartDriver = async (tag, { createProductTab = true } = {}) => {
-    if (driver) {
-      try {
-        await driver.quit();
-      } catch (err) {
-        writeLog('warning', `Browser quit error: ${err.message}`, 'scrape', jobId);
-      }
-      driver = null;
+    const product = products[index];
+    if (product.checkpoint_complete) {
+      delete product.checkpoint_complete;
+      downloadedCount += Array.isArray(product.images) ? product.images.length : 0;
+      await checkpointImageJob(jobId, {
+        url,
+        folderName,
+        downloadFolder: downloadMeta.folder,
+        products: products.slice(0, index + 1),
+        totalItems: products.length,
+        imageCount: downloadedCount
+      });
+      continue;
     }
 
-    const profileDir = await createProfileDir(tag);
+    writeLog(
+      'info',
+      `Processing ${index + 1}/${products.length}: ${product.name || product.product_url}`,
+      'scrape',
+      jobId
+    );
+    await sleep(randomInt(PRODUCT_DELAY_MIN_MS, PRODUCT_DELAY_MAX_MS));
+
+    let sourceImages = [];
     try {
-      driver = await createDriverInstance(chromeDriverPath, profileDir);
+      const imageResult = await runBotasaurusTask('images', product.product_url, jobId);
+      sourceImages = Array.isArray(imageResult.images) ? imageResult.images : [];
     } catch (err) {
       writeLog(
         'warning',
-        `Driver startup with profile failed (${err.message}); retrying with default Chrome profile`,
+        `Botasaurus image extraction failed for ${product.product_url}: ${err.message}`,
         'scrape',
         jobId
       );
-      driver = await createDriverInstance(chromeDriverPath, null);
     }
 
-    categoryTabHandle = await driver.getWindowHandle();
-    productTabHandle = createProductTab
-      ? await openProductTab(driver, categoryTabHandle, jobId)
-      : categoryTabHandle;
-  };
-
-  try {
-    await restartDriver('initial', { createProductTab: false });
-
-    const isSingleProduct = isSingleProductUrl(url);
-
-    if (isSingleProduct) {
-      // Handle single product URL - extract images directly from this product
-      writeLog('info', `Detected single product URL: ${url}`, 'scrape', jobId);
-
-      const singleProduct = {
-        name: inferModelFromUrl(url),
-        price: '',
-        product_url: url,
-        img: '',
-        images: [],
-        source_images: []
-      };
-
-      products = [singleProduct];
-
-      updateJob(jobId, {
-        status: 'running',
-        model: inferModelFromUrl(url),
-        total_items: 1,
-        processed_items: 0,
-        images: 0,
-        error: null,
-        products: []
-      });
-
-      writeLog('info', `Processing single product: ${url}`, 'scrape', jobId);
-
-      productTabHandle = await openProductTab(driver, categoryTabHandle, jobId);
-
-      let sourceImages = [];
-      let retries = 0;
-      let emptyRetries = 0;
-      let recoveryRetries = 0;
-
-      while (sourceImages.length === 0) {
-        try {
-          sourceImages = await extractImagesWithDriver(driver, url, productTabHandle, jobId);
-
-          if (!sourceImages.length && emptyRetries < EMPTY_RESULT_RETRIES) {
-            emptyRetries++;
-            writeLog(
-              'warning',
-              `No images extracted (retry ${emptyRetries}/${EMPTY_RESULT_RETRIES}), retrying...`,
-              'scrape',
-              jobId
-            );
-            await sleep(700);
-            continue;
-          }
-          break;
-        } catch (err) {
-          const sessionLost = isDriverSessionError(err);
-
-          if (sessionLost && recoveryRetries < DRIVER_RECOVERY_RETRIES) {
-            recoveryRetries++;
-            writeLog(
-              'warning',
-              `Browser session dropped; restarting browser and retrying`,
-              'scrape',
-              jobId
-            );
-            await restartDriver(`recover_single_product`, { createProductTab: true });
-            continue;
-          }
-
-          if (!sessionLost && retries < MAX_RETRIES) {
-            retries++;
-            writeLog(
-              'warning',
-              `Image extraction failed (retry ${retries}/${MAX_RETRIES}): ${err.message}`,
-              'scrape',
-              jobId
-            );
-            await sleep(1200);
-            continue;
-          }
-
-          writeLog('warning', `Image extraction failed: ${err.message}`, 'scrape', jobId);
-          break;
-        }
-      }
-
-      singleProduct.source_images = sourceImages;
-
-      let storedImages = [];
-      try {
-        storedImages = await storeProductImagesInDb({
-          jobId,
-          productName: singleProduct.name,
-          productIndex: 0,
-          sourceImages
-        });
-      } catch (err) {
-        writeLog('error', `Image storage failed for ${url}: ${err.message}`, 'image', jobId);
-      }
-
-      singleProduct.images = storedImages;
-
-      const convertedCount = storedImages.filter(img => img.converted).length;
-      const failedCount = storedImages.filter(img => img.error).length;
-
-      updateJob(jobId, {
-        processed_items: 1,
-        total_items: 1,
-        images: storedImages.length,
-        products: [singleProduct]
-      });
-
-      writeLog(
-        'success',
-        `Stored ${storedImages.length} image(s) in database for single product (${convertedCount} converted, ${failedCount} not converted)`,
-        'image',
-        jobId
-      );
-
-      return products;
+    if (!sourceImages.length) {
+      sourceImages = await extractImagesFromProductHtml(product.product_url, jobId);
     }
 
-    // Handle category URL - extract all products from category
-    writeLog('info', `Loading category: ${url}`, 'scrape', jobId);
-    await driver.switchTo().window(categoryTabHandle);
-    await driver.get(url);
+    if (!sourceImages.length && product.img) {
+      const fallbackImage = toAbsoluteUrl(product.img, product.product_url || url);
+      if (fallbackImage && !fallbackImage.startsWith('data:') && !/\.(gif|svg)(\?|$)/i.test(fallbackImage)) {
+        sourceImages = [fallbackImage];
+      }
+    }
 
-    // First try immediate selector match, then scroll to load more items
-    let elementsFound = false;
+    product.source_images = sourceImages;
     try {
-      await driver.wait(until.elementsLocated(By.css('li.item')), SELECTOR_TIMEOUT_MS / 3);
-      elementsFound = true;
-    } catch (selectorErr) {
-      writeLog('warning', `Initial elements not found quickly, scrolling to load items...`, 'scrape', jobId);
-    }
-
-    // Scroll page to trigger lazy loading and stabilize product list
-    await autoScrollUntilStable(driver);
-
-    // If initial wait failed, try one more time after scrolling
-    if (!elementsFound) {
-      try {
-        await driver.wait(until.elementsLocated(By.css('li.item')), SELECTOR_TIMEOUT_MS / 3);
-      } catch (retryErr) {
-        writeLog('warning', `Product list still not found after scrolling, attempting extraction anyway...`, 'scrape', jobId);
-      }
-    }
-
-    products = await extractCategoryProducts(driver, url);
-
-    const initialModel = inferModelFromUrl(url);
-
-    updateJob(jobId, {
-      status: 'running',
-      model: initialModel,
-      total_items: products.length,
-      processed_items: 0,
-      images: 0,
-      error: null,
-      products: []
-    });
-
-    writeLog('info', `Found ${products.length} products`, 'scrape', jobId);
-
-    productTabHandle = await openProductTab(driver, categoryTabHandle, jobId);
-
-    let downloadedCount = 0;
-
-    for (let index = 0; index < products.length; index++) {
-      const product = products[index];
-      const jobIdStr = String(jobId);
-      const liveJob = jobs.get(jobIdStr);
-      if (deletedJobIds.has(jobIdStr) || stopRequestedJobIds.has(jobIdStr) || liveJob?.stop_requested) {
-        writeLog('warning', 'Stop requested by user; ending scrape loop.', 'scrape', jobId);
-        break;
-      }
-
-      // Check for pause requests
-      while (true) {
-        const pausedJob = jobs.get(jobIdStr);
-        if (!pausedJob?.pause_requested) break;
-        writeLog('info', 'Job paused; waiting for resume...', 'scrape', jobId);
-        await sleep(2000);
-        const updatedJob = jobs.get(jobIdStr);
-        if (deletedJobIds.has(jobIdStr) || stopRequestedJobIds.has(jobIdStr) || updatedJob?.stop_requested) {
-          writeLog('warning', 'Stop requested while paused; ending scrape loop.', 'scrape', jobId);
-          throw new Error('Stopped by user');
-        }
-      }
-
-      // Restart browser periodically to prevent memory leaks
-      if (index > 0 && index % PRODUCTS_PER_BROWSER === 0) {
-        writeLog('info', `Restarting browser after ${PRODUCTS_PER_BROWSER} products for memory cleanup`, 'scrape', jobId);
-        await restartDriver(`rotation_${index}`, { createProductTab: true });
-        await sleep(500);
-      }
-
-      writeLog(
-        'info',
-        `Processing ${index + 1}/${products.length}: ${product.name || product.product_url}`,
-        'scrape',
-        jobId
-      );
-
-      let sourceImages = [];
-      let retries = 0;
-      let emptyRetries = 0;
-      let recoveryRetries = 0;
-
-      while (sourceImages.length === 0) {
-        try {
-          sourceImages = await extractImagesWithDriver(driver, product.product_url, productTabHandle, jobId);
-
-          if (!sourceImages.length && emptyRetries < EMPTY_RESULT_RETRIES) {
-            emptyRetries++;
-            writeLog(
-              'warning',
-              `No images extracted (retry ${emptyRetries}/${EMPTY_RESULT_RETRIES}), retrying...`,
-              'scrape',
-              jobId
-            );
-            await sleep(700);
-            continue;
-          }
-
-          break;
-        } catch (err) {
-          const sessionLost = isDriverSessionError(err);
-
-          if (sessionLost && recoveryRetries < DRIVER_RECOVERY_RETRIES) {
-            recoveryRetries++;
-            writeLog(
-              'warning',
-              `Browser session dropped while scraping ${product.product_url}; restarting browser and retrying`,
-              'scrape',
-              jobId
-            );
-            await restartDriver(`recover_${index}_${recoveryRetries}`, { createProductTab: true });
-            continue;
-          }
-
-          if (!sessionLost && retries < MAX_RETRIES) {
-            retries++;
-            writeLog(
-              'warning',
-              `Image extraction failed (retry ${retries}/${MAX_RETRIES}): ${err.message}`,
-              'scrape',
-              jobId
-            );
-            await sleep(1200);
-            continue;
-          }
-
-          writeLog('warning', `Image extraction failed: ${err.message}`, 'scrape', jobId);
-          break;
-        }
-      }
-
-      if (!sourceImages.length && product.img) {
-        const fallbackImage = toAbsoluteUrl(product.img, product.product_url || url);
-        const looksLikeImage = fallbackImage && !fallbackImage.startsWith('data:') && !/\.(gif|svg)(\?|$)/i.test(fallbackImage);
-        if (looksLikeImage) {
-          sourceImages = [fallbackImage];
-          writeLog('info', `Using listing image fallback for ${product.product_url}`, 'scrape', jobId);
-        }
-      }
-
-      product.source_images = sourceImages;
-
-      let storedImages = [];
-      try {
-        storedImages = await storeProductImagesInDb({
-          jobId,
-          productName: product.name,
-          productIndex: index,
-          sourceImages
-        });
-      } catch (err) {
-        writeLog('error', `Image storage failed for ${product.product_url}: ${err.message}`, 'image', jobId);
-      }
-
-      product.images = storedImages;
-      downloadedCount += storedImages.length;
-      
-      const convertedCount = storedImages.filter(img => img.converted).length;
-      const failedCount = storedImages.filter(img => img.error).length;
-
-      updateJob(jobId, {
-        processed_items: index + 1,
-        total_items: products.length,
-        images: downloadedCount,
-        products: products.slice(0, index + 1)
+      product.images = await storeProductImagesInDb({
+        jobId,
+        productName: product.name,
+        productIndex: index,
+        sourceImages
       });
-
-      writeLog(
-        'success',
-        `Stored ${storedImages.length} image(s) in database for ${product.name || product.product_url} (${convertedCount} Python-converted, ${failedCount} not converted)`,
-        'image',
-        jobId
-      );
+    } catch (err) {
+      product.images = [];
+      product.error = err.message;
+      writeLog('error', `Image storage failed for ${product.product_url}: ${err.message}`, 'image', jobId);
     }
 
-    return products;
-  } finally {
-    if (driver) {
-      try {
-        await driver.quit();
-      } catch (err) {
-        writeLog('warning', `Browser quit error: ${err.message}`, 'scrape', jobId);
-      }
-    }
-    await Promise.all(profileDirs.map((dir) => fsp.rm(dir, { recursive: true, force: true }).catch(() => {})));
-    writeLog('info', 'Browser session closed', 'scrape', jobId);
+    downloadedCount += product.images.length;
+    await checkpointImageJob(jobId, {
+      url,
+      folderName,
+      downloadFolder: downloadMeta.folder,
+      products: products.slice(0, index + 1),
+      totalItems: products.length,
+      imageCount: downloadedCount
+    });
+    writeLog(
+      'success',
+      `Checkpointed ${product.images.length} image(s) for ${product.name || product.product_url}`,
+      'image',
+      jobId
+    );
   }
+
+  return products;
+}
+
+async function scrape(url, jobId, options = {}) {
+  return scrapeWithBotasaurus(url, jobId, options);
 }
 
 app.get('/events', (req, res) => {
@@ -1886,6 +2020,363 @@ app.get('/jobs/:id', (req, res) => {
   res.json({ success: true, job: summarizeJob(job, includeProducts) });
 });
 
+app.get('/jobs/bulk/zip', async (req, res) => {
+  const rootFolderName = sanitizeDownloadFolderName(req.query.folder || 'Bulk Jobs', 'Bulk Jobs');
+  const includeFailed = String(req.query.include_failed || 'true').toLowerCase() !== 'false';
+  const includeRunning = String(req.query.include_running || 'true').toLowerCase() !== 'false';
+  const folderEntries = [];
+  const seenFolders = new Set();
+
+  for (const job of Array.from(jobs.values()).sort((a, b) => {
+    return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+  })) {
+    const jobId = String(job.id || '');
+    if (!jobId || deletedJobIds.has(jobId)) continue;
+
+    const status = String(job.status || '');
+    if (status === 'failed' && !includeFailed) continue;
+    if (['running', 'queued', 'paused'].includes(status) && !includeRunning) continue;
+
+    const folderName = getJobDownloadFolderName(jobId, job.folder_name || job.model || jobId);
+    if (seenFolders.has(folderName)) continue;
+
+    const dirPath = path.join(DOWNLOAD_ROOT, folderName);
+    try {
+      const stat = await fsp.stat(dirPath);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue;
+    }
+
+    const imageCount = Number(job.images || 0);
+    if (imageCount <= 0) continue;
+    seenFolders.add(folderName);
+    folderEntries.push({ folderName, dirPath });
+  }
+
+  if (!folderEntries.length) {
+    return res.status(404).json({ success: false, error: 'No downloaded bulk job folders found' });
+  }
+
+  const archiveName = `${sanitizeSegment(rootFolderName, 'bulk_jobs')}.zip`;
+  const cacheDir = path.join(DOWNLOAD_ROOT, '.bulk-cache');
+  const tempZipPath = path.join(cacheDir, archiveName);
+  const tempBuildPath = `${tempZipPath}.building`;
+  const folderListPath = path.join(cacheDir, `${path.basename(archiveName, '.zip')}.folders.json`);
+  const latestFolderMtime = Math.max(
+    ...folderEntries.map((entry) => {
+      try {
+        return fs.statSync(entry.dirPath).mtimeMs;
+      } catch {
+        return 0;
+      }
+    })
+  );
+
+  const collectManifestFilesForBulkZip = async () => {
+    const filesToArchive = [];
+    const seenArchivePaths = new Set();
+
+    for (const entry of folderEntries) {
+      const manifestPath = path.join(entry.dirPath, 'manifest.json');
+      let manifest = null;
+      try {
+        manifest = JSON.parse(await fsp.readFile(manifestPath, 'utf8'));
+      } catch {
+        manifest = null;
+      }
+
+      const products = Array.isArray(manifest?.products) ? manifest.products : [];
+      for (const product of products) {
+        const images = Array.isArray(product?.images) ? product.images : [];
+        for (const image of images) {
+          const rawFileName = String(image?.file_name || '').trim();
+          const candidatePath = image?.file_path
+            ? path.resolve(String(image.file_path))
+            : path.resolve(entry.dirPath, rawFileName);
+          if (!candidatePath || !candidatePath.startsWith(`${path.resolve(entry.dirPath)}${path.sep}`)) {
+            continue;
+          }
+          try {
+            const stat = await fsp.stat(candidatePath);
+            if (!stat.isFile() || stat.size <= 0) continue;
+            const relative = path.relative(entry.dirPath, candidatePath).split(path.sep).join('/');
+            const archivePath = `${rootFolderName}/${entry.folderName}/${relative}`;
+            if (seenArchivePaths.has(archivePath)) continue;
+            seenArchivePaths.add(archivePath);
+            filesToArchive.push({ filePath: candidatePath, archivePath, size: stat.size });
+          } catch {
+            // Skip manifest records whose image file is no longer on disk.
+          }
+        }
+      }
+    }
+
+    return filesToArchive;
+  };
+
+  const useCachedBulkZip = ['1', 'true'].includes(String(req.query.cache || '').toLowerCase());
+  if (!useCachedBulkZip) {
+    try {
+      const filesToArchive = await collectManifestFilesForBulkZip();
+      if (!filesToArchive.length) {
+        return res.status(404).json({ success: false, error: 'No saved image files found for bulk ZIP' });
+      }
+
+      const totalBytes = filesToArchive.reduce((sum, file) => sum + file.size, 0);
+      if (req.query.prepare === '1' || req.query.prepare === 'true') {
+        return res.json({
+          success: true,
+          ready: true,
+          streaming: true,
+          filename: archiveName,
+          folders: folderEntries.length,
+          file_count: filesToArchive.length,
+          size: totalBytes,
+          size_mb: Math.round((totalBytes / (1024 * 1024)) * 100) / 100,
+          url: `/jobs/bulk/zip?folder=${encodeURIComponent(rootFolderName)}`
+        });
+      }
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
+      writeLog('info', `Streaming Bulk ZIP with ${filesToArchive.length} image file(s)`, 'jobs');
+
+      await new Promise((resolve, reject) => {
+        const archive = archiver('zip', { store: true });
+        let queuedCount = 0;
+        let completed = false;
+
+        const fail = (err) => {
+          if (completed) return;
+          completed = true;
+          reject(err);
+        };
+
+        res.on('finish', () => {
+          completed = true;
+          resolve();
+        });
+        res.on('close', () => {
+          if (!completed) {
+            archive.abort();
+            fail(new Error('Bulk ZIP client disconnected'));
+          }
+        });
+        archive.on('error', fail);
+        archive.on('warning', (err) => {
+          writeLog('warning', `Bulk ZIP warning: ${err.message}`, 'jobs');
+        });
+
+        archive.pipe(res);
+        for (const file of filesToArchive) {
+          archive.file(file.filePath, { name: file.archivePath });
+          queuedCount++;
+          if (queuedCount % 1000 === 0) {
+            writeLog('info', `Queued ${queuedCount}/${filesToArchive.length} image file(s) for streamed Bulk ZIP`, 'jobs');
+          }
+        }
+        Promise.resolve(archive.finalize()).catch(fail);
+      });
+      writeLog('info', `Bulk ZIP stream completed with ${folderEntries.length} folder(s)`, 'jobs');
+      return;
+    } catch (err) {
+      writeLog('error', `Bulk ZIP stream failed: ${err.message}`, 'jobs');
+      if (!res.headersSent) {
+        return res.status(500).json({ success: false, error: `Bulk ZIP stream failed: ${err.message}` });
+      }
+      return;
+    }
+  }
+
+  const hasFreshZip = async () => {
+    try {
+      const zipStat = await fsp.stat(tempZipPath);
+      return zipStat.mtimeMs >= latestFolderMtime && zipStat.size > 0;
+    } catch {
+      return false;
+    }
+  };
+
+  const buildBulkZip = async () => {
+    await fsp.mkdir(cacheDir, { recursive: true });
+    await fsp.rm(tempBuildPath, { force: true }).catch(() => {});
+    writeLog('info', `Building Bulk ZIP with ${folderEntries.length} folder(s)`, 'jobs');
+
+    const buildWithNode = async () => {
+      const filesToArchive = [];
+      const seenArchivePaths = new Set();
+
+      for (const entry of folderEntries) {
+        const manifestPath = path.join(entry.dirPath, 'manifest.json');
+        let manifest = null;
+        try {
+          manifest = JSON.parse(await fsp.readFile(manifestPath, 'utf8'));
+        } catch {
+          manifest = null;
+        }
+
+        const products = Array.isArray(manifest?.products) ? manifest.products : [];
+        for (const product of products) {
+          const images = Array.isArray(product?.images) ? product.images : [];
+          for (const image of images) {
+            const candidatePath = image?.file_path
+              ? path.resolve(String(image.file_path))
+              : path.resolve(entry.dirPath, String(image?.file_name || ''));
+            if (!candidatePath || !candidatePath.startsWith(`${path.resolve(entry.dirPath)}${path.sep}`)) {
+              continue;
+            }
+            try {
+              const stat = await fsp.stat(candidatePath);
+              if (!stat.isFile() || stat.size <= 0) continue;
+            } catch {
+              continue;
+            }
+
+            const relative = path.relative(entry.dirPath, candidatePath).split(path.sep).join('/');
+            const archivePath = `${rootFolderName}/${entry.folderName}/${relative}`;
+            if (seenArchivePaths.has(archivePath)) continue;
+            seenArchivePaths.add(archivePath);
+            filesToArchive.push({ filePath: candidatePath, archivePath });
+          }
+        }
+      }
+
+      if (!filesToArchive.length) {
+        throw new Error('No manifest-listed image files found for bulk ZIP');
+      }
+
+      writeLog('info', `Adding ${filesToArchive.length} image file(s) to Bulk ZIP`, 'jobs');
+      await new Promise((resolve, reject) => {
+        const output = fs.createWriteStream(tempBuildPath);
+        const archive = archiver('zip', { store: true });
+        let queuedCount = 0;
+        output.on('close', resolve);
+        output.on('error', reject);
+        archive.on('error', reject);
+        archive.pipe(output);
+        for (const file of filesToArchive) {
+          archive.file(file.filePath, { name: file.archivePath });
+          queuedCount++;
+          if (queuedCount % 500 === 0) {
+            writeLog('info', `Queued ${queuedCount}/${filesToArchive.length} image file(s) for Bulk ZIP`, 'jobs');
+          }
+        }
+        archive.finalize().catch(reject);
+      });
+      await fsp.rename(tempBuildPath, tempZipPath);
+      const zipStat = await fsp.stat(tempZipPath);
+      writeLog('info', `Bulk ZIP built with Node fallback (${Math.round((zipStat.size / (1024 * 1024)) * 100) / 100}MB)`, 'jobs');
+    };
+
+    const pythonRuntime = USE_PYTHON_BULK_ZIP ? await resolveBulkZipPythonRuntime() : null;
+    if (USE_PYTHON_BULK_ZIP && fs.existsSync(PYTHON_BULK_ZIP_SCRIPT_PATH) && pythonRuntime) {
+      try {
+        await fsp.writeFile(
+          folderListPath,
+          JSON.stringify(folderEntries.map((entry) => entry.folderName)),
+          'utf8'
+        );
+        const { stdout } = await execFileAsync(
+          pythonRuntime.command,
+          [
+            ...pythonRuntime.argsPrefix,
+            PYTHON_BULK_ZIP_SCRIPT_PATH,
+            DOWNLOAD_ROOT,
+            tempBuildPath,
+            rootFolderName,
+            '--folders-json',
+            folderListPath
+          ],
+          { timeout: 2 * 60 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 }
+        );
+        const result = JSON.parse(stdout);
+        if (!result.success) {
+          throw new Error(result.error || 'Python bulk ZIP failed');
+        }
+        await fsp.rename(tempBuildPath, tempZipPath);
+        writeLog('info', `Bulk ZIP built (${result.file_count} file(s), ${result.size_mb}MB)`, 'jobs');
+        return;
+      } catch (err) {
+        await fsp.rm(tempBuildPath, { force: true }).catch(() => {});
+        writeLog('warning', `Python bulk ZIP failed, using Node fallback: ${err.message}`, 'jobs');
+      }
+    }
+
+    await buildWithNode();
+  };
+
+  const startBulkZipBuild = () => {
+    const buildPromise = buildBulkZip();
+    activeBulkZipBuild = { path: tempZipPath, promise: buildPromise, startedAt: Date.now() };
+    buildPromise
+      .catch((err) => {
+        writeLog('error', `Bulk ZIP failed: ${err.message}`, 'jobs');
+        fsp.rm(tempBuildPath, { force: true }).catch(() => {});
+      })
+      .finally(() => {
+        if (activeBulkZipBuild?.promise === buildPromise) {
+          activeBulkZipBuild = null;
+        }
+      });
+    return buildPromise;
+  };
+
+  if (req.query.prepare === '1' || req.query.prepare === 'true') {
+    if (!(await hasFreshZip())) {
+      if (!activeBulkZipBuild) {
+        startBulkZipBuild();
+      }
+      return res.status(202).json({
+        success: true,
+        preparing: true,
+        filename: archiveName,
+        folders: folderEntries.length,
+        message: 'Bulk ZIP is being prepared'
+      });
+    }
+  }
+
+  try {
+    while (!(await hasFreshZip())) {
+      if (activeBulkZipBuild) {
+        writeLog('info', 'Bulk ZIP is already building; waiting for active build', 'jobs');
+        await activeBulkZipBuild.promise;
+        continue;
+      }
+
+      await startBulkZipBuild();
+    }
+  } catch (err) {
+    writeLog('error', `Bulk ZIP failed: ${err.message}`, 'jobs');
+    await fsp.rm(tempBuildPath, { force: true }).catch(() => {});
+    if (!res.headersSent) {
+      return res.status(500).json({ success: false, error: `Bulk ZIP failed: ${err.message}` });
+    }
+    return;
+  }
+
+  const zipStat = await fsp.stat(tempZipPath);
+  if (req.query.prepare === '1' || req.query.prepare === 'true') {
+    return res.json({
+      success: true,
+      filename: archiveName,
+      folders: folderEntries.length,
+      size: zipStat.size,
+      size_mb: Math.round((zipStat.size / (1024 * 1024)) * 100) / 100,
+      url: `/jobs/bulk/zip?folder=${encodeURIComponent(rootFolderName)}`
+    });
+  }
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
+  res.setHeader('Content-Length', zipStat.size);
+  res.on('finish', () => {
+    writeLog('info', `Bulk ZIP download completed with ${folderEntries.length} folder(s)`, 'jobs');
+  });
+  fs.createReadStream(tempZipPath).pipe(res);
+});
+
 app.get('/jobs/:id/zip', async (req, res) => {
   const jobId = String(req.params.id);
   if (deletedJobIds.has(jobId)) {
@@ -1898,7 +2389,8 @@ app.get('/jobs/:id/zip', async (req, res) => {
   }
 
   const job = jobs.get(jobId);
-  const jobDir = path.join(DOWNLOAD_ROOT, safeJobId);
+  const folderName = getJobDownloadFolderName(jobId, job?.folder_name || job?.model || `job_${safeJobId}`);
+  const jobDir = path.join(DOWNLOAD_ROOT, folderName);
 
   try {
     const stat = await fsp.stat(jobDir);
@@ -1914,8 +2406,8 @@ app.get('/jobs/:id/zip', async (req, res) => {
     return res.status(404).json({ success: false, error: 'No files found for this job' });
   }
 
-  const baseName = sanitizeSegment(job?.model || `job_${safeJobId}`, `job_${safeJobId}`).slice(0, 80) || `job_${safeJobId}`;
-  const filename = `${baseName}_${safeJobId}.zip`;
+  const baseName = sanitizeSegment(folderName || job?.model || `job_${safeJobId}`, `job_${safeJobId}`).slice(0, 80) || `job_${safeJobId}`;
+  const filename = `${baseName}.zip`;
   const tempZipPath = path.join(DOWNLOAD_ROOT, `${safeJobId}_temp.zip`);
 
   try {
@@ -1980,7 +2472,7 @@ app.get('/jobs/:id/zip', async (req, res) => {
       } else if (!pythonRuntime) {
         writeLog('warning', 'Python runtime unavailable, using Node.js archiver (slower)', 'jobs', jobId);
       }
-      
+
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
@@ -2002,8 +2494,8 @@ app.get('/jobs/:id/zip', async (req, res) => {
       });
 
       archive.pipe(res);
-      archive.directory(jobDir, safeJobId);
-      
+      archive.directory(jobDir, folderName);
+
       try {
         await archive.finalize();
         writeLog('info', `ZIP download generated for job ${jobId}`, 'jobs', jobId);
@@ -2013,7 +2505,7 @@ app.get('/jobs/:id/zip', async (req, res) => {
     }
   } catch (err) {
     writeLog('error', `ZIP creation error for job ${jobId}: ${err.message}`, 'jobs', jobId);
-    
+
     // Fallback to Node.js archiver
     try {
       res.setHeader('Content-Type', 'application/zip');
@@ -2027,7 +2519,7 @@ app.get('/jobs/:id/zip', async (req, res) => {
       });
 
       archive.pipe(res);
-      archive.directory(jobDir, safeJobId);
+      archive.directory(jobDir, folderName);
       await archive.finalize();
     } catch (fallbackErr) {
       if (!res.headersSent) {
@@ -2059,6 +2551,8 @@ app.get('/jobs/:id/images', (req, res) => {
             product_index: productIndex,
             product_name: product.name,
             product_url: product.product_url,
+            folder_name: job.folder_name || '',
+            download_folder: job.download_folder || '',
             ...image
           });
         }
@@ -2115,32 +2609,130 @@ app.get('/jobs/:id/images/:imageId', (req, res) => {
     return res.status(404).json({ success: false, error: 'Image not found' });
   }
 
-  // If JPG data is stored, serve it directly
-  if (foundImage.jpg_data && foundImage.converted) {
+  if (foundImage.file_path && fs.existsSync(foundImage.file_path)) {
+    const ext = path.extname(foundImage.file_path).toLowerCase();
+    const contentType = ext === '.png'
+      ? 'image/png'
+      : ext === '.webp'
+        ? 'image/webp'
+        : 'image/jpeg';
+    res.setHeader('Content-Type', contentType);
+    if (foundImage.file_name) {
+      res.setHeader('Content-Disposition', `inline; filename="${String(foundImage.file_name).replace(/"/g, '')}"`);
+    }
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return fs.createReadStream(foundImage.file_path).pipe(res);
+  }
+
+  // If converted image data is stored, serve it directly.
+  const encodedImageData = foundImage.image_data || foundImage.jpg_data;
+  if (encodedImageData && foundImage.converted) {
     try {
-      const jpgBuffer = Buffer.from(foundImage.jpg_data, 'base64');
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Content-Length', jpgBuffer.length);
+      const imageBuffer = Buffer.from(encodedImageData, 'base64');
+      const format = String(foundImage.image_format || (foundImage.jpg_data ? 'jpeg' : 'png')).toLowerCase();
+      const contentType = format === 'png' ? 'image/png' : 'image/jpeg';
+      res.setHeader('Content-Type', contentType);
+      if (foundImage.file_name) {
+        res.setHeader('Content-Disposition', `inline; filename="${String(foundImage.file_name).replace(/"/g, '')}"`);
+      }
+      res.setHeader('Content-Length', imageBuffer.length);
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      return res.send(jpgBuffer);
+      return res.send(imageBuffer);
     } catch (err) {
-      writeLog('warning', `Failed to decode JPG data for image ${imageId}: ${err.message}`, 'image', jobId);
+      writeLog('warning', `Failed to decode converted image data for image ${imageId}: ${err.message}`, 'image', jobId);
     }
   }
 
-  // If no JPG data, return metadata and redirect to original URL
+  // If no converted data, return metadata and redirect to original URL
   res.json({
     success: true,
     image: {
       ...foundImage,
-      jpg_data: undefined  // Don't send the base64 data in JSON response
+      image_data: undefined,
+      jpg_data: undefined
     },
     converted: foundImage.converted,
     original_url: foundImage.original_url
   });
 });
 
-app.delete('/jobs/:id', async (req, res) => {
+app.delete('/jobs/:id/images/:imageId', requireDestructiveConfirmation, async (req, res) => {
+  const jobId = String(req.params.id);
+  const imageId = String(req.params.imageId);
+
+  if (deletedJobIds.has(jobId)) {
+    return res.status(404).json({ success: false, error: 'Job not found' });
+  }
+
+  const job = jobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ success: false, error: 'Job not found' });
+  }
+
+  let removedImage = null;
+  let removed = false;
+
+  if (Array.isArray(job.products)) {
+    for (const product of job.products) {
+      if (!product || !Array.isArray(product.images)) continue;
+      const before = product.images.length;
+      product.images = product.images.filter((image) => {
+        const matches = String(image?.id || '') === imageId;
+        if (matches) removedImage = image;
+        return !matches;
+      });
+      if (product.images.length !== before) {
+        removed = true;
+        break;
+      }
+    }
+  }
+
+  if (!removed) {
+    return res.status(404).json({ success: false, error: 'Image not found' });
+  }
+
+  getDeletedImageIds(jobId).add(imageId);
+
+  if (removedImage?.file_path) {
+    try {
+      const resolvedFile = resolveWithinRoot(DOWNLOAD_ROOT, String(removedImage.file_path));
+      if (resolvedFile !== path.resolve(DOWNLOAD_ROOT) && fs.existsSync(resolvedFile)) {
+        await fsp.unlink(resolvedFile);
+      }
+    } catch (err) {
+      writeLog('warning', `Failed to delete image file ${imageId}: ${err.message}`, 'image', jobId);
+    }
+  }
+
+  job.images = Array.isArray(job.products)
+    ? job.products.reduce((sum, product) => sum + (Array.isArray(product?.images) ? product.images.length : 0), 0)
+    : 0;
+  job.updated_at = nowIso();
+
+  try {
+    await writeJobManifest(jobId, {
+      job_id: jobId,
+      url: job.url,
+      folder_name: job.folder_name || '',
+      download_folder: job.download_folder || '',
+      status: job.status || 'completed',
+      created_at: job.created_at || nowIso(),
+      updated_at: job.updated_at,
+      products: job.products || []
+    });
+  } catch (err) {
+    writeLog('warning', `Failed to update manifest after image delete: ${err.message}`, 'image', jobId);
+  }
+
+  emitJobUpdate(jobId);
+  schedulePersistJobsDb({ immediate: true });
+  writeLog('info', `Deleted image ${imageId}`, 'image', jobId);
+
+  res.json({ success: true, job_id: jobId, image_id: imageId, images: job.images });
+});
+
+app.delete('/jobs/:id', requireDestructiveConfirmation, async (req, res) => {
   const jobId = String(req.params.id);
   const job = jobs.get(jobId);
   const isActive = job && ['running', 'queued', 'paused'].includes(String(job.status || ''));
@@ -2158,7 +2750,17 @@ app.delete('/jobs/:id', async (req, res) => {
   jobs.delete(jobId);
 
   try {
-    await fsp.rm(path.join(DOWNLOAD_ROOT, jobId), { recursive: true, force: true });
+    const downloadDir = resolveWithinRoot(
+      DOWNLOAD_ROOT,
+      job?.download_folder
+        ? sanitizeDownloadFolderName(job.download_folder, jobId)
+        : jobId
+    );
+    await fsp.rm(downloadDir, { recursive: true, force: true });
+    const legacyDownloadDir = resolveWithinRoot(DOWNLOAD_ROOT, jobId);
+    if (downloadDir !== legacyDownloadDir) {
+      await fsp.rm(legacyDownloadDir, { recursive: true, force: true });
+    }
   } catch (err) {
     writeLog('warning', `Failed to delete files for job ${jobId}: ${err.message}`, 'jobs', jobId);
   }
@@ -2167,7 +2769,7 @@ app.delete('/jobs/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/jobs/reset', async (req, res) => {
+app.post('/jobs/reset', requireDestructiveConfirmation, async (req, res) => {
   const activeJobIds = Array.from(jobs.values())
     .filter((job) => ['running', 'queued', 'paused'].includes(String(job.status || '')))
     .map((job) => String(job.id));
@@ -2216,15 +2818,214 @@ app.post('/jobs/:id/stop', (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/jobs/:id/pause', (req, res) => {
+  const jobId = String(req.params.id);
+  const job = jobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ success: false, error: 'Job not found' });
+  }
+
+  const status = String(job.status || '');
+  if (!['running', 'queued', 'paused'].includes(status)) {
+    return res.status(409).json({ success: false, error: `Cannot pause ${status || 'unknown'} job` });
+  }
+
+  job.pause_requested = true;
+  updateJob(jobId, { status: 'paused', pause_requested: true });
+  writeLog('info', 'Paused job', 'jobs', jobId);
+  res.json({ success: true, job_id: jobId, status: 'paused' });
+});
+
+app.post('/jobs/:id/resume', async (req, res) => {
+  const jobId = String(req.params.id);
+  const job = jobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ success: false, error: 'Job not found' });
+  }
+
+  if (!['paused', 'failed'].includes(String(job.status || ''))) {
+    return res.status(409).json({ success: false, error: 'Only paused or failed jobs can be resumed' });
+  }
+
+  let safeUrl;
+  try {
+    safeUrl = await validatePublicHttpUrl(job.url, { allowedHosts: SCRAPE_ALLOWED_HOSTS });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: `Saved job URL is invalid: ${err.message}` });
+  }
+
+  const isAttachedToWorker = activeScrapeJobIds.has(jobId);
+  const nextStatus = isAttachedToWorker ? 'running' : 'queued';
+  updateJob(jobId, {
+    status: nextStatus,
+    pause_requested: false,
+    stop_requested: false,
+    error: null
+  });
+  writeLog('info', 'Resumed job', 'jobs', jobId);
+  if (isAttachedToWorker) {
+    processNextQueuedScrape();
+  } else {
+    const folderName = sanitizeDisplayName(job.folder_name || job.model || '');
+    const titleFilter = String(job.title_filter || '').trim();
+    const downloadFolder = getJobDownloadFolderName(jobId, folderName || inferModelFromUrl(safeUrl));
+    runScrapeJobInBackground({
+      jobId,
+      url: safeUrl,
+      folderName,
+      titleFilter,
+      downloadFolder
+    });
+  }
+  res.json({ success: true, job_id: jobId, status: nextStatus });
+});
+
+function runScrapeJobInBackground({ jobId, url, folderName, titleFilter, downloadFolder }) {
+  executeWithScrapeSlot(jobId, async () => {
+    updateJob(jobId, { status: 'running', error: null });
+    writeLog('info', `Scrape started for ${url}`, 'scrape', jobId);
+
+    let lastError = null;
+    for (let attempt = 0; attempt <= SCRAPE_TRANSIENT_RETRIES; attempt++) {
+      try {
+        if (attempt > 0) {
+          updateJob(jobId, { status: 'running', error: null });
+          writeLog('info', `Retrying scrape (${attempt}/${SCRAPE_TRANSIENT_RETRIES})`, 'scrape', jobId);
+        }
+        return await scrape(url, jobId, { titleFilter, folderName });
+      } catch (err) {
+        lastError = err;
+        const canRetry = attempt < SCRAPE_TRANSIENT_RETRIES && isTransientScrapeError(err);
+        if (!canRetry) throw err;
+
+        const delayMs = 2000 * (attempt + 1);
+        writeLog(
+          'info',
+          `Transient scrape error; retrying in ${Math.round(delayMs / 1000)}s: ${err.message}`,
+          'scrape',
+          jobId
+        );
+        await sleep(delayMs);
+      }
+    }
+
+    throw lastError || new Error('Scrape failed');
+  })
+    .then(async (products) => {
+      const currentJob = jobs.get(jobId);
+      const stopped =
+        deletedJobIds.has(jobId) ||
+        stopRequestedJobIds.has(jobId) ||
+        Boolean(currentJob?.stop_requested);
+
+      const status = stopped ? 'failed' : 'completed';
+      const error = stopped ? 'Stopped by user' : null;
+
+      updateJob(jobId, {
+        status,
+        error,
+        folder_name: folderName,
+        download_folder: downloadFolder,
+        model: folderName || currentJob?.model || inferModelFromUrl(url),
+        products,
+        processed_items: products.length,
+        total_items: products.length,
+        images: products.reduce((sum, product) => sum + (Array.isArray(product.images) ? product.images.length : 0), 0)
+      });
+
+      if (!deletedJobIds.has(jobId)) {
+        await writeJobManifest(jobId, {
+          job_id: jobId,
+          url,
+          folder_name: folderName,
+          download_folder: downloadFolder,
+          status,
+          created_at: currentJob?.created_at || nowIso(),
+          completed_at: nowIso(),
+          products
+        });
+      }
+
+      if (stopped) {
+        writeLog('warning', 'Scrape stopped before completion', 'scrape', jobId);
+        return;
+      }
+
+      writeLog('success', `Scrape completed. ${products.length} products processed.`, 'scrape', jobId);
+    })
+    .catch((err) => {
+      const stopped =
+        deletedJobIds.has(jobId) ||
+        stopRequestedJobIds.has(jobId) ||
+        /stopped by user/i.test(String(err?.message || ''));
+      if (stopped) {
+        updateJob(jobId, { status: 'failed', error: 'Stopped by user' });
+        const stoppedJob = jobs.get(jobId);
+        if (stoppedJob) {
+          writeJobManifest(jobId, {
+            job_id: jobId,
+            url,
+            folder_name: folderName,
+            download_folder: downloadFolder,
+            status: 'failed',
+            created_at: stoppedJob.created_at || nowIso(),
+            updated_at: nowIso(),
+            error: 'Stopped by user',
+            products: stoppedJob.products || []
+          }).catch((manifestErr) => {
+            writeLog('error', `Failed to save stopped-job manifest: ${manifestErr.message}`, 'db', jobId);
+          });
+        }
+        writeLog('warning', 'Scrape stopped before completion', 'scrape', jobId);
+        return;
+      }
+
+      updateJob(jobId, { status: 'failed', error: err.message });
+      const failedJob = jobs.get(jobId);
+      if (failedJob) {
+        writeJobManifest(jobId, {
+          job_id: jobId,
+          url,
+          folder_name: folderName,
+          download_folder: downloadFolder,
+          status: 'failed',
+          created_at: failedJob.created_at || nowIso(),
+          updated_at: nowIso(),
+          error: err.message,
+          products: failedJob.products || []
+        }).catch((manifestErr) => {
+          writeLog('error', `Failed to save failed-job manifest: ${manifestErr.message}`, 'db', jobId);
+        });
+      }
+      writeLog('error', `Scrape failed: ${err.message}`, 'scrape', jobId);
+    })
+    .finally(() => {
+      stopRequestedJobIds.delete(jobId);
+      deletedJobIds.delete(jobId);
+    });
+}
+
 async function handleScrape(req, res) {
   const { url } = req.query;
   const providedJobId = req.query.job_id;
+  const titleFilter = String(req.query.title_filter || req.query.filter || '').trim();
+  const folderName = sanitizeDisplayName(req.query.folder_name || req.query.folder || req.query.label || req.query.name || '');
 
   if (!url) {
     return res.status(400).json({ success: false, error: 'URL parameter is required' });
   }
 
+  let safeUrl;
+  try {
+    safeUrl = await validatePublicHttpUrl(url, { allowedHosts: SCRAPE_ALLOWED_HOSTS });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+
   const jobId = String(providedJobId || createJobId());
+  if (!isSafeJobId(jobId)) {
+    return res.status(400).json({ success: false, error: 'Invalid job id' });
+  }
   const existingJob = jobs.get(jobId);
   const existingStatus = String(existingJob?.status || '');
 
@@ -2236,6 +3037,8 @@ async function handleScrape(req, res) {
       duplicate: true,
       job_id: jobId,
       status: existingStatus,
+      folder_name: existingJob.folder_name || '',
+      download_folder: existingJob.download_folder || '',
       products: [],
       data: []
     });
@@ -2245,7 +3048,7 @@ async function handleScrape(req, res) {
   if (
     existingJob &&
     existingStatus === 'completed' &&
-    String(existingJob.url || '').trim() === String(url || '').trim() &&
+    String(existingJob.url || '').trim() === safeUrl &&
     Array.isArray(existingJob.products)
   ) {
     writeLog('info', 'Duplicate completed scrape request served from cache', 'queue', jobId);
@@ -2254,6 +3057,8 @@ async function handleScrape(req, res) {
       duplicate: true,
       job_id: jobId,
       status: 'completed',
+      folder_name: existingJob.folder_name || '',
+      download_folder: existingJob.download_folder || '',
       products: existingJob.products,
       data: existingJob.products
     });
@@ -2267,12 +3072,16 @@ async function handleScrape(req, res) {
 
   deletedJobIds.delete(jobId);
   stopRequestedJobIds.delete(jobId);
+  const downloadFolder = getJobDownloadFolderName(jobId, folderName || inferModelFromUrl(safeUrl));
 
   updateJob(jobId, {
     id: jobId,
-    url,
+    url: safeUrl,
     status: 'queued',
-    model: inferModelFromUrl(url),
+    folder_name: folderName,
+    download_folder: downloadFolder,
+    model: folderName || inferModelFromUrl(safeUrl),
+    title_filter: titleFilter,
     images: 0,
     total_items: 0,
     processed_items: 0,
@@ -2283,68 +3092,24 @@ async function handleScrape(req, res) {
     created_at: jobs.get(jobId)?.created_at || nowIso()
   });
 
-  writeLog('info', `Scrape accepted for ${url}`, 'scrape', jobId);
+  writeLog(
+    'info',
+    `Scrape accepted for ${safeUrl}${folderName ? ` (folder: ${folderName})` : ''}${titleFilter ? ` (filter: ${titleFilter})` : ''}`,
+    'scrape',
+    jobId
+  );
 
-  try {
-    const products = await executeWithScrapeSlot(jobId, async () => {
-      updateJob(jobId, { status: 'running', error: null });
-      writeLog('info', `Scrape started for ${url}`, 'scrape', jobId);
-      return scrape(url, jobId);
-    });
-    const currentJob = jobs.get(jobId);
-    const stopped =
-      deletedJobIds.has(jobId) ||
-      stopRequestedJobIds.has(jobId) ||
-      Boolean(currentJob?.stop_requested);
+  runScrapeJobInBackground({ jobId, url: safeUrl, folderName, titleFilter, downloadFolder });
 
-    const status = stopped ? 'failed' : 'completed';
-    const error = stopped ? 'Stopped by user' : null;
-
-    updateJob(jobId, {
-      status,
-      error,
-      products,
-      processed_items: products.length,
-      total_items: products.length,
-      images: products.reduce((sum, product) => sum + (Array.isArray(product.images) ? product.images.length : 0), 0)
-    });
-
-    if (!deletedJobIds.has(jobId)) {
-      await writeJobManifest(jobId, {
-        job_id: jobId,
-        url,
-        status,
-        created_at: currentJob?.created_at || nowIso(),
-        completed_at: nowIso(),
-        products
-      });
-    }
-
-    if (stopped) {
-      writeLog('warning', 'Scrape stopped before completion', 'scrape', jobId);
-      return res.status(409).json({ success: false, job_id: jobId, error: 'Stopped by user', products, data: products });
-    }
-
-    writeLog('success', `Scrape completed. ${products.length} products processed.`, 'scrape', jobId);
-    return res.json({ success: true, job_id: jobId, products, data: products });
-  } catch (err) {
-    const stopped =
-      deletedJobIds.has(jobId) ||
-      stopRequestedJobIds.has(jobId) ||
-      /stopped by user/i.test(String(err?.message || ''));
-    if (stopped) {
-      updateJob(jobId, { status: 'failed', error: 'Stopped by user' });
-      writeLog('warning', 'Scrape stopped before completion', 'scrape', jobId);
-      return res.status(409).json({ success: false, job_id: jobId, error: 'Stopped by user', products: [], data: [] });
-    }
-
-    updateJob(jobId, { status: 'failed', error: err.message });
-    writeLog('error', `Scrape failed: ${err.message}`, 'scrape', jobId);
-    return res.status(500).json({ success: false, job_id: jobId, error: err.message });
-  } finally {
-    stopRequestedJobIds.delete(jobId);
-    deletedJobIds.delete(jobId);
-  }
+  return res.status(202).json({
+    success: true,
+    job_id: jobId,
+    status: 'queued',
+    folder_name: folderName,
+    download_folder: downloadFolder,
+    products: [],
+    data: []
+  });
 }
 
 app.get('/scrape', handleScrape);
@@ -2354,7 +3119,7 @@ app.post('/scrape', handleScrape);
 app.post('/admin/api/pause-all', (req, res) => {
   let pausedCount = 0;
   for (const job of jobs.values()) {
-    if (job.status === 'running') {
+    if (job.status === 'running' || job.status === 'queued') {
       job.pause_requested = true;
       job.status = 'paused';
       pausedCount++;
@@ -2366,25 +3131,41 @@ app.post('/admin/api/pause-all', (req, res) => {
   res.json({ success: true, paused_count: pausedCount });
 });
 
-app.post('/admin/api/resume-all', (req, res) => {
+app.post('/admin/api/resume-all', async (req, res) => {
   let resumedCount = 0;
+  const errors = [];
   for (const job of jobs.values()) {
     if (job.status === 'paused') {
-      job.pause_requested = false;
-      job.status = 'running';
-      resumedCount++;
-      emitJobUpdate(job.id);
+      const jobId = String(job.id);
+      try {
+        const safeUrl = await validatePublicHttpUrl(job.url, { allowedHosts: SCRAPE_ALLOWED_HOSTS });
+        const folderName = sanitizeDisplayName(job.folder_name || job.model || '');
+        const titleFilter = String(job.title_filter || '').trim();
+        const downloadFolder = getJobDownloadFolderName(jobId, folderName || inferModelFromUrl(safeUrl));
+
+        job.pause_requested = false;
+        job.stop_requested = false;
+        if (activeScrapeJobIds.has(jobId)) {
+          updateJob(jobId, { status: 'running', pause_requested: false, stop_requested: false, error: null });
+        } else {
+          updateJob(jobId, { status: 'queued', pause_requested: false, stop_requested: false, error: null });
+          runScrapeJobInBackground({ jobId, url: safeUrl, folderName, titleFilter, downloadFolder });
+        }
+        resumedCount++;
+      } catch (err) {
+        errors.push({ job_id: jobId, error: err.message });
+      }
     }
   }
   writeLog('info', `Resumed ${resumedCount} job(s)`, 'admin');
   schedulePersistJobsDb();
-  res.json({ success: true, resumed_count: resumedCount });
+  res.json({ success: errors.length === 0, resumed_count: resumedCount, errors });
 });
 
 app.get('/health', (req, res) => {
   const mem = monitorMemory();
   const uptime = Math.floor(process.uptime());
-  
+
   res.json({
     success: true,
     status: 'healthy',
@@ -2462,7 +3243,7 @@ app.post('/admin/api/seo', (req, res) => {
   res.json({ success: true, seo: seoData });
 });
 
-app.post('/admin/api/reset-user', (req, res) => {
+app.post('/admin/api/reset-user', requireDestructiveConfirmation, (req, res) => {
   const userId = req.query.user_id;
   if (!userId) {
     return res.status(400).json({ success: false, error: 'user_id is required' });
@@ -2479,8 +3260,19 @@ app.post('/admin/api/reset-user', (req, res) => {
   }
 
   for (const jobId of jobsToDelete) {
+    const job = jobs.get(jobId);
+    const downloadDir = resolveWithinRoot(
+      DOWNLOAD_ROOT,
+      job?.download_folder
+        ? sanitizeDownloadFolderName(job.download_folder, jobId)
+        : jobId
+    );
     jobs.delete(jobId);
-    fsp.rm(path.join(DOWNLOAD_ROOT, jobId), { recursive: true, force: true }).catch(() => {});
+    fsp.rm(downloadDir, { recursive: true, force: true }).catch(() => {});
+    const legacyDownloadDir = resolveWithinRoot(DOWNLOAD_ROOT, jobId);
+    if (downloadDir !== legacyDownloadDir) {
+      fsp.rm(legacyDownloadDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   writeLog('info', `Reset ${deletedCount} job(s) for user ${userId}`, 'admin');
@@ -2502,23 +3294,34 @@ app.post('/admin/api/jobs/:id/stop', (req, res) => {
 });
 
 loadPersistedJobs().finally(() => {
-  app.listen(PORT, () => {
+  recoverRestoredActiveJobs();
+  app.listen(PORT, HOST, () => {
     const mem = monitorMemory();
-    writeLog('info', `Scraper API running at http://localhost:${PORT}`, 'startup');
+    writeLog('info', `Scraper API running at http://${HOST}:${PORT}`, 'startup');
     writeLog('info', `Memory: ${mem.heapUsedMB}MB / ${mem.heapTotalMB}MB (${mem.heapUsagePercent}%)`, 'startup');
     writeLog('info', `Concurrency: ${MAX_ACTIVE_SCRAPES} active job(s), max runtime: ${Math.round(JOB_MAX_RUNTIME_MS / 60000)} minute(s)`, 'startup');
     writeLog('info', `Job persistence: ${PERSIST_JOBS_ENABLED ? 'ENABLED' : 'DISABLED (in-memory only)'}`, 'startup');
   });
 
-  // Schedule image cleanup task to run every 30 minutes
-  const CLEANUP_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
-  const IMAGE_MAX_AGE_HOURS = 24; // Delete images older than 24 hours
+  if (IMAGE_CLEANUP_ENABLED) {
+    const cleanupIntervalMs = 30 * 60 * 1000;
+    setInterval(async () => {
+      monitorMemory();
+      writeLog('info', 'Starting scheduled image cleanup...', 'cleanup');
+      await cleanupOldImages(IMAGE_MAX_AGE_HOURS);
+    }, cleanupIntervalMs);
 
-  setInterval(async () => {
-    monitorMemory();
-    writeLog('info', 'Starting scheduled image cleanup...', 'cleanup');
-    await cleanupOldImages(IMAGE_MAX_AGE_HOURS);
-  }, CLEANUP_INTERVAL_MS);
+    cleanupOldImages(IMAGE_MAX_AGE_HOURS).catch((err) => {
+      writeLog('warning', `Initial cleanup on startup failed: ${err.message}`, 'cleanup');
+    });
+    writeLog(
+      'warning',
+      `Image cleanup enabled: runs every ${cleanupIntervalMs / 60000} minutes and removes data older than ${IMAGE_MAX_AGE_HOURS} hours`,
+      'startup'
+    );
+  } else {
+    writeLog('info', 'Automatic image cleanup is disabled; saved job data will be retained.', 'startup');
+  }
 
   // Memory monitoring every 10 minutes
   const MEMORY_CHECK_INTERVAL_MS = 10 * 60 * 1000;
@@ -2526,10 +3329,4 @@ loadPersistedJobs().finally(() => {
     monitorMemory();
   }, MEMORY_CHECK_INTERVAL_MS);
 
-  // Run initial cleanup on startup
-  cleanupOldImages(IMAGE_MAX_AGE_HOURS).catch((err) => {
-    writeLog('warning', `Initial cleanup on startup failed: ${err.message}`, 'cleanup');
-  });
-
-  writeLog('info', `Image cleanup scheduled to run every ${CLEANUP_INTERVAL_MS / 60000} minutes (deleting images older than ${IMAGE_MAX_AGE_HOURS} hours)`, 'startup');
 });

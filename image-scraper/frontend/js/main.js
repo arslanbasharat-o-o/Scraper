@@ -8,7 +8,7 @@ import { showToast } from './toast.js';
 import { playSound, toggleSound, updateSoundIcon } from './sound.js';
 import {
     updateStats, renderJobs, updateWarning,
-    filterJobs, searchJobs, deleteJob, resetJobs, retryJob, togglePauseAll,
+    filterJobs, searchJobs, deleteJob, resetJobs, retryJob, pauseJob, resumeJob, togglePauseAll,
     toggleDarkMode, updateDarkMode, initFilterButtons,
     showConfirm, closeConfirm, formatTime
 } from './ui.js';
@@ -16,7 +16,7 @@ import {
     loadImages, renderGallery, filterImages, clearSearch,
     setGridSize, applyGridSize, cycleGridSize,
     copyImageUrl, copyAllUrls, refreshCurrentJob, openRandomImage,
-    downloadZip, toggleImageSelection, toggleSelectAll, deleteSelectedImages,
+    downloadZip, downloadBulkZip, toggleImageSelection, toggleSelectAll, deleteSelectedImages,
     syncCurrentJobImages
 } from './gallery.js';
 import {
@@ -231,47 +231,119 @@ async function startScrape() {
     }
 }
 
+function parseBulkScrapeLine(line) {
+    const value = String(line || '').trim();
+    if (!value) return null;
+
+    const urlMatch = value.match(/https?:\/\/[^\s<>"']+/i);
+    if (!urlMatch) return null;
+
+    const url = urlMatch[0]
+        .replace(/^[([{]+/g, '')
+        .replace(/[\])}"',.;]+$/g, '');
+    const labelText = value.slice(0, urlMatch.index).trim();
+    const label = labelText
+        .replace(/\s*[-:|,]\s*$/g, '')
+        .replace(/^\[/, '')
+        .replace(/\]\($/, '')
+        .replace(/^[("']+|[)"',]+$/g, '')
+        .trim();
+
+    return { url, folderName: label, rawLine: value };
+}
+
+function parseBulkScrapeEntries(text) {
+    return String(text || '')
+        .split(/\r?\n/)
+        .map((line, index) => {
+            const entry = parseBulkScrapeLine(line);
+            return entry ? { ...entry, lineNumber: index + 1 } : null;
+        })
+        .filter(Boolean);
+}
+
+function formatBulkScrapeEntry(entry) {
+    if (!entry) return '';
+    return entry.folderName ? `${entry.folderName} - ${entry.url}` : entry.url;
+}
+
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // Bulk scrape
 async function startBulkScrape() {
     playSound('click');
     const textarea = document.getElementById('bulk-urls');
     if (!textarea) return;
 
-    const rawUrls = textarea.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+    const entries = parseBulkScrapeEntries(textarea.value);
+    const titleFilter = String(document.getElementById('bulk-title-filter')?.value || '').trim();
 
-    if (rawUrls.length === 0) {
+    if (entries.length === 0) {
         showToast('warning', 'No URLs', 'Please paste at least one URL');
         return;
     }
 
-    const urls = rawUrls;
-
     let started = 0;
     let duplicates = 0;
     let failed = 0;
+    const failedEntries = [];
+    const queuedUrls = new Set(
+        state.allJobs
+            .filter(job => job && job.url && job.status !== 'failed')
+            .map(job => job.url)
+    );
 
-    showToast('info', 'Starting Jobs...', `Processing ${urls.length} URLs`);
+    showToast(
+        'info',
+        'Queueing Jobs...',
+        titleFilter
+            ? `Queueing ${entries.length} folder${entries.length !== 1 ? 's' : ''} with filter "${titleFilter}"`
+            : `Queueing ${entries.length} folder${entries.length !== 1 ? 's' : ''}`
+    );
 
-    for (const url of urls) {
-        const existingJob = state.allJobs.find(j => j.url === url && j.status !== 'failed');
-        if (existingJob) {
+    for (const entry of entries) {
+        if (queuedUrls.has(entry.url)) {
             duplicates++;
             continue;
         }
 
         try {
-            await startScrapeAPI(url);
+            await startScrapeAPI(entry.url, {
+                titleFilter,
+                folderName: entry.folderName
+            });
             started++;
-            state.allJobs = await fetchJobs();
+            queuedUrls.add(entry.url);
+
+            if (started % 10 === 0) {
+                state.allJobs = await fetchJobs();
+                updateStats();
+                renderJobs();
+                updateWarning();
+            }
+
+            await delay(150);
         } catch (e) {
             failed++;
-            console.error('Failed to start:', url, e);
+            failedEntries.push({
+                ...entry,
+                error: e?.message || 'Could not start this URL'
+            });
+            console.error('Failed to start:', entry.url, e);
         }
     }
 
     if (started > 0) {
-        showToast('success', 'Bulk Import Complete', `Started ${started} job${started !== 1 ? 's' : ''}`);
+        showToast('success', 'Bulk Import Queued', `Queued ${started} job${started !== 1 ? 's' : ''}`);
         playSound('success');
+    }
+
+    if (failedEntries.length > 0) {
+        textarea.value = failedEntries
+            .map(entry => entry.rawLine || formatBulkScrapeEntry(entry))
+            .join('\n');
+        updateBulkUrlCount();
+    } else if (started > 0 || duplicates > 0) {
         textarea.value = '';
         updateBulkUrlCount();
     }
@@ -281,7 +353,14 @@ async function startBulkScrape() {
     }
 
     if (failed > 0) {
-        showToast('error', 'Some Failed', `${failed} URL${failed !== 1 ? 's' : ''} failed to start`);
+        const firstError = failedEntries[0]?.error;
+        showToast(
+            'error',
+            'Some Failed',
+            firstError
+                ? `${failed} URL${failed !== 1 ? 's' : ''} failed. Kept them in the box. First error: ${firstError}`
+                : `${failed} URL${failed !== 1 ? 's' : ''} failed. Kept them in the box.`
+        );
     }
 
     refreshJobs();
@@ -292,6 +371,9 @@ function setupBulkUrlCounter() {
     const textarea = document.getElementById('bulk-urls');
     if (textarea) {
         textarea.addEventListener('input', updateBulkUrlCount);
+        textarea.addEventListener('change', updateBulkUrlCount);
+        textarea.addEventListener('paste', () => setTimeout(updateBulkUrlCount, 0));
+        updateBulkUrlCount();
     }
 }
 
@@ -300,8 +382,8 @@ function updateBulkUrlCount() {
     const countEl = document.getElementById('bulk-url-count');
     if (!textarea || !countEl) return;
 
-    const urls = textarea.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
-    countEl.textContent = `${urls.length} URL${urls.length !== 1 ? 's' : ''} detected`;
+    const entries = parseBulkScrapeEntries(textarea.value);
+    countEl.textContent = `${entries.length} URL${entries.length !== 1 ? 's' : ''} detected`;
 }
 
 // Recent URLs
@@ -431,9 +513,12 @@ async function importJobs(event) {
 window.appFunctions = {
     startScrape,
     startBulkScrape,
+    updateBulkUrlCount,
     loadImages,
     deleteJob,
     retryJob,
+    pauseJob,
+    resumeJob,
     resetJobs,
     togglePauseAll,
     filterJobs,
@@ -447,6 +532,7 @@ window.appFunctions = {
     refreshCurrentJob,
     openRandomImage,
     downloadZip,
+    downloadBulkZip,
     openModalWithSrc,
     openModal,
     closeModal,

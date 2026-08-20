@@ -186,7 +186,13 @@
         if (saved) tokenInput.value = saved;
 
         function token() { return tokenInput.value.trim(); }
-        function hdr() { return { 'x-admin-token': token(), 'Content-Type': 'application/json' }; }
+        function hdr() {
+            return {
+                'x-admin-token': token(),
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            };
+        }
         const DEFAULT_CANONICAL = window.location.protocol === 'file:'
             ? 'http://localhost:3001/'
             : `${window.location.origin}/`;
@@ -395,7 +401,13 @@
 
         window.adminDelete = async (id) => {
             if (!confirm(`Delete job #${id}?`)) return;
-            try { await api(`/admin/api/jobs/${id}`, { method: 'DELETE' }); await loadOverview(); } catch (e) { alert(e.message); }
+            try {
+                await api(`/jobs/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'X-Confirm-Destructive': 'permanently-delete' }
+                });
+                await loadOverview();
+            } catch (e) { alert(e.message); }
         };
 
         document.getElementById('save-token').onclick = async () => {
@@ -410,7 +422,10 @@
             const u = document.getElementById('reset-user-id').value.trim();
             if (!u) return alert('Enter user_id');
             if (!confirm(`Reset all jobs/images for "${u}"?`)) return;
-            await api(`/admin/api/reset-user?user_id=${encodeURIComponent(u)}`, { method: 'POST' });
+            await api(`/admin/api/reset-user?user_id=${encodeURIComponent(u)}`, {
+                method: 'POST',
+                headers: { 'X-Confirm-Destructive': 'permanently-delete' }
+            });
             await loadOverview();
         };
 

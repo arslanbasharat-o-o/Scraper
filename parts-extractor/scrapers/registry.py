@@ -13,7 +13,15 @@ SCRAPER_CONFIG = OrderedDict(
             {
                 'db_key': 'mobilesentrix',
                 'label': 'MobileSentrix',
-                'domains': ('mobilesentrix.com', 'mobilesentrix.ca'),
+                'domains': ('mobilesentrix.com',),
+            },
+        ),
+        (
+            'mobilesentrix_canada',
+            {
+                'db_key': 'mobilesentrix_ca',
+                'label': 'MobileSentrix Canada',
+                'domains': ('mobilesentrix.ca',),
             },
         ),
         (
@@ -29,7 +37,7 @@ SCRAPER_CONFIG = OrderedDict(
             {
                 'db_key': 'txparts',
                 'label': 'TXParts',
-                'domains': ('txparts.com',),
+                'domains': ('txparts.com', 'txpartscanada.ca'),
             },
         ),
         (
@@ -38,6 +46,22 @@ SCRAPER_CONFIG = OrderedDict(
                 'db_key': 'parts4cells',
                 'label': 'Parts4Cells',
                 'domains': ('parts4cells.com',),
+            },
+        ),
+        (
+            'phonelcdparts',
+            {
+                'db_key': 'phonelcdparts',
+                'label': 'PhoneLCDParts',
+                'domains': ('phonelcdparts.com',),
+            },
+        ),
+        (
+            'gadgetfix',
+            {
+                'db_key': 'gadgetfix',
+                'label': 'GadgetFix',
+                'domains': ('gadgetfix.com',),
             },
         ),
     ]
@@ -93,4 +117,3 @@ def split_urls_by_scraper(urls):
         grouped[detect_scraper_key(url)].append(url)
 
     return {key: value for key, value in grouped.items() if value}
-

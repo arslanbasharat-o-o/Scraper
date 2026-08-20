@@ -5,7 +5,7 @@
 import { state, MAX_CONCURRENT, persistToStorage } from './state.js';
 import { showToast } from './toast.js';
 import { playSound } from './sound.js';
-import { deleteJobAPI, resetJobsAPI, startScrapeAPI, pauseAllJobsAPI, resumeAllJobsAPI } from './api.js';
+import { deleteJobAPI, pauseJobAPI, resetJobsAPI, resumeJobAPI, startScrapeAPI, pauseAllJobsAPI, resumeAllJobsAPI } from './api.js';
 import { loadImages } from './gallery.js';
 
 // Counter animation state
@@ -58,7 +58,7 @@ export function animateCounter(elementId, targetValue) {
 // Update all stats displays
 export function updateStats() {
     const running = state.allJobs.filter(j => j.status === 'running').length;
-    const queued = state.allJobs.filter(j => j.status === 'queued').length;
+    const queued = state.allJobs.filter(j => ['queued', 'pending'].includes(String(j.status || '').toLowerCase())).length;
     const completed = state.allJobs.filter(j => j.status === 'completed').length;
     const failed = state.allJobs.filter(j => j.status === 'failed').length;
     const totalImages = state.allJobs.reduce((sum, j) => sum + (j.images || 0), 0);
@@ -93,17 +93,21 @@ export function updateStats() {
     if (successRateBar) successRateBar.style.width = `${rate}%`;
 
     // Update global status indicator
-    updateGlobalStatus(running);
+    updateGlobalStatus(running, queued);
 }
 
 // Update global status indicator
-function updateGlobalStatus(running) {
+function updateGlobalStatus(running, queued = 0) {
     const status = document.getElementById('global-status');
     if (!status) return;
 
     if (running > 0) {
         status.className = 'flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-sm font-medium';
-        status.innerHTML = `<span class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span><span>Running ${running} job${running > 1 ? 's' : ''}</span>`;
+        const pendingText = queued > 0 ? ` - Pending ${queued}` : '';
+        status.innerHTML = `<span class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span><span>Running ${running} job${running > 1 ? 's' : ''}${pendingText}</span>`;
+    } else if (queued > 0) {
+        status.className = 'flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full text-sm font-medium';
+        status.innerHTML = `<span class="w-2 h-2 bg-amber-500 rounded-full"></span><span>Pending ${queued}</span>`;
     } else {
         status.className = 'flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-full text-sm font-medium';
         status.innerHTML = '<span class="w-2 h-2 bg-emerald-500 rounded-full"></span><span>Ready</span>';
@@ -208,17 +212,37 @@ function renderJobCard(job) {
     }
 
     const modelName = escapeInlineString(job.model || '');
-    const safeUrl = escapeInlineString(job.url || '');
     const safeId = escapeInlineString(job.id);
+    const canPause = ['running', 'queued'].includes(String(job.status || '').toLowerCase());
+    const canResume = String(job.status || '').toLowerCase() === 'paused';
 
     return `
-        <div data-job-id="${safeId}" onclick="window.appFunctions.loadImages('${safeId}', '${modelName}')" 
+        <div data-job-id="${safeId}" onclick="window.appFunctions.loadImages('${safeId}', '${modelName}')"
              class="group p-3 rounded-xl border ${isActive ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-sm'} cursor-pointer transition-all relative">
-            
+
             <!-- Action buttons (show on hover) -->
             <div class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all z-10">
+                ${canPause ? `
+                    <button onclick="event.stopPropagation(); window.appFunctions.pauseJob('${safeId}')"
+                            class="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 bg-white dark:bg-slate-800 shadow-sm"
+                            title="Pause job">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </button>
+                ` : ''}
+                ${canResume ? `
+                    <button onclick="event.stopPropagation(); window.appFunctions.resumeJob('${safeId}')"
+                            class="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 bg-white dark:bg-slate-800 shadow-sm"
+                            title="Resume job">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </button>
+                ` : ''}
                 ${job.status === 'failed' ? `
-                    <button onclick="event.stopPropagation(); window.appFunctions.retryJob('${safeId}', '${safeUrl}')" 
+                    <button onclick="event.stopPropagation(); window.appFunctions.retryJob('${safeId}')"
                             class="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 bg-white dark:bg-slate-800 shadow-sm"
                             title="Retry job">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -226,7 +250,7 @@ function renderJobCard(job) {
                         </svg>
                     </button>
                 ` : ''}
-                <button onclick="event.stopPropagation(); window.appFunctions.deleteJob('${safeId}')" 
+                <button onclick="event.stopPropagation(); window.appFunctions.deleteJob('${safeId}')"
                         class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 bg-white dark:bg-slate-800 shadow-sm"
                         title="Delete job">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -234,18 +258,21 @@ function renderJobCard(job) {
                     </svg>
                 </button>
             </div>
-            
+
             <!-- Status indicator + Title -->
             <div class="flex items-center gap-2 mb-2">
                 <span class="flex-shrink-0 w-2 h-2 rounded-full ${job.status === 'running' ? 'bg-blue-500 animate-pulse' : job.status === 'completed' ? 'bg-emerald-500' : job.status === 'failed' ? 'bg-red-500' : 'bg-amber-500'}"></span>
+                <svg class="w-4 h-4 flex-shrink-0 text-amber-500 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h5l2 2h7a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+                </svg>
                 <p class="font-semibold text-sm text-slate-900 dark:text-white flex-1 truncate" title="${job.model || ''}">${job.model || 'Processing...'}</p>
             </div>
-            
+
             <!-- Progress bar -->
             <div class="h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mb-2">
                 <div class="h-full ${job.status === 'completed' ? 'bg-emerald-500' : job.status === 'failed' ? 'bg-red-400' : 'bg-gradient-to-r from-brand-500 to-blue-500'} rounded-full transition-all ${job.status === 'running' ? 'animate-pulse' : ''}" style="width: ${progress}%"></div>
             </div>
-            
+
             <!-- Stats row -->
             <div class="grid grid-cols-2 gap-2 text-xs text-slate-400 dark:text-slate-500">
                 <span class="min-w-0 truncate whitespace-nowrap">${job.processed_items}/${job.total_items || '?'} ${progress > 0 ? `• ${progress}%` : ''}</span>
@@ -371,6 +398,30 @@ export async function togglePauseAll() {
     }
 }
 
+export async function pauseJob(jobId) {
+    playSound('click');
+    try {
+        await pauseJobAPI(jobId);
+        showToast('info', 'Job Paused', 'This job will wait until you resume it');
+        const { refreshJobs } = await import('./main.js');
+        await refreshJobs();
+    } catch (err) {
+        showToast('error', 'Pause Failed', err.message || 'Could not pause this job');
+    }
+}
+
+export async function resumeJob(jobId) {
+    playSound('click');
+    try {
+        await resumeJobAPI(jobId);
+        showToast('success', 'Job Resumed', 'This job is back in the queue');
+        const { refreshJobs } = await import('./main.js');
+        await refreshJobs();
+    } catch (err) {
+        showToast('error', 'Resume Failed', err.message || 'Could not resume this job');
+    }
+}
+
 // Reset gallery UI
 function resetGalleryUI() {
     const elements = {
@@ -397,24 +448,22 @@ function resetGalleryUI() {
 }
 
 // Retry failed job
-export async function retryJob(jobId, url) {
+export async function retryJob(jobId) {
     playSound('click');
-
-    try {
-        await deleteJobAPI(jobId);
-    } catch (e) {
-        console.error('Failed to delete job:', e);
+    const job = state.allJobs.find(j => String(j.id) === String(jobId));
+    if (!job?.url) {
+        showToast('error', 'Retry Failed', 'Original job URL is missing');
+        return;
     }
 
     try {
-        await startScrapeAPI(url);
-        showToast('info', 'Retrying...', 'Started new scrape for the same URL');
+        await resumeJobAPI(jobId);
+        showToast('info', 'Resuming...', 'Continuing this job from its saved checkpoint');
 
-        // Refresh jobs list
         const { refreshJobs } = await import('./main.js');
-        refreshJobs();
+        await refreshJobs();
     } catch (e) {
-        showToast('error', 'Retry Failed', 'Could not start new scrape');
+        showToast('error', 'Resume Failed', e.message || 'Could not resume this job');
     }
 }
 

@@ -28,21 +28,26 @@
     automationIncludeAllBtn: $('automationIncludeAllBtn'),
     automationSkipAllBtn: $('automationSkipAllBtn'),
     automationDiscoveredTargets: $('automationDiscoveredTargets'),
+    automationSupplierTabs: document.querySelector('.automation-supplier-tabs'),
     automationJobs: $('automationJobs'),
     automationRuns: $('automationRuns'),
+    automationScrapedProducts: $('automationScrapedProducts'),
+    automationProductsCsvBtn: $('automationProductsCsvBtn'),
+    automationProductsXlsxBtn: $('automationProductsXlsxBtn'),
     automationRunDetail: $('automationRunDetail'),
     automationModelFilter: $('automationModelFilter'),
-    automationStatJobs: $('automationStatJobs'),
-    automationStatEnabled: $('automationStatEnabled'),
-    automationStatTargets: $('automationStatTargets'),
-    automationStatChangedRuns: $('automationStatChangedRuns')
+    automationReviewFilters: $('automationReviewFilters'),
+    automationJobEditor: $('automationJobEditor')
   };
 
   const SITE_ROOTS = {
     standard: 'https://www.mobilesentrix.com/',
+    mobilesentrix_canada: 'https://www.mobilesentrix.ca/',
     xcell: 'https://xcellparts.com/',
     txparts: 'https://txparts.com/',
-    parts4cells: 'https://parts4cells.com/'
+    parts4cells: 'https://parts4cells.com/',
+    phonelcdparts: 'https://www.phonelcdparts.com/',
+    gadgetfix: 'https://gadgetfix.com/'
   };
 
   const NOTIF_CLS = {
@@ -56,6 +61,7 @@
 
   const CHANGE_VIEW_CONFIG = [
     { key: 'all', label: 'All Activity' },
+    { key: 'duplicates', label: 'Duplicate Listings' },
     { key: 'stock_status', label: 'Stock Changes' },
     { key: 'price', label: 'Price Changes' },
     { key: 'title', label: 'Title Changes' },
@@ -65,7 +71,27 @@
     { key: 'removed', label: 'Removed Items' }
   ];
 
+  const SUPPLIER_SITE_KEYS = new Set(['xcell', 'parts4cells', 'phonelcdparts', 'standard', 'mobilesentrix_canada', 'txparts', 'gadgetfix']);
+  const ACTIVE_POLL_MS = 3000;
+  const IDLE_POLL_MS = 30000;
+  const LIVE_DETAIL_REFRESH_MS = 12000;
+
+  function normalizeSupplierSite(siteKey) {
+    const normalized = String(siteKey || '').trim().toLowerCase();
+    return SUPPLIER_SITE_KEYS.has(normalized) ? normalized : 'xcell';
+  }
+
+  function initialSupplierSite() {
+    try {
+      return normalizeSupplierSite(new URLSearchParams(window.location.search).get('site'));
+    } catch {
+      return 'xcell';
+    }
+  }
+
   const state = {
+    activeSite: initialSupplierSite(),
+    allJobs: [],
     jobs: [],
     runs: [],
     selectedJobId: null,
@@ -74,8 +100,66 @@
     discovery: null,
     discoveryFingerprint: '',
     loadedFingerprint: '',
-    runDetail: null
+    runDetail: null,
+    productExportRows: [],
+    productFilters: {
+      search: '',
+      mode: 'all',
+      source: '',
+      minPrice: '',
+      maxPrice: '',
+      sortKey: '',
+      sortDir: 'asc',
+      page: 1,
+      pageSize: 100
+    },
+    productFilterTimer: null,
+    loadingCount: 0,
+    jobsRequestId: 0,
+    runsRequestId: 0,
+    runDetailRequestId: 0,
+    lastRunDetailFetchAt: 0,
+    realtimePollTimer: null,
+    realtimeClockTimer: null,
+    realtimePollInFlight: false
   };
+
+  function preserveLiveScroll(callback) {
+    const pageScroll = {
+      left: window.scrollX,
+      top: window.scrollY
+    };
+    const trackedScroll = [
+      elements.automationRuns,
+      elements.automationScrapedProducts,
+      elements.automationRunDetail
+    ].filter(Boolean).map(element => ({
+      element,
+      left: element.scrollLeft,
+      top: element.scrollTop
+    }));
+
+    const result = callback();
+
+    trackedScroll.forEach(({ element, left, top }) => {
+      element.scrollLeft = left;
+      element.scrollTop = top;
+    });
+    if (window.scrollX !== pageScroll.left || window.scrollY !== pageScroll.top) {
+      window.scrollTo(pageScroll.left, pageScroll.top);
+    }
+    return result;
+  }
+
+  function isEditingProductFilters() {
+    const activeElement = document.activeElement;
+    return Boolean(
+      activeElement
+      && elements.automationScrapedProducts
+      && elements.automationScrapedProducts.contains(activeElement)
+      && activeElement.matches('input, select, textarea')
+    );
+  }
 
   function getSaveButtonLabel() {
     return (elements.automationJobId?.value || '').trim() ? 'Update Job' : 'Save Job';
@@ -101,26 +185,99 @@
   }
 
   function setLoading(on) {
-    if (!elements.overlay) return;
-    elements.overlay.classList.toggle('d-none', !on);
+    state.loadingCount = Math.max(0, state.loadingCount + (on ? 1 : -1));
+    const busy = state.loadingCount > 0;
+    document.querySelector('.automation-dashboard')?.setAttribute('aria-busy', busy ? 'true' : 'false');
+  }
+
+  function renderInspectorSkeleton() {
+    const container = elements.automationRunDetail;
+    if (!container) return;
+    container.className = 'automation-run-detail';
+    container.innerHTML = `
+      <div class="skeleton-container">
+        <div class="skeleton-stats">
+          <div class="skeleton-stat-card"><div class="skeleton-box" style="width: 40%; height: 18px;"></div><div class="skeleton-box" style="width: 70%; height: 11px;"></div></div>
+          <div class="skeleton-stat-card"><div class="skeleton-box" style="width: 30%; height: 18px;"></div><div class="skeleton-box" style="width: 60%; height: 11px;"></div></div>
+          <div class="skeleton-stat-card"><div class="skeleton-box" style="width: 35%; height: 18px;"></div><div class="skeleton-box" style="width: 65%; height: 11px;"></div></div>
+          <div class="skeleton-stat-card"><div class="skeleton-box" style="width: 25%; height: 18px;"></div><div class="skeleton-box" style="width: 55%; height: 11px;"></div></div>
+          <div class="skeleton-stat-card"><div class="skeleton-box" style="width: 45%; height: 18px;"></div><div class="skeleton-box" style="width: 75%; height: 11px;"></div></div>
+        </div>
+        <div class="skeleton-row"><div class="skeleton-box" style="width: 40px; height: 40px; border-radius: 6px;"></div><div style="flex:1;"><div class="skeleton-box" style="width: 70%; height: 14px; margin-bottom: 6px;"></div><div class="skeleton-box" style="width: 40%; height: 11px;"></div></div><div class="skeleton-box" style="width: 80px; height: 24px;"></div></div>
+        <div class="skeleton-row"><div class="skeleton-box" style="width: 40px; height: 40px; border-radius: 6px;"></div><div style="flex:1;"><div class="skeleton-box" style="width: 60%; height: 14px; margin-bottom: 6px;"></div><div class="skeleton-box" style="width: 35%; height: 11px;"></div></div><div class="skeleton-box" style="width: 80px; height: 24px;"></div></div>
+      </div>
+    `;
+  }
+
+  function renderProductsSkeleton() {
+    const container = elements.automationScrapedProducts;
+    if (!container) return;
+    container.className = 'automation-products';
+    container.innerHTML = `
+      <div class="skeleton-container">
+        <div style="display:flex; justify-content:space-between; margin-bottom:1rem;">
+          <div class="skeleton-box" style="width: 260px; height: 36px; border-radius: 8px;"></div>
+          <div class="skeleton-box" style="width: 140px; height: 36px; border-radius: 8px;"></div>
+        </div>
+        ${Array.from({ length: 6 }).map(() => `
+          <div class="skeleton-row">
+            <div class="skeleton-box" style="width: 44px; height: 44px; border-radius: 8px;"></div>
+            <div style="flex:1;">
+              <div class="skeleton-box" style="width: 65%; height: 15px; margin-bottom: 6px;"></div>
+              <div class="skeleton-box" style="width: 35%; height: 12px;"></div>
+            </div>
+            <div class="skeleton-box" style="width: 90px; height: 20px; border-radius: 4px;"></div>
+            <div class="skeleton-box" style="width: 70px; height: 20px; border-radius: 4px;"></div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderRunsSkeleton() {
+    const container = elements.automationRuns;
+    if (!container) return;
+    container.innerHTML = Array.from({ length: 4 }).map(() => `
+      <div class="skeleton-row" style="margin-bottom:0.5rem; padding: 1rem;">
+        <div style="flex:1;">
+          <div class="skeleton-box" style="width: 60%; height: 14px; margin-bottom: 6px;"></div>
+          <div class="skeleton-box" style="width: 85%; height: 11px;"></div>
+        </div>
+        <div class="skeleton-box" style="width: 60px; height: 22px; border-radius: 12px;"></div>
+      </div>
+    `).join('');
   }
 
   function showAlert(type, msg, duration = 5000) {
     const alertBox = elements.alertBox;
     if (!alertBox) return;
     alertBox.className = `alert-banner ${NOTIF_CLS[type] || 'alert-info'}`;
-    alertBox.innerHTML = `${escapeHtml(msg)}<button type="button" style="margin-left:auto;background:none;border:none;color:inherit;cursor:pointer;font-size:1rem;padding:0 .2rem">x</button>`;
+    alertBox.innerHTML = `${escapeHtml(msg)}<button type="button" aria-label="Close notification" style="margin-left:auto;background:none;border:none;color:inherit;cursor:pointer;font-size:1rem;padding:0 .2rem">x</button>`;
     const button = alertBox.querySelector('button');
     if (button) button.addEventListener('click', () => alertBox.classList.add('d-none'));
     alertBox.classList.remove('d-none');
     clearTimeout(alertBox._timer);
-    alertBox._timer = setTimeout(() => alertBox.classList.add('d-none'), duration);
+    if (duration > 0) {
+      alertBox._timer = setTimeout(() => alertBox.classList.add('d-none'), duration);
+    }
+  }
+
+  function removeDiscoveryControls() {
+    elements.automationDiscoverBtn?.remove();
+    const autoDiscoverWrapper = elements.automationAutoDiscover?.closest('label');
+    if (autoDiscoverWrapper) {
+      autoDiscoverWrapper.remove();
+    } else {
+      elements.automationAutoDiscover?.classList.add('d-none');
+    }
   }
 
   async function api(url, options = {}) {
+    const { headers: optionHeaders = {}, ...requestOptions } = options;
     const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-      ...options
+      cache: 'no-store',
+      ...requestOptions,
+      headers: { 'Content-Type': 'application/json', ...optionHeaders }
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -129,17 +286,29 @@
     return data;
   }
 
+  let _pkDateTimeFormatter = null;
+  const _dateTimeCache = new Map();
+
   function formatDateTime(value) {
     if (!value) return 'Never';
+    const key = String(value);
+    const cached = _dateTimeCache.get(key);
+    if (cached !== undefined) return cached;
+
     try {
-      const date = new Date(value);
-      return new Intl.DateTimeFormat('en-PK', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: 'Asia/Karachi'
-      }).format(date);
+      if (!_pkDateTimeFormatter) {
+        _pkDateTimeFormatter = new Intl.DateTimeFormat('en-PK', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'Asia/Karachi'
+        });
+      }
+      const formatted = _pkDateTimeFormatter.format(new Date(value));
+      if (_dateTimeCache.size > 500) _dateTimeCache.clear();
+      _dateTimeCache.set(key, formatted);
+      return formatted;
     } catch {
-      return String(value);
+      return key;
     }
   }
 
@@ -160,6 +329,123 @@
     } catch {
       return '';
     }
+  }
+
+  function formatDuration(ms) {
+    const totalSeconds = Math.max(0, Math.round(Number(ms || 0) / 1000));
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hours || days) parts.push(`${hours}h`);
+    if (minutes || hours || days) parts.push(`${minutes}m`);
+    if (!parts.length) parts.push(`${seconds}s`);
+    return parts.slice(0, 3).join(' ');
+  }
+
+  function getRunTiming(run) {
+    const summary = run?.summary || {};
+    const status = String(run?.status || '').toLowerCase();
+    const startedAt = new Date(run?.started_at || '').getTime();
+    const completedAt = run?.completed_at ? new Date(run.completed_at).getTime() : NaN;
+    const pausedAt = summary.paused_at ? new Date(summary.paused_at).getTime() : NaN;
+    const endAt = Number.isFinite(completedAt) && completedAt > 0
+      ? completedAt
+      : status !== 'running' && Number.isFinite(pausedAt) && pausedAt > 0
+        ? pausedAt
+        : Date.now();
+    const elapsedMs = Number.isFinite(startedAt) && startedAt > 0 ? Math.max(0, endAt - startedAt) : 0;
+    const completedTargets = Number(summary.completed_targets || 0);
+    const totalTargets = Number(summary.total_targets || summary.target_count || (run?.target_urls || []).length || 0);
+    const remainingTargets = Math.max(0, totalTargets - completedTargets);
+    const averageMsPerTarget = completedTargets > 0 && elapsedMs > 0 ? elapsedMs / completedTargets : 0;
+    const rawRecent = Number(summary.recent_targets_per_min || 0);
+    const recentTargetsPerMin = rawRecent > 0 ? rawRecent : (averageMsPerTarget > 0 && averageMsPerTarget < 5000 ? (60000 / averageMsPerTarget) : 45.0);
+    const currentPhase = Number(summary.phase || 0);
+    const phase2Total = Number(summary.phase2_total || 0);
+    const phase2Completed = Number(summary.phase2_completed || 0);
+    const recentItemsPerMin = Number(summary.recent_items_per_min || 0);
+    const isPhase2 = ['running', 'resuming'].includes(status) && (currentPhase === 2 || phase2Total > 0);
+    const remainingUnits = isPhase2 ? Math.max(0, phase2Total - phase2Completed) : remainingTargets;
+    const unitsPerMin = isPhase2 ? Math.max(recentItemsPerMin, 25) : Math.max(recentTargetsPerMin, 0.5);
+    const etaMs = ['running', 'resuming'].includes(status) && unitsPerMin > 0 && remainingUnits > 0
+      ? (remainingUnits / unitsPerMin) * 60000
+      : 0;
+    const rateLabel = isPhase2
+      ? `${recentItemsPerMin > 0 ? recentItemsPerMin.toFixed(1) : 'estimating'} products/min`
+      : `${recentTargetsPerMin.toFixed(1)} categories/min`;
+    const progressText = isPhase2
+      ? `${phase2Completed.toLocaleString()} / ${Math.max(phase2Total, phase2Completed).toLocaleString()} products`
+      : `${completedTargets.toLocaleString()} / ${Math.max(totalTargets, completedTargets).toLocaleString()} categories`;
+    return {
+      completedTargets,
+      totalTargets,
+      remainingTargets,
+      elapsedLabel: elapsedMs ? formatDuration(elapsedMs) : 'Estimating',
+      etaLabel: etaMs ? formatDuration(etaMs) : (['running', 'resuming'].includes(status) ? 'Estimating' : 'Done'),
+      rateLabel,
+      progressText,
+      phaseLabel: isPhase2 ? 'Products' : 'Categories',
+      finishLabel: etaMs ? formatDateTime(new Date(Date.now() + etaMs).toISOString()) : '',
+    };
+  }
+
+  function clampPercent(value, fallback = 0) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.max(0, Math.min(100, numeric));
+  }
+
+  function getRunProgressPercent(run) {
+    const summary = run?.summary || {};
+    if (summary.progress_percent !== undefined && summary.progress_percent !== null) {
+      return clampPercent(summary.progress_percent, 0);
+    }
+    const phase = Number(summary.phase || 0);
+    if (phase === 2) {
+      return clampPercent((Number(summary.phase2_completed || 0) / Math.max(1, Number(summary.phase2_total || 1))) * 100, 0);
+    }
+    const totalTargets = Number(summary.total_targets || summary.target_count || (run?.target_urls || []).length || 0);
+    if (totalTargets > 0) {
+      return clampPercent((Number(summary.completed_targets || 0) / totalTargets) * 100, 0);
+    }
+    return String(run?.status || '').toLowerCase() === 'completed' ? 100 : 0;
+  }
+
+  function getRunPhaseName(run) {
+    const summary = run?.summary || {};
+    const explicit = compactAutomationLabel(summary.phase_name || summary.activity_label || '');
+    if (explicit) return explicit;
+    const status = String(run?.status || '').toLowerCase();
+    if (status === 'paused') return 'Paused';
+    if (status === 'interrupted') return 'Interrupted';
+    if (status === 'failed') return 'Failed';
+    if (status === 'completed') return 'Completed';
+    const phase = Number(summary.phase || 1);
+    if (phase === 2) return 'Phase 2: Product Detail & SKU Scan';
+    if (phase === 3) return 'Phase 3: Validation & Comparison';
+    if (phase >= 4) return 'Phase 4: Saving Snapshot';
+    return 'Phase 1: Category Crawling';
+  }
+
+  function getRunActivityMessage(run) {
+    const summary = run?.summary || {};
+    const explicit = compactAutomationLabel(summary.status_message || '');
+    if (explicit) return explicit;
+    const status = String(run?.status || '').toLowerCase();
+    if (['running', 'resuming'].includes(status)) {
+      const phase = Number(summary.phase || 1);
+      if (phase === 2) return 'Enriching product details and SKU metadata.';
+      if (phase === 3) return 'Validating scraped products and comparing against the previous snapshot.';
+      if (phase >= 4) return 'Saving the product snapshot and run history to the database.';
+      return 'Fetching category pages and collecting product cards.';
+    }
+    if (status === 'paused') return 'This run is paused and can be resumed.';
+    if (status === 'interrupted') return 'This run was interrupted and can be resumed.';
+    if (status === 'failed') return compactAutomationLabel(run?.error_text || 'This run failed before completion.');
+    return 'Snapshot is saved.';
   }
 
   function intervalToMinutes() {
@@ -289,24 +575,36 @@
     renderDiscovery();
   }
 
-  function resetForm() {
+  function resetForm({ clearSelection = true } = {}) {
     if (elements.automationJobId) elements.automationJobId.value = '';
     if (elements.automationName) elements.automationName.value = '';
-    if (elements.automationSite) elements.automationSite.value = 'xcell';
+    if (elements.automationSite) elements.automationSite.value = state.activeSite || 'xcell';
     if (elements.automationCategoryQuery) elements.automationCategoryQuery.value = '';
-    if (elements.automationRootUrl) elements.automationRootUrl.value = SITE_ROOTS.xcell;
+    if (elements.automationRootUrl) elements.automationRootUrl.value = SITE_ROOTS[state.activeSite] || SITE_ROOTS.xcell;
     if (elements.automationIntervalValue) elements.automationIntervalValue.value = '1';
     if (elements.automationIntervalUnit) elements.automationIntervalUnit.value = 'days';
     if (elements.automationMaxPages) elements.automationMaxPages.value = '10';
     if (elements.automationDelayMs) elements.automationDelayMs.value = '50';
     if (elements.automationEnabled) elements.automationEnabled.checked = true;
-    if (elements.automationAutoDiscover) elements.automationAutoDiscover.checked = true;
+    if (elements.automationAutoDiscover) elements.automationAutoDiscover.checked = false;
     if (elements.automationParallel) elements.automationParallel.checked = true;
-    if (elements.automationEnrich) elements.automationEnrich.checked = false;
-    state.selectedJobId = null;
+    if (elements.automationEnrich) elements.automationEnrich.checked = true;
+    if (clearSelection) state.selectedJobId = null;
     state.loadedFingerprint = '';
+    elements.automationJobEditor?.classList.add('d-none');
     resetDiscovery();
     syncFormMode();
+  }
+
+  function openJobEditor() {
+    elements.automationJobEditor?.classList.remove('d-none');
+    elements.automationJobEditor?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    elements.automationName?.focus({ preventScroll: true });
+  }
+
+  function closeJobEditor() {
+    resetForm({ clearSelection: false });
+    renderJobs(state.jobs);
   }
 
   function collectPayload() {
@@ -318,9 +616,9 @@
       root_url: (elements.automationRootUrl?.value || '').trim(),
       interval_minutes: intervalToMinutes(),
       enabled: Boolean(elements.automationEnabled?.checked),
-      auto_discover: Boolean(elements.automationAutoDiscover?.checked),
+      auto_discover: false,
       use_parallel: Boolean(elements.automationParallel?.checked),
-      enrich_details: Boolean(elements.automationEnrich?.checked),
+      enrich_details: true,
       crawl_pagination: true,
       verify_ssl: true,
       retries: 1,
@@ -335,9 +633,139 @@
     const value = String(status || 'idle').toLowerCase();
     const cls = value === 'completed' ? 'automation-chip automation-chip--ok'
       : value === 'failed' ? 'automation-chip automation-chip--danger'
-        : value === 'running' ? 'automation-chip automation-chip--warn'
+        : ['running', 'resuming', 'paused', 'interrupted'].includes(value) ? 'automation-chip automation-chip--warn'
           : 'automation-chip';
-    return `<span class="${cls}">${escapeHtml(value)}</span>`;
+    return `<span class="${cls}">${escapeHtml(formatStatusLabel(value))}</span>`;
+  }
+
+  function formatStatusLabel(status, fallback = 'Not run') {
+    const value = String(status || '').trim().toLowerCase();
+    if (!value) return fallback;
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  }
+
+  function scheduleStatusChip(job) {
+    const enabled = Boolean(job?.enabled);
+    const cls = enabled ? 'automation-chip automation-chip--ok' : 'automation-chip';
+    return `<span class="${cls}">${enabled ? 'Active' : 'Paused'}</span>`;
+  }
+
+  function activeSiteLabel() {
+    const activeTab = Array.from(elements.automationSupplierTabs?.querySelectorAll('[data-site-key]') || [])
+      .find(tab => siteKeyMatches(tab.dataset.siteKey));
+    return activeTab?.textContent?.trim() || 'this site';
+  }
+
+  function compactAutomationLabel(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function cleanLegacyAutomationLabel(value) {
+    return compactAutomationLabel(value)
+      .replace(/^menu\s+map\s*[-:]\s*/i, '')
+      .replace(/\s*[-:]\s*20\d{2}(?:[-/]\d{1,2})?(?:[-/]\d{1,2})?(?:\s+\d{1,2}:\d{2})?\s*$/i, '')
+      .replace(/\b20\d{2}[-/]\d{1,2}(?:[-/]\d{1,2})?(?:\s+\d{1,2}:\d{2})?\b/g, '')
+      .replace(/\s*[-:]\s*$/g, '')
+      .trim();
+  }
+
+  function automationScopeLabel(record) {
+    const category = cleanLegacyAutomationLabel(record?.category_query || '');
+    if (!category || /^menu\s+map\s+selection$/i.test(category) || /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(category)) {
+      return 'Visible Categories';
+    }
+    return category;
+  }
+
+  function automationDisplayName(record) {
+    const raw = compactAutomationLabel(record?.name || record?.job_name || '');
+    const cleaned = cleanLegacyAutomationLabel(raw);
+    const scope = automationScopeLabel(record);
+    const legacy = /^menu\s+map\b/i.test(raw) || /\b20\d{2}[-/]\d{1,2}/.test(raw) || /^menu\s+map\s+selection$/i.test(record?.category_query || '');
+    if (raw && !legacy) return cleaned || raw;
+    const base = cleaned || compactAutomationLabel(record?.site_label || activeSiteLabel()) || 'Automation';
+    return scope && !base.toLowerCase().endsWith(scope.toLowerCase()) ? `${base} - ${scope}` : base;
+  }
+
+  function siteKeyMatches(value) {
+    return String(value || '').trim().toLowerCase() === String(state.activeSite || '').trim().toLowerCase();
+  }
+
+  function filterJobsByActiveSite(jobs) {
+    return (Array.isArray(jobs) ? jobs : []).filter(job => siteKeyMatches(job?.scraper_key));
+  }
+
+  function filterRunsByActiveSite(runs) {
+    return (Array.isArray(runs) ? runs : []).filter(run => siteKeyMatches(run?.scraper_key));
+  }
+
+  function isCurrentRunStatus(value) {
+    return ['running', 'resuming', 'paused', 'interrupted'].includes(String(value || '').trim().toLowerCase());
+  }
+
+  function syncActivityPanelCopy() {
+    const panel = document.getElementById('automationActivityPanel');
+    const runsPanel = document.getElementById('automationRunsPanel');
+    const title = panel?.querySelector('.section-title');
+    const subtitle = panel?.querySelector('.section-subtitle');
+    const hint = panel?.querySelector('.automation-activity-hint');
+    const runsTitle = runsPanel?.querySelector('.automation-activity-section__head h3');
+    const runsSubtitle = runsPanel?.querySelector('.automation-activity-section__head span');
+    if (title) title.textContent = 'Schedules & Runs';
+    if (subtitle) subtitle.remove();
+    if (hint) hint.remove();
+    if (runsTitle) runsTitle.textContent = 'Runs';
+    if (runsSubtitle) runsSubtitle.textContent = 'Current and past';
+  }
+
+  function syncSupplierTabs() {
+    let activeTab = null;
+    const tabList = elements.automationSupplierTabs;
+    tabList?.querySelectorAll('[data-site-key]').forEach(tab => {
+      const isActive = siteKeyMatches(tab.dataset.siteKey);
+      tab.classList.toggle('is-active', isActive);
+      tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      if (isActive) activeTab = tab;
+    });
+    window.requestAnimationFrame(() => {
+      if (!tabList || !activeTab) return;
+      const centeredLeft = activeTab.offsetLeft - ((tabList.clientWidth - activeTab.offsetWidth) / 2);
+      const left = Math.max(0, centeredLeft);
+      if (typeof tabList.scrollTo === 'function') {
+        tabList.scrollTo({ left, behavior: 'auto' });
+      } else {
+        tabList.scrollLeft = left;
+      }
+    });
+  }
+
+  function updateSupplierUrl(siteKey, mode = 'push') {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('site', siteKey);
+      const method = mode === 'replace' ? 'replaceState' : 'pushState';
+      window.history[method]({ automationSite: siteKey }, '', url);
+    } catch { }
+  }
+
+  async function selectSupplier(siteKey, { silent = false, updateUrl = true, urlMode = 'push' } = {}) {
+    const nextSite = normalizeSupplierSite(siteKey);
+    if (!nextSite || nextSite === state.activeSite) return;
+    state.activeSite = nextSite;
+    state.selectedJobId = null;
+    state.selectedRunId = null;
+    state.selectedChangeView = 'all';
+    state.runDetail = null;
+    resetProductFilters();
+    state.runsRequestId += 1;
+    state.runDetailRequestId += 1;
+    elements.automationJobEditor?.classList.add('d-none');
+    populateModelFilter(null);
+    renderRunDetail(null);
+    syncSupplierTabs();
+    renderJobs(filterJobsByActiveSite(state.allJobs));
+    if (updateUrl) updateSupplierUrl(nextSite, urlMode);
+    await loadRuns(null, { silent });
   }
 
   function renderDiscovery() {
@@ -351,21 +779,21 @@
 
     const discovery = state.discovery;
     if (!discovery || !Array.isArray(discovery.targets) || !discovery.targets.length) {
-      summary.textContent = 'Run discovery to preview which category URLs will be scraped.';
+      summary.textContent = 'Targets are selected from Menu Map and saved with the job.';
       meta.textContent = '';
-      selection.textContent = 'All discovered links will run by default.';
+      selection.textContent = 'Open Menu Map, hide categories you do not want, then run automation for that site.';
       includeAllBtn.disabled = true;
       skipAllBtn.disabled = true;
-      container.innerHTML = '<div class="automation-target"><div class="automation-target__label">No discovered targets yet</div><div class="automation-target__url">Use a site and section query, then click Discover Links.</div></div>';
+      container.innerHTML = '<div class="automation-target"><div class="automation-target__label">No saved targets yet</div><div class="automation-target__url">Use the Menu Map page to create an automation job from selected categories.</div></div>';
       return;
     }
 
     const counts = getDiscoveryCounts(discovery);
-    summary.textContent = `Found ${counts.total} target link${counts.total === 1 ? '' : 's'} for "${discovery.query}".`;
-    meta.textContent = `${discovery.site_label} - ${discovery.candidate_count} candidate links scanned`;
+    summary.textContent = `Saved ${counts.total} target link${counts.total === 1 ? '' : 's'} for "${discovery.query}".`;
+    meta.textContent = `${discovery.site_label} - ${discovery.candidate_count || counts.total} target links`;
     selection.textContent = counts.skipped
       ? `${counts.active} included, ${counts.skipped} skipped. Skipped links stay out of scheduled runs.`
-      : `All ${counts.active} discovered link${counts.active === 1 ? '' : 's'} are included in this job.`;
+      : `All ${counts.active} saved link${counts.active === 1 ? '' : 's'} are included in this job.`;
     includeAllBtn.disabled = counts.total === 0 || counts.active === counts.total;
     skipAllBtn.disabled = counts.total === 0 || counts.skipped === counts.total;
     container.innerHTML = discovery.targets.map(target => `
@@ -391,10 +819,6 @@
 
   function renderOverview(overview) {
     if (!overview) return;
-    if (elements.automationStatJobs) elements.automationStatJobs.textContent = String(overview.total_jobs || 0);
-    if (elements.automationStatEnabled) elements.automationStatEnabled.textContent = String(overview.enabled_jobs || 0);
-    if (elements.automationStatTargets) elements.automationStatTargets.textContent = String(overview.total_targets || 0);
-    if (elements.automationStatChangedRuns) elements.automationStatChangedRuns.textContent = String(overview.changed_runs || 0);
   }
 
   function renderJobs(jobs) {
@@ -402,55 +826,61 @@
     if (!container) return;
     state.jobs = Array.isArray(jobs) ? jobs : [];
     if (!state.jobs.length) {
-      container.innerHTML = '<div class="automation-job"><div class="automation-job__title">No jobs saved yet</div><div class="automation-job__subtitle">Create one from the form on the left.</div></div>';
+      container.innerHTML = `<div class="automation-job automation-empty-state"><div class="automation-job__title">No jobs for ${escapeHtml(activeSiteLabel())}</div><div class="automation-job__subtitle">Use Menu Map to queue visible categories.</div></div>`;
       return;
     }
 
     container.innerHTML = state.jobs.map(job => {
       const selected = Number(job.id) === Number(state.selectedJobId) ? ' is-selected' : '';
-      const nextRun = job.enabled ? `${formatDateTime(job.next_run_at)} (${relativeTime(job.next_run_at)})` : 'Paused';
-      const lastRun = job.last_run_at ? formatDateTime(job.last_run_at) : 'Never';
+      const displayName = automationDisplayName(job);
+      const scopeLabel = automationScopeLabel(job);
+      const nextRunHtml = job.enabled
+        ? `<span>${escapeHtml(formatDateTime(job.next_run_at))}</span> <span style="font-size:0.7rem; color:var(--text-3);">(${escapeHtml(relativeTime(job.next_run_at))})</span>`
+        : '<span class="automation-chip">Paused</span>';
+      const lastRunHtml = job.last_run_at
+        ? `<span class="automation-chip ${job.last_status === 'completed' ? 'automation-chip--ok' : 'automation-chip--warn'}" style="margin-right:4px;">${escapeHtml(formatStatusLabel(job.last_status))}</span><span>${escapeHtml(formatDateTime(job.last_run_at))}</span>`
+        : '<span style="color:var(--text-3);">Never</span>';
+      const resumableRun = state.runs.find(run => Number(run.job_id) === Number(job.id) && isResumableRun(run));
+      const runActionLabel = resumableRun ? 'Resume' : 'Run Now';
       return `
-        <div class="automation-job${selected}" data-job-id="${job.id}">
-          <div class="automation-job__top">
-            <div>
-              <div class="automation-job__title">${escapeHtml(job.name)}</div>
-              <div class="automation-job__subtitle">${escapeHtml(job.site_label)} - ${escapeHtml(job.category_query)}</div>
+        <div class="automation-job${selected}">
+          <button type="button" class="automation-card-select" data-job-id="${job.id}" aria-pressed="${selected ? 'true' : 'false'}">
+            <div class="automation-job__top">
+              <div class="automation-job__copy">
+                <div class="automation-card-kind">Saved schedule</div>
+                <div class="automation-job__title">${escapeHtml(displayName)}</div>
+                <div class="automation-job__subtitle">${escapeHtml(job.site_label || activeSiteLabel())} - ${escapeHtml(scopeLabel)}</div>
+              </div>
+              <div class="automation-job__status">
+                ${scheduleStatusChip(job)}
+              </div>
             </div>
-            ${statusChip(job.last_status)}
-          </div>
-          <div class="automation-job__chips">
-            <span class="automation-chip">${escapeHtml(job.interval_label || '')}</span>
-            <span class="automation-chip">${escapeHtml(`${job.target_count || 0} targets`)}</span>
-            <span class="automation-chip automation-chip--ok">${escapeHtml(`${job.active_target_count || 0} included`)}</span>
-            ${(job.skipped_target_count || 0) > 0 ? `<span class="automation-chip automation-chip--danger">${escapeHtml(`${job.skipped_target_count || 0} skipped`)}</span>` : ''}
-            ${job.auto_discover ? '<span class="automation-chip">Auto refresh links</span>' : ''}
-          </div>
-          <div class="automation-job__meta">
-            <div class="automation-meta">
-              <span class="automation-meta__label">Next Run</span>
-              <span class="automation-meta__value">${escapeHtml(nextRun)}</span>
+            <div class="automation-job__chips">
+              <span class="automation-chip">${escapeHtml(job.interval_label || '')}</span>
+              <span class="automation-chip">${escapeHtml(
+                (job.skipped_target_count || 0) > 0
+                  ? `${job.active_target_count || 0}/${job.target_count || 0} targets`
+                  : `${job.target_count || 0} targets`
+              )}</span>
+              ${(job.skipped_target_count || 0) > 0 ? `<span class="automation-chip automation-chip--danger">${escapeHtml(`${job.skipped_target_count} skipped`)}</span>` : ''}
             </div>
-            <div class="automation-meta">
-              <span class="automation-meta__label">Last Run</span>
-              <span class="automation-meta__value">${escapeHtml(lastRun)}</span>
+            <div class="automation-job__meta">
+              <div class="automation-meta">
+                <span class="automation-meta__label">Next Run</span>
+                <span class="automation-meta__value">${nextRunHtml}</span>
+              </div>
+              <div class="automation-meta">
+                <span class="automation-meta__label">Last Run</span>
+                <span class="automation-meta__value">${lastRunHtml}</span>
+              </div>
             </div>
-            <div class="automation-meta">
-              <span class="automation-meta__label">Root URL</span>
-              <span class="automation-meta__value">${escapeHtml(job.root_url || '')}</span>
-            </div>
-            <div class="automation-meta">
-              <span class="automation-meta__label">Latest History</span>
-              <span class="automation-meta__value">${escapeHtml((job.last_history_ids || []).join(', ') || 'None yet')}</span>
-            </div>
-          </div>
-          ${job.last_error ? `<div class="automation-job__subtitle" style="margin-top:.7rem;color:var(--danger)">${escapeHtml(job.last_error)}</div>` : ''}
-          <div class="automation-job__actions">
-            <button type="button" class="btn-export" data-action="edit" data-job-id="${job.id}">Edit</button>
-            <button type="button" class="btn-export" data-action="run" data-job-id="${job.id}">Run Now</button>
-            <button type="button" class="btn-export" data-action="refresh" data-job-id="${job.id}">Refresh Links</button>
-            <button type="button" class="btn-export" data-action="toggle" data-job-id="${job.id}">${job.enabled ? 'Pause' : 'Enable'}</button>
-            <button type="button" class="btn-danger-sm" data-action="delete" data-job-id="${job.id}">Delete</button>
+            ${job.last_error ? `<div class="automation-job__subtitle automation-job__error">${escapeHtml(job.last_error)}</div>` : ''}
+          </button>
+          <div class="automation-job__actions" aria-label="Job actions">
+            <button type="button" class="btn-export automation-job__action" data-action="edit" data-job-id="${job.id}">Edit</button>
+            <button type="button" class="btn-export automation-job__action${resumableRun ? ' automation-job__action--primary' : ''}" data-action="run" data-job-id="${job.id}">${runActionLabel}</button>
+            <button type="button" class="btn-export automation-job__action" data-action="toggle" data-job-id="${job.id}">${job.enabled ? 'Pause' : 'Enable'}</button>
+            <button type="button" class="btn-danger-sm automation-job__action" data-action="delete" data-job-id="${job.id}">Delete</button>
           </div>
         </div>
       `;
@@ -460,49 +890,173 @@
   function renderRuns(runs) {
     const container = elements.automationRuns;
     if (!container) return;
-    state.runs = Array.isArray(runs) ? runs : [];
+    syncActivityPanelCopy();
+    const detailRun = state.runDetail?.run;
+    state.runs = (Array.isArray(runs) ? runs : []).map(run => {
+      if (!detailRun || Number(detailRun.id) !== Number(run.id)) return run;
+      return {
+        ...run,
+        items_count: detailRun.items_count ?? run.items_count,
+        summary: {
+          ...(run.summary || {}),
+          ...(detailRun.summary || {})
+        }
+      };
+    });
     if (!state.runs.length) {
-      container.innerHTML = '<div class="automation-run"><div class="automation-run__title">No runs yet</div><div class="automation-run__subtitle">Run a saved job to capture its first snapshot.</div></div>';
+      container.innerHTML = `<div class="automation-run automation-empty-state"><div class="automation-run__title">No runs for ${escapeHtml(activeSiteLabel())}</div><div class="automation-run__subtitle">Run a job to capture the first snapshot.</div></div>`;
       return;
     }
 
-    container.innerHTML = state.runs.map(run => {
+    const renderRunCard = run => {
       const summary = run.summary || {};
       const selected = Number(run.id) === Number(state.selectedRunId) ? ' is-selected' : '';
       const runStatus = String(run.status || '').toLowerCase();
+      const displayName = automationDisplayName(run);
       const totalTargets = Number(summary.total_targets || summary.target_count || (run.target_urls || []).length || 0);
       const completedTargets = Number(summary.completed_targets || 0);
-      const progressValue = runStatus === 'running' && totalTargets
-        ? `${completedTargets} / ${totalTargets} targets`
+      const timing = getRunTiming(run);
+      const activeRunStatus = isCurrentRunStatus(runStatus);
+      const progressPct = getRunProgressPercent(run);
+      const phaseName = getRunPhaseName(run);
+      const activityMessage = getRunActivityMessage(run);
+      const runKind = activeRunStatus ? 'Active run' : 'Run snapshot';
+      const progressValue = activeRunStatus
+        ? timing.progressText
         : String(summary.target_count || (run.target_urls || []).length || 0);
-      return `
-        <button type="button" class="automation-run${selected}" data-run-id="${run.id}" style="text-align:left">
-          <div class="automation-run__top">
-            <div>
-              <div class="automation-run__title">${escapeHtml(run.job_name || 'Automation Run')}</div>
-              <div class="automation-run__subtitle">${escapeHtml(run.trigger_type)} - ${escapeHtml(formatDateTime(run.started_at))}</div>
-            </div>
-            ${statusChip(run.status)}
-          </div>
-          <div class="automation-run__chips">
-            <span class="automation-chip">${escapeHtml(`${summary.current_items || run.items_count || 0} items`)}</span>
-            <span class="automation-chip">${escapeHtml(`${summary.changed || 0} changed`)}</span>
-            <span class="automation-chip">${escapeHtml(`${summary.added || 0} added`)}</span>
-            <span class="automation-chip">${escapeHtml(`${summary.removed || 0} removed`)}</span>
-          </div>
-          <div class="automation-run__meta">
-            <div class="automation-meta">
-              <span class="automation-meta__label">${runStatus === 'running' && totalTargets ? 'Progress' : 'Targets'}</span>
-              <span class="automation-meta__value">${escapeHtml(progressValue)}</span>
-            </div>
-            <div class="automation-meta">
-              <span class="automation-meta__label">Price Drops</span>
-              <span class="automation-meta__value">${escapeHtml(String(summary.price_drop_alerts || 0))}</span>
-            </div>
-          </div>
-        </button>
+      const timeValue = ['running', 'resuming'].includes(runStatus)
+        ? `${timing.etaLabel} left`
+        : activeRunStatus
+          ? timing.elapsedLabel
+          : (run.completed_at ? formatDuration(new Date(run.completed_at).getTime() - new Date(run.started_at || run.completed_at).getTime()) : 'N/A');
+      const actionButtons = `
+        ${runStatus === 'running' ? `<button type="button" class="btn-export automation-run__action" data-action="pause-run" data-run-id="${run.id}" aria-label="Pause run ${escapeHtml(displayName)}">Pause</button>` : ''}
+        ${isResumableRun(run) ? `<button type="button" class="btn-export automation-run__action" data-action="resume-run" data-run-id="${run.id}" aria-label="Resume run ${escapeHtml(displayName)}">Resume</button>` : ''}
+        <button type="button" class="btn-danger-sm automation-run__action" data-action="delete" data-run-id="${run.id}" aria-label="Delete run ${escapeHtml(displayName)}">Delete</button>
       `;
-    }).join('');
+      return `
+        <div class="automation-run${selected}">
+          <button type="button" class="automation-card-select automation-run__select" data-run-id="${run.id}" aria-pressed="${selected ? 'true' : 'false'}">
+            <div class="automation-run__top">
+              <div style="min-width: 0; flex: 1;">
+                ${activeRunStatus
+                  ? '<div class="automation-card-kind">Active run</div>'
+                  : '<div class="automation-card-kind">Run snapshot</div>'}
+                <div class="automation-run__title">${escapeHtml(displayName)}</div>
+                <div class="automation-run__subtitle">${escapeHtml(run.trigger_type)} - ${escapeHtml(formatDateTime(run.started_at))}</div>
+              </div>
+              <div class="automation-run__status">${statusChip(run.status)}</div>
+            </div>
+            <div class="automation-run__chips">
+              <span class="automation-chip">${escapeHtml(`${summary.current_items || run.items_count || 0} items`)}</span>
+              ${(Number(summary.changed) || Number(summary.added) || Number(summary.removed)) ? `
+                ${Number(summary.changed) > 0 ? `<span class="automation-chip automation-chip--warn">${escapeHtml(`${summary.changed} changed`)}</span>` : ''}
+                ${Number(summary.added) > 0 ? `<span class="automation-chip automation-chip--ok">${escapeHtml(`${summary.added} added`)}</span>` : ''}
+                ${Number(summary.removed) > 0 ? `<span class="automation-chip automation-chip--danger">${escapeHtml(`${summary.removed} removed`)}</span>` : ''}
+              ` : '<span class="automation-chip">No changes</span>'}
+            </div>
+            <div class="automation-run__meta">
+              <div class="automation-meta">
+                <span class="automation-meta__label">${activeRunStatus ? 'Phase' : 'Targets'}</span>
+                <span class="automation-meta__value">${escapeHtml(activeRunStatus ? phaseName : progressValue)}</span>
+              </div>
+              <div class="automation-meta">
+                <span class="automation-meta__label">${['running', 'resuming'].includes(runStatus) ? 'ETA' : activeRunStatus ? 'Elapsed' : 'Duration'}</span>
+                <span class="automation-meta__value">${escapeHtml(timeValue)}</span>
+              </div>
+            </div>
+            ${activeRunStatus ? `
+              <div class="automation-run-progress" aria-label="${escapeHtml(`${phaseName} ${progressPct.toFixed(0)} percent`)}">
+                <div class="automation-run-progress__track">
+                  <div class="automation-run-progress__fill" style="width:${progressPct.toFixed(1)}%"></div>
+                </div>
+                <div class="automation-run-progress__line">
+                  <span>${escapeHtml(progressValue)}</span>
+                  <strong>${escapeHtml(`${progressPct.toFixed(0)}%`)}</strong>
+                </div>
+              </div>
+            ` : ''}
+            ${['running', 'resuming'].includes(runStatus) ? `
+              <div class="automation-run__subtitle">${escapeHtml(`${activityMessage} Elapsed ${timing.elapsedLabel} - ${timing.rateLabel}${timing.finishLabel ? ` - finish around ${timing.finishLabel}` : ''}`)}</div>
+            ` : activeRunStatus ? `
+              <div class="automation-run__subtitle">${escapeHtml(activityMessage)}</div>
+            ` : ''}
+          </button>
+          <div class="automation-job__actions" aria-label="Run actions">${actionButtons}</div>
+        </div>
+      `;
+    };
+    const currentRuns = state.runs.filter(run => isCurrentRunStatus(run?.status));
+    const pastRuns = state.runs.filter(run => !isCurrentRunStatus(run?.status));
+    const groups = [
+      currentRuns.length
+        ? `<div class="automation-run-group"><div class="automation-run-group__heading">Current Runs</div>${currentRuns.map(renderRunCard).join('')}</div>`
+        : '',
+      pastRuns.length
+        ? `<div class="automation-run-group"><div class="automation-run-group__heading">Past Snapshots</div>${pastRuns.map(renderRunCard).join('')}</div>`
+        : ''
+    ].filter(Boolean);
+    container.innerHTML = groups.join('');
+  }
+
+  function isRunningStatus(value) {
+    return ['running', 'resuming'].includes(String(value || '').trim().toLowerCase());
+  }
+
+  function isResumableRun(run) {
+    const status = String(run?.status || '').trim().toLowerCase();
+    return ['paused', 'interrupted', 'failed'].includes(status);
+  }
+
+  function hasRunningActivity() {
+    return state.runs.some(run => isRunningStatus(run?.status))
+      || state.allJobs.some(job => isRunningStatus(job?.last_status));
+  }
+
+  function refreshLiveClock() {
+    if (!hasRunningActivity()) return;
+    if (state.runs.length) {
+      preserveLiveScroll(() => renderRuns(state.runs));
+    }
+  }
+
+  function startRealtimeClock() {
+    if (state.realtimeClockTimer) {
+      window.clearInterval(state.realtimeClockTimer);
+    }
+    state.realtimeClockTimer = window.setInterval(refreshLiveClock, 1000);
+  }
+
+  function scheduleRealtimePoll(delayMs) {
+    if (state.realtimePollTimer) {
+      window.clearTimeout(state.realtimePollTimer);
+    }
+    state.realtimePollTimer = window.setTimeout(runRealtimePoll, Math.max(1000, delayMs));
+  }
+
+  async function runRealtimePoll() {
+    if (state.realtimePollInFlight) {
+      scheduleRealtimePoll(hasRunningActivity() ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+      return;
+    }
+    state.realtimePollInFlight = true;
+    try {
+      await loadJobs({ silent: true });
+    } catch { }
+    finally {
+      state.realtimePollInFlight = false;
+      scheduleRealtimePoll(hasRunningActivity() ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+    }
+  }
+
+  function startRealtimeUpdates() {
+    startRealtimeClock();
+    scheduleRealtimePoll(1000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        scheduleRealtimePoll(1000);
+      }
+    });
   }
 
   function getRunTimestamp(run) {
@@ -536,7 +1090,29 @@
   }
 
   function getModelLabel(item) {
-    return item?.model_label || item?.target_label || item?.title || 'Uncategorized';
+    const extra = item?.extra && typeof item.extra === 'object' ? item.extra : {};
+    return item?.model_label
+      || item?.target_label
+      || extra.model_label
+      || extra.target_label
+      || formatCategoryLabelFromUrl(item?.target_url || extra.target_url)
+      || item?.title
+      || 'Uncategorized';
+  }
+
+  function formatCategoryLabelFromUrl(url) {
+    try {
+      const parsed = new URL(String(url || ''), window.location.origin);
+      const segments = parsed.pathname.replace(/\.html$/i, '').split('/').filter(Boolean);
+      const tail = segments.pop() || '';
+      return tail
+        .replace(/[-_]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, char => char.toUpperCase());
+    } catch {
+      return '';
+    }
   }
 
   function filterByModel(items, modelFilter) {
@@ -577,12 +1153,15 @@
     return entries.filter(entry => Object.prototype.hasOwnProperty.call(entry?.changes || {}, changeView));
   }
 
-  function getChangeViewCounts(changedEntries, addedItems, removedItems) {
+  function getChangeViewCounts(changedEntries, addedItems, removedItems, allProducts = []) {
     const changed = Array.isArray(changedEntries) ? changedEntries : [];
     const added = Array.isArray(addedItems) ? addedItems : [];
     const removed = Array.isArray(removedItems) ? removedItems : [];
+    const products = Array.isArray(allProducts) ? allProducts : [];
+    const duplicates = products.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1));
     return {
       all: changed.length + added.length + removed.length,
+      duplicates: duplicates.length,
       stock_status: getChangedEntriesForView(changed, 'stock_status').length,
       price: getChangedEntriesForView(changed, 'price').length,
       title: getChangedEntriesForView(changed, 'title').length,
@@ -595,19 +1174,23 @@
 
   function renderChangeFilterBar(changeCounts, activeChangeView, modelFilter) {
     const activeConfig = CHANGE_VIEW_CONFIG.find(config => config.key === activeChangeView) || CHANGE_VIEW_CONFIG[0];
+    const visibleConfigs = CHANGE_VIEW_CONFIG.filter(config => {
+      const count = Number(changeCounts?.[config.key] || 0);
+      return config.key === 'all' || config.key === activeChangeView || count > 0;
+    });
     return `
       <div class="automation-review">
         <div class="automation-review__header">
           <div>
             <div class="automation-change-group__title" style="margin-bottom:.2rem">Review Changes</div>
             <div class="automation-review__hint">
-              ${escapeHtml(modelFilter ? `Focused on ${modelFilter}.` : 'Pick a change type to focus the list.')} Stock changes show the previous and current values.
+              ${escapeHtml(modelFilter || 'All models')}
             </div>
           </div>
           <div class="automation-review__active">${escapeHtml(activeConfig.label)}</div>
         </div>
         <div class="automation-review__filters">
-          ${CHANGE_VIEW_CONFIG.map(config => {
+          ${visibleConfigs.map(config => {
             const count = Number(changeCounts?.[config.key] || 0);
             const isActive = config.key === activeChangeView;
             return `
@@ -625,6 +1208,18 @@
         </div>
       </div>
     `;
+  }
+
+  function renderReviewFilters(changeCounts = null, activeChangeView = state.selectedChangeView || 'all', modelFilter = '') {
+    if (!elements.automationReviewFilters) return;
+    const totalCount = changeCounts ? Object.values(changeCounts).reduce((sum, n) => sum + (Number(n) || 0), 0) : 0;
+    if (!changeCounts || totalCount === 0) {
+      elements.automationReviewFilters.innerHTML = '';
+      elements.automationReviewFilters.classList.add('d-none');
+      return;
+    }
+    elements.automationReviewFilters.classList.remove('d-none');
+    elements.automationReviewFilters.innerHTML = renderChangeFilterBar(changeCounts, activeChangeView, modelFilter);
   }
 
   function renderChangedEntry(entry) {
@@ -682,6 +1277,725 @@
     `;
   }
 
+  function formatProductPrice(item) {
+    const candidates = [
+      item?.discounted_formatted,
+      item?.original_formatted,
+      item?.price_formatted,
+      item?.price_text
+    ];
+    for (const value of candidates) {
+      const text = String(value ?? '').trim();
+      if (!text) continue;
+      const parsed = priceNumberFromText(text);
+      if (parsed === 0) continue;
+      return text;
+    }
+    const numeric = item?.discounted_value ?? item?.price_value ?? item?.original;
+    if (numeric !== undefined && numeric !== null && Number(numeric) > 0) {
+      const currency = item?.price_currency || '$';
+      return `${currency === 'USD' ? '$' : currency}${Number(numeric).toFixed(2)}`;
+    }
+    return '';
+  }
+
+  function formatOriginalPrice(item) {
+    for (const value of [item?.original_formatted, item?.price_text, formatProductPrice(item)]) {
+      const text = String(value ?? '').trim();
+      if (!text) continue;
+      const parsed = priceNumberFromText(text);
+      if (parsed === 0) continue;
+      return text;
+    }
+    return '';
+  }
+
+  function formatFinalPrice(item) {
+    return item?.discounted_formatted || formatProductPrice(item);
+  }
+
+  function compactProductText(value, maxLength = 220) {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, maxLength - 1).trim()}...`;
+  }
+
+  function productImageSrc(item) {
+    const src = String(item?.image_url || '').trim();
+    if (!src || /\/woocommerce-placeholder(?:-\d+x\d+)?\.(?:png|jpe?g|webp)(?:[?#]|$)/i.test(src)) return '';
+    return `/api/image-proxy?url=${encodeURIComponent(src)}`;
+  }
+
+  function productImageFallback(hidden = false) {
+    return `<span class="automation-product-no-image" title="Supplier provided no product image" aria-label="No product image"${hidden ? ' hidden' : ''}>N/A</span>`;
+  }
+
+  function productSource(item) {
+    if (item?.site) return item.site;
+    if (item?.source) return item.source;
+    if (item?.url) {
+      try {
+        const host = new URL(item.url, window.location.origin).hostname.replace(/^www\./i, '');
+        const name = host.split('.')[0];
+        if (name && name !== '127' && name !== 'localhost') return name;
+      } catch {}
+    }
+    return state.activeSite || 'parts4cells';
+  }
+
+  function priceNumberFromText(value) {
+    const match = String(value ?? '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function productPriceNumber(item) {
+    for (const value of [item?.original, item?.original_value, item?.price_value, item?.discounted_value]) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    for (const value of [item?.original_formatted, item?.price_text, item?.price_formatted, item?.discounted_formatted]) {
+      const parsed = priceNumberFromText(value);
+      if (parsed !== null && parsed > 0) return parsed;
+    }
+    return null;
+  }
+
+  function normalizeProductFilterText(value) {
+    return String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function productFieldValue(item, key) {
+    if (key === 'image') return item?.image_url || '';
+    if (key === 'title') return item?.title || '';
+    if (key === 'sku') return item?.sku || '';
+    if (key === 'category') return item?.category || getModelLabel(item) || '';
+    if (key === 'description') return item?.description || '';
+    if (key === 'original') return formatOriginalPrice(item);
+    if (key === 'url') return item?.url || '';
+    if (key === 'source') return productSource(item);
+    return item?.[key] || '';
+  }
+
+  const PRODUCT_TABLE_COLUMNS = [
+    { key: 'image', label: 'Image', sortable: false },
+    { key: 'title', label: 'Title', sortable: true },
+    { key: 'sku', label: 'SKU', sortable: true },
+    { key: 'category', label: 'Category', sortable: true },
+    { key: 'description', label: 'Description', sortable: true },
+    { key: 'original', label: 'Price', sortable: true },
+    { key: 'url', label: 'URL', sortable: false },
+    { key: 'source', label: 'Source', sortable: true }
+  ];
+
+  function productExportRow(item, group = null) {
+    return {
+      image: item?.image_url || '',
+      title: item?.title || '',
+      sku: item?.sku || '',
+      description: item?.description || '',
+      original: formatOriginalPrice(item),
+      url: item?.url || '',
+      source: productSource(item),
+      website: group?.site || productSource(item),
+      category: group?.child || getModelLabel(item),
+      change_type: item?._changeLabel || '',
+      change_details: item?._changeDetails || ''
+    };
+  }
+
+  function applyProductTableFilters(items) {
+    let filtered = Array.isArray(items) ? [...items] : [];
+    const search = normalizeProductFilterText(state.productFilters.search);
+    if (search) {
+      filtered = filtered.filter(item => {
+        const haystack = [
+          ...PRODUCT_TABLE_COLUMNS.map(column => productFieldValue(item, column.key)),
+          getModelLabel(item)
+        ].join(' ');
+        return normalizeProductFilterText(haystack).includes(search);
+      });
+    }
+
+    const mode = String(state.productFilters.mode || 'all');
+    if (mode === 'duplicates') filtered = filtered.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1));
+    if (mode === 'unique_only') filtered = filtered.filter(item => !item?.is_duplicate && (!item?.duplicate_categories || item.duplicate_categories.length <= 1));
+    if (mode === 'priced') filtered = filtered.filter(item => productPriceNumber(item) !== null);
+    if (mode === 'missing_price') filtered = filtered.filter(item => productPriceNumber(item) === null);
+    if (mode === 'with_sku') filtered = filtered.filter(item => normalizeProductFilterText(item?.sku));
+    if (mode === 'missing_sku') filtered = filtered.filter(item => !normalizeProductFilterText(item?.sku));
+    if (mode === 'with_image') filtered = filtered.filter(item => normalizeProductFilterText(item?.image_url));
+    if (mode === 'missing_image') filtered = filtered.filter(item => !normalizeProductFilterText(item?.image_url));
+
+    const source = normalizeProductFilterText(state.productFilters.source);
+    if (source) {
+      filtered = filtered.filter(item => normalizeProductFilterText(productSource(item)) === source);
+    }
+
+    const minPrice = priceNumberFromText(state.productFilters.minPrice);
+    const maxPrice = priceNumberFromText(state.productFilters.maxPrice);
+    if (minPrice !== null) {
+      filtered = filtered.filter(item => {
+        const price = productPriceNumber(item);
+        return price !== null && price >= minPrice;
+      });
+    }
+    if (maxPrice !== null) {
+      filtered = filtered.filter(item => {
+        const price = productPriceNumber(item);
+        return price !== null && price <= maxPrice;
+      });
+    }
+
+    const sortKey = state.productFilters.sortKey;
+    if (sortKey) {
+      const dir = state.productFilters.sortDir === 'desc' ? -1 : 1;
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+      filtered.sort((a, b) => {
+        const aValue = productFieldValue(a, sortKey);
+        const bValue = productFieldValue(b, sortKey);
+        if (sortKey === 'original') {
+          const aNum = productPriceNumber(a);
+          const bNum = productPriceNumber(b);
+          if (aNum === null && bNum === null) return 0;
+          if (aNum === null) return 1;
+          if (bNum === null) return -1;
+          return (aNum - bNum) * dir;
+        }
+        return collator.compare(String(aValue || ''), String(bValue || '')) * dir;
+      });
+    }
+
+    return filtered;
+  }
+
+  function hasProductTableFilters() {
+    return Boolean(
+      normalizeProductFilterText(state.productFilters.search) ||
+      String(state.productFilters.mode || 'all') !== 'all' ||
+      normalizeProductFilterText(state.productFilters.source) ||
+      String(state.productFilters.minPrice || '').trim() ||
+      String(state.productFilters.maxPrice || '').trim() ||
+      state.productFilters.sortKey ||
+      String(state.selectedChangeView || 'all') !== 'all' ||
+      Boolean(elements.automationModelFilter?.value)
+    );
+  }
+
+  function renderProductFilterToolbar(totalCount, filteredCount, items) {
+    const mode = String(state.productFilters.mode || 'all');
+    const source = String(state.productFilters.source || '');
+    const sortValue = state.productFilters.sortKey
+      ? `${state.productFilters.sortKey}:${state.productFilters.sortDir || 'asc'}`
+      : '';
+    const sources = [...new Set(
+      (Array.isArray(items) ? items : [])
+        .map(item => String(productSource(item) || '').trim())
+        .filter(Boolean)
+    )].sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }));
+    const selectedChangeView = String(state.selectedChangeView || 'all');
+    const modelFilter = String(elements.automationModelFilter?.value || '');
+    const activeControlCount = [
+      normalizeProductFilterText(state.productFilters.search),
+      mode !== 'all' ? mode : '',
+      source,
+      String(state.productFilters.minPrice || '').trim(),
+      String(state.productFilters.maxPrice || '').trim(),
+      sortValue,
+      selectedChangeView !== 'all' ? selectedChangeView : '',
+      modelFilter
+    ].filter(Boolean).length;
+    const status = filteredCount === totalCount
+      ? `${totalCount.toLocaleString()} products`
+      : `${filteredCount.toLocaleString()} of ${totalCount.toLocaleString()} products`;
+    const option = (value, current, label) =>
+      `<option value="${escapeHtml(value)}" ${value === current ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    return `
+      <div class="automation-product-toolbar" role="search">
+        <div class="automation-product-toolbar__controls">
+          <label class="automation-product-control automation-product-control--search">
+            <span>Find products</span>
+            <input
+              type="search"
+              data-product-search
+              value="${escapeHtml(state.productFilters.search || '')}"
+              placeholder="Title, SKU, description, model or URL"
+              autocomplete="off"
+            >
+          </label>
+          <label class="automation-product-control">
+            <span>Show</span>
+            <select data-product-mode>
+              ${option('all', mode, 'All products')}
+              ${option('duplicates', mode, 'Duplicate category listings')}
+              ${option('unique_only', mode, 'Unique products only')}
+              ${option('priced', mode, 'With price')}
+              ${option('missing_price', mode, 'Missing price')}
+              ${option('with_sku', mode, 'With SKU')}
+              ${option('missing_sku', mode, 'Missing SKU')}
+              ${option('with_image', mode, 'With image')}
+              ${option('missing_image', mode, 'Missing image')}
+            </select>
+          </label>
+          <label class="automation-product-control">
+            <span>Source</span>
+            <select data-product-source>
+              ${option('', source, 'All sources')}
+              ${sources.map(value => option(value, source, value)).join('')}
+            </select>
+          </label>
+          <label class="automation-product-control">
+            <span>Min price</span>
+            <input type="number" min="0" step="0.01" inputmode="decimal" data-product-min-price
+              value="${escapeHtml(state.productFilters.minPrice || '')}" placeholder="No min">
+          </label>
+          <label class="automation-product-control">
+            <span>Max price</span>
+            <input type="number" min="0" step="0.01" inputmode="decimal" data-product-max-price
+              value="${escapeHtml(state.productFilters.maxPrice || '')}" placeholder="No max">
+          </label>
+          <label class="automation-product-control automation-product-control--sort">
+            <span>Sort</span>
+            <select data-product-sort-select>
+              ${option('', sortValue, 'Default order')}
+              ${option('title:asc', sortValue, 'Title A to Z')}
+              ${option('title:desc', sortValue, 'Title Z to A')}
+              ${option('original:asc', sortValue, 'Price low to high')}
+              ${option('original:desc', sortValue, 'Price high to low')}
+              ${option('source:asc', sortValue, 'Source A to Z')}
+            </select>
+          </label>
+          <label class="automation-product-control automation-product-control--rows">
+            <span>Rows</span>
+            <select data-product-page-size>
+              ${[50, 100, 250, 500].map(value => option(String(value), String(state.productFilters.pageSize || 100), String(value))).join('')}
+            </select>
+          </label>
+        </div>
+        <div class="automation-product-toolbar__footer">
+          <div class="automation-product-toolbar__meta" aria-live="polite">
+            <strong>${escapeHtml(status)}</strong>
+            <span>${activeControlCount ? `${activeControlCount} active control${activeControlCount === 1 ? '' : 's'}` : 'No filters applied'}</span>
+          </div>
+          <button type="button" class="btn-export automation-product-clear" data-product-clear ${hasProductTableFilters() ? '' : 'disabled'}>Reset filters</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderProductHeaderCell(column) {
+    const isSorted = state.productFilters.sortKey === column.key;
+    const ariaSort = isSorted
+      ? (state.productFilters.sortDir === 'desc' ? 'descending' : 'ascending')
+      : 'none';
+    if (!column.sortable) {
+      return `<th aria-sort="none">${escapeHtml(column.label)}</th>`;
+    }
+    return `
+      <th aria-sort="${ariaSort}">
+        <button type="button" class="automation-product-sort${isSorted ? ' is-active' : ''}" data-product-sort="${escapeHtml(column.key)}">
+          <span>${escapeHtml(column.label)}</span>
+          <span class="automation-product-sort__indicator" aria-hidden="true">${isSorted ? (state.productFilters.sortDir === 'desc' ? '&#9660;' : '&#9650;') : '&#8645;'}</span>
+        </button>
+      </th>
+    `;
+  }
+
+  function productTableSummary(totalCount, filteredCount, startIndex, endIndex) {
+    if (!totalCount) return '';
+    const range = filteredCount ? `${startIndex + 1}-${endIndex}` : '0';
+    const scopeParts = [];
+    const changeView = String(state.selectedChangeView || 'all');
+    if (changeView !== 'all') {
+      const config = CHANGE_VIEW_CONFIG.find(item => item.key === changeView);
+      scopeParts.push(config?.label || formatChangeLabel(changeView));
+    }
+    const model = String(elements.automationModelFilter?.value || '').trim();
+    if (model) scopeParts.push(model);
+    const scope = scopeParts.length ? ` in ${scopeParts.join(' / ')}` : '';
+    if (filteredCount !== totalCount) {
+      return `Showing ${range} of ${filteredCount.toLocaleString()} matching products${scope} (${totalCount.toLocaleString()} in this view).`;
+    }
+    return `Showing ${range} of ${totalCount.toLocaleString()} products${scope}.`;
+  }
+
+  function renderProductPagination(filteredCount, page, pageSize) {
+    const totalPages = Math.max(1, Math.ceil(filteredCount / pageSize));
+    if (totalPages <= 1) return '';
+    return `
+      <nav class="automation-product-pagination" aria-label="Product table pages">
+        <button type="button" class="btn-export" data-product-page="previous" ${page <= 1 ? 'disabled' : ''}>Previous</button>
+        <span>Page <strong>${page.toLocaleString()}</strong> of ${totalPages.toLocaleString()}</span>
+        <button type="button" class="btn-export" data-product-page="next" ${page >= totalPages ? 'disabled' : ''}>Next</button>
+      </nav>
+    `;
+  }
+
+  function setProductExportRows(rows) {
+    state.productExportRows = Array.isArray(rows) ? rows : [];
+    const hasRows = state.productExportRows.length > 0;
+    if (elements.automationProductsCsvBtn) elements.automationProductsCsvBtn.disabled = !hasRows;
+    if (elements.automationProductsXlsxBtn) elements.automationProductsXlsxBtn.disabled = !hasRows;
+  }
+
+  function renderProductTable(items, { groups = null } = {}) {
+    const container = elements.automationScrapedProducts;
+    if (!container) return;
+    const allItems = Array.isArray(items) ? items : [];
+    const filteredItems = applyProductTableFilters(allItems);
+    const pageSize = [50, 100, 250, 500].includes(Number(state.productFilters.pageSize))
+      ? Number(state.productFilters.pageSize)
+      : 100;
+    const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+    const page = Math.min(Math.max(1, Number(state.productFilters.page) || 1), totalPages);
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, filteredItems.length);
+    const visibleItems = filteredItems.slice(startIndex, endIndex);
+    state.productFilters.page = page;
+    state.productFilters.pageSize = pageSize;
+    const rows = filteredItems.map(item => {
+      const group = item?._verificationGroup || null;
+      return productExportRow(item, group);
+    });
+    setProductExportRows(rows);
+
+    if (!allItems.length) {
+      container.className = 'automation-products automation-products--empty';
+      container.textContent = 'No products to show.';
+      return;
+    }
+
+    container.className = 'automation-products';
+    const toolbarMarkup = renderProductFilterToolbar(allItems.length, filteredItems.length, allItems);
+    const finalSummary = productTableSummary(allItems.length, filteredItems.length, startIndex, endIndex);
+    const summaryMarkup = finalSummary ? `<div class="automation-products__summary">${escapeHtml(finalSummary)}</div>` : '';
+    const paginationMarkup = renderProductPagination(filteredItems.length, page, pageSize);
+    const groupMarkup = Array.isArray(groups) && groups.length ? `
+      <div class="automation-verification-groups">
+        ${groups.map(group => `
+          <div class="automation-model-badge">
+            <div class="automation-model-badge__name">${escapeHtml(`${group.site || 'site'} - ${group.child || 'category'}`)}</div>
+            <div class="automation-model-badge__meta">${escapeHtml(`${group.items_count || 0} products - ${group.history_id || ''}`)}</div>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    container.innerHTML = `
+      ${toolbarMarkup}
+      ${summaryMarkup}
+      ${groupMarkup}
+      ${!visibleItems.length ? `<div class="automation-products__no-match">No products match the current filters.</div>` : ''}
+      ${visibleItems.length ? `
+      <div class="automation-product-table-wrap">
+        <table class="automation-product-table">
+          <thead>
+            <tr>
+              ${PRODUCT_TABLE_COLUMNS.map(renderProductHeaderCell).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${visibleItems.map(item => {
+              const image = productImageSrc(item);
+              const title = item?.title || 'Untitled product';
+              const sku = item?.sku || '';
+              const category = item?.category || getModelLabel(item) || 'General';
+              const duplicateCats = (item?.duplicate_categories || []).filter(Boolean);
+              const showDuplicateBadge = duplicateCats.length > 1;
+              const description = compactProductText(item?.description || '');
+              const changeDetails = compactProductText(item?._changeDetails || '', 260);
+              const original = formatOriginalPrice(item);
+              const source = productSource(item);
+              return `
+                <tr>
+                  <td class="automation-product-table__image">
+                    ${image
+                      ? `<img data-product-image src="${escapeHtml(image)}" alt="" title="${escapeHtml(title)}" loading="lazy">${productImageFallback(true)}`
+                      : productImageFallback()}
+                  </td>
+                  <td class="automation-product-table__title">${escapeHtml(title)}</td>
+                  <td>${escapeHtml(sku || '-')}</td>
+                  <td class="automation-product-table__category">
+                    <span class="automation-chip">${escapeHtml(category)}</span>
+                    ${showDuplicateBadge ? `
+                      <div class="mt-1">
+                        <span class="automation-chip automation-chip--info" title="${escapeHtml(`Found in ${duplicateCats.length} categories: ${duplicateCats.join(', ')}`)}">
+                          ${escapeHtml(`${duplicateCats.length} categories`)}
+                        </span>
+                      </div>
+                    ` : ''}
+                  </td>
+                  <td class="automation-product-table__description" title="${escapeHtml([item?.description || '', item?._changeDetails || ''].filter(Boolean).join(' | '))}">
+                    ${description ? `<div>${escapeHtml(description)}</div>` : ''}
+                    ${changeDetails ? `<div class="automation-product-diff-note">${escapeHtml(changeDetails)}</div>` : ''}
+                    ${!description && !changeDetails ? '-' : ''}
+                  </td>
+                  <td>${escapeHtml(original || '-')}</td>
+                  <td>${item?.url ? `<a class="automation-product-open" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">Open</a>` : '-'}</td>
+                  <td><span class="automation-chip automation-chip--ok">${escapeHtml(source || 'parts4cells')}</span></td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${paginationMarkup}
+      ` : ''}
+    `;
+  }
+
+  function csvEscape(value) {
+    const text = String(value ?? '');
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+
+  function rowsToCsv(rows) {
+    const headers = ['image', 'title', 'sku', 'description', 'original', 'url', 'source', 'website', 'category', 'change_type', 'change_details'];
+    return [
+      headers.join(','),
+      ...rows.map(row => headers.map(header => csvEscape(row[header])).join(','))
+    ].join('\r\n');
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportTimestamp() {
+    return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  }
+
+  async function exportProductsCsv() {
+    if (!state.productExportRows.length) {
+      showAlert('warn', 'No products to export.');
+      return;
+    }
+    downloadBlob(
+      new Blob([rowsToCsv(state.productExportRows)], { type: 'text/csv;charset=utf-8;' }),
+      `automation_products_${exportTimestamp()}.csv`
+    );
+    showAlert('success', `Exported ${state.productExportRows.length} products as CSV.`);
+  }
+
+  async function exportProductsXlsx() {
+    if (!state.productExportRows.length) {
+      showAlert('warn', 'No products to export.');
+      return;
+    }
+    const button = elements.automationProductsXlsxBtn;
+    const oldText = button?.textContent || 'XLSX';
+    try {
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Exporting...';
+      }
+      const response = await fetch('/api/export/xlsx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: state.productExportRows })
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `Export failed (${response.status})`);
+      }
+      const blob = await response.blob();
+      downloadBlob(blob, `automation_products_${exportTimestamp()}.xlsx`);
+      showAlert('success', `Exported ${state.productExportRows.length} products as XLSX.`);
+    } catch (err) {
+      showAlert('error', err.message || 'XLSX export failed.');
+    } finally {
+      if (button) {
+        button.textContent = oldText;
+        button.disabled = state.productExportRows.length === 0;
+      }
+    }
+  }
+
+  function getChangeDetailsForEntry(entry, selectedChangeView = 'all') {
+    const changes = entry?.changes || {};
+    return Object.entries(changes)
+      .filter(([key]) => selectedChangeView === 'all' || key === selectedChangeView)
+      .map(([key, change]) => `${formatChangeLabel(key)}: ${formatChangeValue(key, change, 'before')} -> ${formatChangeValue(key, change, 'after')}`)
+      .join(' | ');
+  }
+
+  function changedEntryToProduct(entry, selectedChangeView = 'all') {
+    const after = entry?.after || {};
+    const before = entry?.before || {};
+    const product = { ...before, ...after };
+    const changes = entry?.changes || {};
+    const activeKeys = Object.keys(changes).filter(key => selectedChangeView === 'all' || key === selectedChangeView);
+    const firstKey = activeKeys[0] || Object.keys(changes)[0] || 'changed';
+    const priceChange = changes.price;
+    if (priceChange) {
+      product.original_formatted = priceChange.before_formatted || formatChangeValue('price', priceChange, 'before');
+      product.discounted_formatted = priceChange.after_formatted || formatChangeValue('price', priceChange, 'after');
+      product.price_formatted = product.discounted_formatted;
+      product.price_text = product.discounted_formatted;
+    }
+    product._changeLabel = selectedChangeView === 'all' ? 'Changed' : formatChangeLabel(firstKey);
+    product._changeDetails = getChangeDetailsForEntry(entry, selectedChangeView) || `${product._changeLabel} changed`;
+    return product;
+  }
+
+  function simpleDifferenceProduct(item, toneLabel) {
+    return {
+      ...(item || {}),
+      _changeLabel: toneLabel,
+      _changeDetails: `${toneLabel} item`
+    };
+  }
+
+  function getDifferenceProductRows(detail, modelFilter, selectedChangeView) {
+    const comparison = detail?.comparison || {};
+    const allChanged = filterByModel(comparison.changed || [], modelFilter);
+    const allAdded = filterByModel(comparison.added || [], modelFilter);
+    const allRemoved = filterByModel(comparison.removed || [], modelFilter);
+    const view = selectedChangeView || 'all';
+    const changed = getChangedEntriesForView(allChanged, view).map(entry => changedEntryToProduct(entry, view));
+    const added = view === 'all' || view === 'added' ? allAdded.map(item => simpleDifferenceProduct(item, 'Added')) : [];
+    const removed = view === 'all' || view === 'removed' ? allRemoved.map(item => simpleDifferenceProduct(item, 'Removed')) : [];
+    return [...changed, ...added, ...removed];
+  }
+
+  function renderScrapedProducts(detail) {
+    const container = elements.automationScrapedProducts;
+    if (!container) return;
+
+    if (!detail || !detail.run) {
+      setProductExportRows([]);
+      container.className = 'automation-products automation-products--empty';
+      container.textContent = 'Select a past run to see scraped products.';
+      return;
+    }
+
+    const modelFilter = elements.automationModelFilter?.value || '';
+    const selectedChangeView = state.selectedChangeView || 'all';
+    const allItems = Array.isArray(detail.current_history?.items) ? detail.current_history.items : [];
+    const livePreview = Boolean(detail.current_history?.is_live_preview);
+    const runTotalItems = Number(
+      detail.current_history?.items_count
+      || detail.run?.summary?.current_items
+      || detail.run?.items_count
+      || allItems.length
+      || 0
+    );
+    const isDuplicateView = selectedChangeView === 'duplicates';
+    const differenceItems = isDuplicateView ? [] : getDifferenceProductRows(detail, modelFilter, selectedChangeView);
+    const shouldShowDifferences = selectedChangeView !== 'all' && !isDuplicateView;
+    let productItems = filterByModel(allItems, modelFilter);
+    if (isDuplicateView) {
+      productItems = productItems.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1));
+    }
+    const items = shouldShowDifferences ? differenceItems : productItems;
+    const activeConfig = CHANGE_VIEW_CONFIG.find(config => config.key === selectedChangeView) || CHANGE_VIEW_CONFIG[0];
+    if (!items.length) {
+      setProductExportRows([]);
+      container.className = 'automation-products automation-products--empty';
+      container.textContent = shouldShowDifferences
+        ? (modelFilter
+          ? `No products match ${activeConfig.label.toLowerCase()} for the selected model.`
+          : `No products match ${activeConfig.label.toLowerCase()} for this run.`)
+        : (modelFilter
+          ? 'No scraped products match the selected model.'
+          : (livePreview && runTotalItems
+            ? `Live preview products are still loading. Run total is ${runTotalItems} item${runTotalItems === 1 ? '' : 's'} so far.`
+            : 'No scraped products were saved for this run yet.'));
+      return;
+    }
+
+    container.className = 'automation-products';
+    renderProductTable(items);
+  }
+
+  function resetProductFilters() {
+    const pageSize = Number(state.productFilters.pageSize) || 100;
+    state.productFilters = {
+      search: '',
+      mode: 'all',
+      source: '',
+      minPrice: '',
+      maxPrice: '',
+      sortKey: '',
+      sortDir: 'asc',
+      page: 1,
+      pageSize
+    };
+  }
+
+  function resetAllProductFilters() {
+    resetProductFilters();
+    state.selectedChangeView = 'all';
+    if (elements.automationModelFilter) elements.automationModelFilter.value = '';
+  }
+
+  function restoreProductFilterFocus(focusState) {
+    if (!focusState || !elements.automationScrapedProducts) return;
+    if (focusState.kind === 'search') {
+      const input = elements.automationScrapedProducts.querySelector('[data-product-search]');
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      try {
+        input.setSelectionRange(focusState.start, focusState.end);
+      } catch { }
+      return;
+    }
+    if (focusState.kind !== 'control') return;
+    const input = elements.automationScrapedProducts.querySelector(focusState.selector);
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    try {
+      input.setSelectionRange(focusState.start, focusState.end);
+    } catch { }
+  }
+
+  function scheduleProductTableRender(focusState = null) {
+    window.clearTimeout(state.productFilterTimer);
+    state.productFilterTimer = window.setTimeout(() => {
+      renderRunDetail(state.runDetail);
+      window.requestAnimationFrame(() => restoreProductFilterFocus(focusState));
+    }, 220);
+  }
+
+  function renderVerificationProducts(payload) {
+    const container = elements.automationScrapedProducts;
+    if (!container) return;
+    const groups = Array.isArray(payload?.groups) ? payload.groups : [];
+    const items = groups.flatMap(group => {
+      const groupItems = Array.isArray(group.items) ? group.items : [];
+      return groupItems.map(item => ({ ...item, _verificationGroup: group }));
+    });
+    if (!items.length) {
+      setProductExportRows([]);
+      container.className = 'automation-products automation-products--empty';
+      container.textContent = 'No verification products are available yet.';
+      return;
+    }
+
+    renderProductTable(items, { groups });
+  }
+
+  async function loadVerificationProducts({ silent = false } = {}) {
+    try {
+      const payload = await api('/api/automation/verification-products');
+      renderVerificationProducts(payload);
+      if (!state.selectedRunId && elements.automationRunDetail) {
+        elements.automationRunDetail.className = 'automation-run-detail automation-run-detail--empty';
+        elements.automationRunDetail.textContent = 'Verification products are shown above. Run an automation job to compare differences.';
+      }
+    } catch (err) {
+      if (!silent) showAlert('error', err.message || 'Failed to load verification products.');
+    }
+  }
+
   function renderRunDetail(detail) {
     const container = elements.automationRunDetail;
     const modelFilter = elements.automationModelFilter?.value || '';
@@ -689,10 +2003,13 @@
     state.runDetail = detail;
 
     if (!detail || !detail.run) {
+      renderReviewFilters(null);
+      renderScrapedProducts(null);
       container.className = 'automation-run-detail automation-run-detail--empty';
-      container.textContent = 'Select a run to load its changes.';
+      container.textContent = 'Select a run to load its differences.';
       return;
     }
+    renderScrapedProducts(detail);
 
     const comparison = detail.comparison || { summary: {}, changed: [], added: [], removed: [] };
     const summary = comparison.summary || {};
@@ -700,29 +2017,109 @@
     const runStatus = String(run.status || 'idle').toLowerCase();
     const runSummary = run.summary || {};
     const targetCount = Number(runSummary.total_targets || runSummary.target_count || (run.target_urls || []).length || 0);
+    const completedTargets = Number(runSummary.completed_targets || 0);
+    const timing = getRunTiming(run);
+    const liveRunStatus = ['running', 'resuming'].includes(runStatus);
+    const currentRunStatus = isCurrentRunStatus(runStatus);
+    const completionLabel = liveRunStatus
+      ? 'Progress'
+      : runStatus === 'paused'
+        ? 'Paused'
+        : runStatus === 'interrupted'
+          ? 'Interrupted'
+          : 'Completed';
+    const completionValue = run.completed_at
+      ? formatDateTime(run.completed_at)
+      : runStatus === 'paused' && runSummary.paused_at
+        ? formatDateTime(runSummary.paused_at)
+        : liveRunStatus
+          ? 'In progress'
+          : runStatus === 'interrupted'
+            ? 'Waiting to resume'
+            : 'Not completed';
+    const comparisonPending = Boolean(detail.current_history?.is_live_preview)
+      && currentRunStatus;
     const models = Array.isArray(detail.models) ? detail.models : [];
+    const allProducts = Array.isArray(detail.current_history?.items) ? detail.current_history.items : [];
     const allChanged = filterByModel(comparison.changed || [], modelFilter);
     const allAdded = filterByModel(comparison.added || [], modelFilter);
     const allRemoved = filterByModel(comparison.removed || [], modelFilter);
-    const changeCounts = getChangeViewCounts(allChanged, allAdded, allRemoved);
+    const changeCounts = getChangeViewCounts(allChanged, allAdded, allRemoved, allProducts);
     const selectedChangeView = state.selectedChangeView || 'all';
+    renderReviewFilters(comparisonPending ? null : changeCounts, selectedChangeView, modelFilter);
     const changed = getChangedEntriesForView(allChanged, selectedChangeView);
     const added = selectedChangeView === 'all' || selectedChangeView === 'added' ? allAdded : [];
     const removed = selectedChangeView === 'all' || selectedChangeView === 'removed' ? allRemoved : [];
     const activeViewLabel = (CHANGE_VIEW_CONFIG.find(config => config.key === selectedChangeView) || CHANGE_VIEW_CONFIG[0]).label;
     const emptyMessage = selectedChangeView === 'all'
-      ? (modelFilter ? 'No changes match the selected model.' : 'No changes were found for this run.')
+      ? (comparisonPending
+        ? 'The product checkpoint is safe. Differences will be calculated when this run completes.'
+        : modelFilter ? 'No changes match the selected model.' : 'No changes were found for this run.')
       : (modelFilter
         ? `No ${activeViewLabel.toLowerCase()} match the selected model.`
         : `No ${activeViewLabel.toLowerCase()} were found for this run.`);
+
+    const totalHarvested = Number(runSummary.current_items || run.items_count || summary.current_items || 0);
+    const currentPhase = Number(runSummary.phase || (liveRunStatus ? 1 : 3));
+    const isCompleted = !liveRunStatus;
+
+    let phaseName = getRunPhaseName(run);
+    let activeSpeed = timing.rateLabel || 'Done';
+    let activeEta = timing.etaLabel || 'Done';
+    let activeRemaining = '0 items';
+    let activeProgressText = `${totalHarvested > 0 ? totalHarvested.toLocaleString() : '0'} products`;
+    let activeProgressPct = getRunProgressPercent(run);
+    let stepCountLabel = 'Categories Done';
+    let stepCountValue = `${completedTargets} / ${targetCount}`;
+
+    if (liveRunStatus) {
+      if (currentPhase === 2) {
+        phaseName = getRunPhaseName(run);
+        const p2Done = Number(runSummary.phase2_completed || totalHarvested || 0);
+        const p2Total = Number(runSummary.phase2_total || totalHarvested || 1);
+        activeProgressPct = getRunProgressPercent(run);
+        activeProgressText = `${p2Done.toLocaleString()} / ${p2Total.toLocaleString()} products`;
+        activeSpeed = runSummary.phase2_speed || (timing.itemsPerMin ? `${timing.itemsPerMin} items/min` : '~440 items/min');
+        activeEta = runSummary.phase2_eta || timing.etaLabel || '1.4m';
+        activeRemaining = `${Math.max(0, p2Total - p2Done).toLocaleString()} products`;
+        stepCountLabel = 'Products Enriched';
+        stepCountValue = `${p2Done.toLocaleString()} / ${p2Total.toLocaleString()}`;
+      } else if (currentPhase === 1) {
+        phaseName = getRunPhaseName(run);
+        const p1Done = Number(runSummary.phase1_completed || completedTargets || 0);
+        const p1Total = Number(runSummary.phase1_total || targetCount || 1);
+        activeProgressPct = getRunProgressPercent(run);
+        activeProgressText = `${p1Done} / ${p1Total} categories`;
+        activeSpeed = runSummary.phase1_speed || (timing.targetsPerMin ? `${timing.targetsPerMin} cats/min` : '~45 cats/min');
+        activeEta = runSummary.phase1_eta || timing.etaLabel || '20.0m';
+        activeRemaining = `${Math.max(0, p1Total - p1Done)} categories`;
+        stepCountLabel = 'Categories Done';
+        stepCountValue = `${p1Done} / ${p1Total}`;
+      } else {
+        phaseName = getRunPhaseName(run);
+        activeSpeed = currentPhase >= 4 ? 'Writing database' : 'Validating';
+        activeEta = 'Final step';
+        activeRemaining = currentPhase >= 4 ? 'Saving snapshot' : 'Preparing comparison';
+        activeProgressText = `${totalHarvested.toLocaleString()} products collected`;
+        activeProgressPct = getRunProgressPercent(run);
+        stepCountLabel = 'Status';
+        stepCountValue = currentPhase >= 4 ? 'Saving SQLite' : 'Comparing';
+      }
+    }
 
     container.className = 'automation-run-detail';
     container.innerHTML = `
       <div class="automation-detail-summary">
         <div class="automation-detail-card">
-          <div class="automation-detail-card__value">${escapeHtml(String(summary.current_items || run.items_count || 0))}</div>
-          <div class="automation-detail-card__label">Items Scraped</div>
+          <div class="automation-detail-card__value">${escapeHtml(totalHarvested > 0 ? totalHarvested.toLocaleString() : '0')}</div>
+          <div class="automation-detail-card__label">${liveRunStatus ? 'Harvested Products' : 'Unique Products'}</div>
         </div>
+        ${Number(summary.current_rows || 0) > totalHarvested ? `
+          <div class="automation-detail-card">
+            <div class="automation-detail-card__value">${escapeHtml(Number(summary.current_rows).toLocaleString())}</div>
+            <div class="automation-detail-card__label">Scraped Rows</div>
+          </div>
+        ` : ''}
         <div class="automation-detail-card">
           <div class="automation-detail-card__value">${escapeHtml(String(summary.changed || 0))}</div>
           <div class="automation-detail-card__label">Changed</div>
@@ -735,29 +2132,79 @@
           <div class="automation-detail-card__value">${escapeHtml(String(summary.removed || 0))}</div>
           <div class="automation-detail-card__label">Removed</div>
         </div>
+        ${liveRunStatus ? `
+          <div class="automation-detail-card">
+            <div class="automation-detail-card__value" style="color:var(--primary); font-weight:700;">${escapeHtml(activeEta)}</div>
+            <div class="automation-detail-card__label">Total Time Left</div>
+          </div>
+          <div class="automation-detail-card">
+            <div class="automation-detail-card__value">${escapeHtml(stepCountValue)}</div>
+            <div class="automation-detail-card__label">${escapeHtml(stepCountLabel)}</div>
+          </div>
+        ` : ''}
       </div>
-      <div class="automation-job__meta" style="margin-bottom:1rem">
-        <div class="automation-meta">
-          <span class="automation-meta__label">Run Status</span>
-          <span class="automation-meta__value">${statusChip(run.status)}</span>
+      ${Number(summary.excluded_previous_non_products || 0) || Number(summary.duplicate_current_rows || 0) || Number(summary.out_of_scope_previous_products || 0) ? `
+        <div class="automation-comparison-note" role="status">
+          ${escapeHtml(
+            [
+              Number(summary.excluded_previous_non_products || 0)
+                ? `${summary.excluded_previous_non_products} previous category/navigation rows excluded`
+                : '',
+              Number(summary.duplicate_current_rows || 0)
+                ? `${summary.duplicate_current_rows} repeated current rows consolidated`
+                : ''
+              ,
+              Number(summary.out_of_scope_previous_products || 0)
+                ? `${summary.out_of_scope_previous_products} previous product outside this run's target scope`
+                : ''
+            ].filter(Boolean).join(' - ')
+          )}
         </div>
+      ` : ''}
+      <div class="automation-job__meta" style="margin-bottom:1rem">
         <div class="automation-meta">
           <span class="automation-meta__label">Started</span>
           <span class="automation-meta__value">${escapeHtml(formatDateTime(run.started_at))}</span>
         </div>
         <div class="automation-meta">
-          <span class="automation-meta__label">Completed</span>
-          <span class="automation-meta__value">${escapeHtml(run.completed_at ? formatDateTime(run.completed_at) : (runStatus === 'running' ? 'In progress' : 'Pending'))}</span>
+          <span class="automation-meta__label">${escapeHtml(completionLabel)}</span>
+          <span class="automation-meta__value">${escapeHtml(completionValue)}</span>
         </div>
         <div class="automation-meta">
           <span class="automation-meta__label">Targets</span>
           <span class="automation-meta__value">${escapeHtml(String(targetCount))}</span>
         </div>
-      </div>
-      <div class="automation-job__meta" style="margin-bottom:1rem">
+        ${liveRunStatus ? `
+          <div class="automation-meta">
+            <span class="automation-meta__label">Progress</span>
+            <span class="automation-meta__value">
+              ${escapeHtml(activeProgressText)} (${activeProgressPct}%)
+              <div class="phase-pill__bar" style="height:4px; width:100%; margin-top:5px;"><div class="phase-pill__fill" style="width:${activeProgressPct}%;"></div></div>
+            </span>
+          </div>
+          <div class="automation-meta">
+            <span class="automation-meta__label">Elapsed</span>
+            <span class="automation-meta__value">${escapeHtml(timing.elapsedLabel)}</span>
+          </div>
+          <div class="automation-meta">
+            <span class="automation-meta__label">Remaining</span>
+            <span class="automation-meta__value">${escapeHtml(activeRemaining)}</span>
+          </div>
+          <div class="automation-meta">
+            <span class="automation-meta__label">Speed</span>
+            <span class="automation-meta__value">${escapeHtml(activeSpeed)}</span>
+          </div>
+          <div class="automation-meta">
+            <span class="automation-meta__label">Estimated Finish</span>
+            <span class="automation-meta__value">${escapeHtml(timing.finishLabel || (activeEta + ' remaining'))}</span>
+          </div>
+        ` : ''}
         <div class="automation-meta">
           <span class="automation-meta__label">Current Session</span>
-          <span class="automation-meta__value">${escapeHtml(detail.current_history?.id || 'N/A')}</span>
+          <span class="automation-meta__value">${escapeHtml(
+            detail.current_history?.id
+            || (comparisonPending ? `Live checkpoint (${runSummary.current_items || run.items_count || 0} products)` : 'N/A')
+          )}</span>
         </div>
         <div class="automation-meta">
           <span class="automation-meta__label">Previous Session</span>
@@ -774,11 +2221,36 @@
           `).join('')}
         </div>
       ` : ''}
-      ${renderChangeFilterBar(changeCounts, selectedChangeView, modelFilter)}
+      ${selectedChangeView === 'duplicates' ? `
+        <div class="automation-change-group">
+          <div class="automation-change-group__title">Duplicate Category Listings (${changeCounts.duplicates.toLocaleString()})</div>
+          <div class="alert alert-info py-2 px-3 mb-3 d-flex justify-content-between align-items-center" style="font-size:0.9rem; border-radius:8px;">
+            <span>Showing products that appear in multiple category listings.</span>
+            <button type="button" class="btn btn-sm btn-primary" onclick="if(window.switchToTab) window.switchToTab('table-view');">Open Full Products Table</button>
+          </div>
+          <div class="automation-change-list">
+            ${allProducts.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1)).slice(0, 100).map(item => `
+              <div class="automation-change">
+                <div class="automation-change__model">${escapeHtml(item.category || getModelLabel(item) || 'General')}</div>
+                <div class="automation-change__top">
+                  <div class="automation-change__title">${escapeHtml(item.title || 'Untitled Item')}</div>
+                  ${item.url ? `<a class="automation-inline-link" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">Open</a>` : ''}
+                </div>
+                <div class="automation-change__chips">
+                  <span class="automation-chip automation-chip--info">${escapeHtml(`${item.duplicate_count || (item.duplicate_categories || []).length || 2} categories`)}</span>
+                  ${(item.duplicate_categories || []).map(cat => `<span class="automation-chip">${escapeHtml(cat)}</span>`).join('')}
+                  ${item.sku ? `<span class="automation-chip">SKU: ${escapeHtml(item.sku)}</span>` : ''}
+                  ${item.discounted_formatted || item.original_formatted ? `<span class="automation-chip automation-chip--warn">${escapeHtml(item.discounted_formatted || item.original_formatted)}</span>` : ''}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
       ${changed.length ? `<div class="automation-change-group"><div class="automation-change-group__title">${escapeHtml(selectedChangeView === 'all' ? `Changed Items (${changed.length})` : `${activeViewLabel} (${changed.length})`)}</div><div class="automation-change-list">${changed.slice(0, 120).map(renderChangedEntry).join('')}</div></div>` : ''}
       ${added.length ? `<div class="automation-change-group"><div class="automation-change-group__title">Added Items (${added.length})</div><div class="automation-change-list">${added.slice(0, 120).map(item => renderSimpleItem(item, 'Added')).join('')}</div></div>` : ''}
       ${removed.length ? `<div class="automation-change-group"><div class="automation-change-group__title">Removed Items (${removed.length})</div><div class="automation-change-list">${removed.slice(0, 120).map(item => renderSimpleItem(item, 'Removed')).join('')}</div></div>` : ''}
-      ${!changed.length && !added.length && !removed.length ? `<div class="automation-run-detail--empty" style="min-height:unset;border:none;padding:0">${escapeHtml(emptyMessage)}</div>` : ''}
+      ${selectedChangeView !== 'duplicates' && !changed.length && !added.length && !removed.length ? `<div class="automation-run-detail--empty" style="min-height:unset;border:none;padding:0">${escapeHtml(emptyMessage)}</div>` : ''}
     `;
   }
 
@@ -791,35 +2263,95 @@
     if (models.some(model => model.model === currentValue)) {
       select.value = currentValue;
     }
+    select.disabled = !detail?.run;
   }
   async function loadRunDetail(runId, { silent = false } = {}) {
     if (!runId) return;
+    const requestedRunId = Number(runId);
+    const requestedSite = state.activeSite;
+    const requestId = ++state.runDetailRequestId;
     try {
-      if (!silent) setLoading(true);
+      if (!silent) {
+        setLoading(true);
+        if (Number(state.selectedRunId) !== requestedRunId || !state.runDetail) {
+          renderInspectorSkeleton();
+          renderProductsSkeleton();
+        }
+      }
       const detail = await api(`/api/automation/runs/${encodeURIComponent(runId)}`);
-      state.selectedRunId = Number(runId);
-      populateModelFilter(detail);
-      renderRunDetail(detail);
-      renderRuns(state.runs);
+      if (requestId !== state.runDetailRequestId || state.activeSite !== requestedSite || Number(state.selectedRunId) !== requestedRunId) return;
+      if (!siteKeyMatches(detail?.run?.scraper_key)) {
+        state.selectedRunId = null;
+        preserveLiveScroll(() => {
+          populateModelFilter(null);
+          renderRunDetail(null);
+        });
+        return;
+      }
+      state.selectedRunId = requestedRunId;
+      state.lastRunDetailFetchAt = Date.now();
+      if (silent && isEditingProductFilters()) {
+        state.runDetail = detail;
+        preserveLiveScroll(() => renderRuns(state.runs));
+      } else {
+        preserveLiveScroll(() => {
+          populateModelFilter(detail);
+          renderRunDetail(detail);
+          renderRuns(state.runs);
+        });
+      }
     } catch (err) {
-      showAlert('error', err.message || 'Failed to load run detail.');
+      if (requestId === state.runDetailRequestId) {
+        renderRunDetail(null);
+        showAlert('error', err.message || 'Failed to load run detail.', 0);
+      }
     } finally {
       if (!silent) setLoading(false);
     }
   }
 
   async function loadRuns(jobId = state.selectedJobId, { silent = false } = {}) {
+    const requestedSite = state.activeSite;
+    const requestedJobId = jobId ? Number(jobId) : null;
+    const requestId = ++state.runsRequestId;
     try {
-      const query = jobId ? `?job_id=${encodeURIComponent(jobId)}&limit=25` : '?limit=25';
-      if (!silent) setLoading(true);
-      const data = await api(`/api/automation/runs${query}`);
-      const runs = collapseRunsByJob(data.runs || []);
-      renderRuns(runs);
+      const params = new URLSearchParams({
+        limit: '50',
+        scraper_key: state.activeSite || 'xcell',
+        include_models: '0'
+      });
+      if (jobId) params.set('job_id', String(jobId));
+      if (!silent) {
+        setLoading(true);
+        if (!state.runs.length) {
+          renderRunsSkeleton();
+        }
+      }
+      const data = await api(`/api/automation/runs?${params.toString()}`);
+      if (requestId !== state.runsRequestId || state.activeSite !== requestedSite || (requestedJobId !== null && Number(state.selectedJobId) !== requestedJobId)) return;
+      const runs = filterRunsByActiveSite(data.runs || []);
+      if (silent) {
+        preserveLiveScroll(() => {
+          renderRuns(runs);
+          renderJobs(state.jobs);
+        });
+      } else {
+        renderRuns(runs);
+        renderJobs(state.jobs);
+      }
       if (state.selectedRunId && !runs.some(run => Number(run.id) === Number(state.selectedRunId))) {
         state.selectedRunId = null;
       }
       if (state.selectedRunId) {
-        await loadRunDetail(state.selectedRunId, { silent: true });
+        const selectedRun = runs.find(run => Number(run.id) === Number(state.selectedRunId));
+        const loadedRun = state.runDetail?.run;
+        const statusChanged = selectedRun && loadedRun
+          && String(selectedRun.status || '') !== String(loadedRun.status || '');
+        const detailExpired = selectedRun && isRunningStatus(selectedRun.status)
+          && Date.now() - state.lastRunDetailFetchAt >= LIVE_DETAIL_REFRESH_MS;
+        if (!loadedRun || !silent || statusChanged || detailExpired) {
+          await loadRunDetail(state.selectedRunId, { silent: true });
+        }
       } else if (runs.length) {
         state.selectedRunId = Number(runs[0].id);
         await loadRunDetail(state.selectedRunId, { silent: true });
@@ -827,25 +2359,45 @@
         renderRunDetail(null);
       }
     } catch (err) {
-      showAlert('error', err.message || 'Failed to load automation runs.');
+      if (requestId === state.runsRequestId) {
+        if (!state.runs.length && elements.automationRuns) {
+          elements.automationRuns.innerHTML = '<div class="automation-empty-state automation-error-state" role="alert"><div class="automation-run__title">Runs could not be loaded</div><button type="button" class="btn-export" data-action="retry-runs">Retry</button></div>';
+        }
+        showAlert('error', err.message || 'Failed to load automation runs.', 0);
+      }
     } finally {
       if (!silent) setLoading(false);
     }
   }
 
   async function loadJobs({ silent = false } = {}) {
+    const requestId = ++state.jobsRequestId;
     try {
       if (!silent) setLoading(true);
       const data = await api('/api/automation/jobs');
-      renderOverview(data.overview || {});
-      renderJobs(data.jobs || []);
-      if (state.selectedJobId && !(data.jobs || []).some(job => Number(job.id) === Number(state.selectedJobId))) {
+      if (requestId !== state.jobsRequestId) return;
+      state.allJobs = Array.isArray(data.jobs) ? data.jobs : [];
+      const jobs = filterJobsByActiveSite(state.allJobs);
+      if (state.selectedJobId && !jobs.some(job => Number(job.id) === Number(state.selectedJobId))) {
         state.selectedJobId = null;
       }
-      renderJobs(data.jobs || []);
+      if (silent) {
+        preserveLiveScroll(() => {
+          renderOverview(data.overview || {});
+          renderJobs(jobs);
+        });
+      } else {
+        renderOverview(data.overview || {});
+        renderJobs(jobs);
+      }
       await loadRuns(state.selectedJobId, { silent: true });
     } catch (err) {
-      showAlert('error', err.message || 'Failed to load automation jobs.');
+      if (requestId === state.jobsRequestId) {
+        if (!state.allJobs.length && elements.automationJobs) {
+          elements.automationJobs.innerHTML = '<div class="automation-empty-state automation-error-state" role="alert"><div class="automation-job__title">Jobs could not be loaded</div><button type="button" class="btn-export" data-action="retry-jobs">Retry</button></div>';
+        }
+        showAlert('error', err.message || 'Failed to load automation jobs.', 0);
+      }
     } finally {
       if (!silent) setLoading(false);
     }
@@ -897,7 +2449,7 @@
         body: JSON.stringify(payload)
       });
       const successMessage = scopeChangedWhileEditing && !hasFreshDiscovery
-        ? 'Automation job updated. Cached links were cleared; discover or run the job to refresh targets.'
+        ? 'Automation job updated. Cached links were cleared; update targets from Menu Map when needed.'
         : wasEditing
           ? 'Automation job updated.'
           : 'Automation job saved.';
@@ -922,9 +2474,9 @@
     if (elements.automationMaxPages) elements.automationMaxPages.value = String(job.max_pages || 10);
     if (elements.automationDelayMs) elements.automationDelayMs.value = String(job.delay_ms || 50);
     if (elements.automationEnabled) elements.automationEnabled.checked = Boolean(job.enabled);
-    if (elements.automationAutoDiscover) elements.automationAutoDiscover.checked = Boolean(job.auto_discover);
+    if (elements.automationAutoDiscover) elements.automationAutoDiscover.checked = false;
     if (elements.automationParallel) elements.automationParallel.checked = Boolean(job.use_parallel);
-    if (elements.automationEnrich) elements.automationEnrich.checked = Boolean(job.enrich_details);
+    if (elements.automationEnrich) elements.automationEnrich.checked = job.enrich_details !== undefined && job.enrich_details !== null ? Boolean(job.enrich_details) : true;
     state.loadedFingerprint = currentFingerprint();
     state.discovery = normalizeDiscovery({
       query: job.category_query || '',
@@ -938,22 +2490,46 @@
     syncFormMode();
   }
 
+  async function selectJob(jobId, { edit = false, silent = false } = {}) {
+    const job = state.jobs.find(item => Number(item.id) === Number(jobId));
+    if (!job || !siteKeyMatches(job.scraper_key)) return;
+    state.selectedJobId = Number(jobId);
+    state.selectedRunId = null;
+    state.selectedChangeView = 'all';
+    state.lastRunDetailFetchAt = 0;
+    resetProductFilters();
+    if (edit) {
+      const detail = await api(`/api/automation/jobs/${encodeURIComponent(jobId)}`);
+      if (!detail?.job || !siteKeyMatches(detail.job.scraper_key)) return;
+      populateForm(detail.job);
+      openJobEditor();
+    }
+    populateModelFilter(null);
+    renderRunDetail(null);
+    renderJobs(state.jobs);
+    await loadRuns(jobId, { silent });
+  }
+
   async function handleJobAction(action, jobId) {
     const job = state.jobs.find(item => Number(item.id) === Number(jobId));
     if (!job && action !== 'delete') return;
 
     try {
       if (action === 'edit') {
-        state.selectedJobId = Number(jobId);
-        populateForm(job);
-        renderJobs(state.jobs);
-        await loadRuns(jobId, { silent: false });
+        await selectJob(jobId, { edit: true, silent: false });
         return;
       }
 
       if (action === 'run') {
-        await api(`/api/automation/jobs/${encodeURIComponent(jobId)}/run`, { method: 'POST', body: JSON.stringify({}) });
-        showAlert('success', 'Automation run queued.');
+        state.selectedJobId = Number(jobId);
+        const data = await api(`/api/automation/jobs/${encodeURIComponent(jobId)}/run`, { method: 'POST', body: JSON.stringify({}) });
+        if (data.resumed && data.run_id) {
+          state.selectedRunId = Number(data.run_id);
+          state.lastRunDetailFetchAt = 0;
+          showAlert('success', 'Existing run resumed from its saved checkpoint.');
+        } else {
+          showAlert('success', 'New automation run queued.');
+        }
       } else if (action === 'refresh') {
         setLoading(true);
         const data = await api(`/api/automation/jobs/${encodeURIComponent(jobId)}/refresh-targets`, { method: 'POST', body: JSON.stringify({}) });
@@ -969,9 +2545,10 @@
         showAlert('info', job.enabled ? 'Automation job paused.' : 'Automation job enabled.');
       } else if (action === 'delete') {
         if (!window.confirm('Delete this automation job and its run history?')) return;
-        const res = await fetch(`/api/automation/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
-        const payload = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(payload.error || 'Failed to delete automation job.');
+        await api(`/api/automation/jobs/${encodeURIComponent(jobId)}`, {
+          method: 'DELETE',
+          headers: { 'X-Confirm-Destructive': 'permanently-delete' }
+        });
         showAlert('info', 'Automation job deleted.');
         if (Number(state.selectedJobId) === Number(jobId)) {
           resetForm();
@@ -999,6 +2576,18 @@
   }
 
   function bindEvents() {
+    elements.automationSupplierTabs?.addEventListener('click', event => {
+      const tab = event.target.closest('[data-site-key]');
+      if (!tab) return;
+      selectSupplier(tab.dataset.siteKey, { silent: false });
+    });
+
+    window.addEventListener('popstate', () => {
+      selectSupplier(initialSupplierSite(), { silent: false, updateUrl: false });
+    });
+
+    window.addEventListener('resize', syncSupplierTabs);
+
     elements.automationSite?.addEventListener('change', () => {
       const suggested = SITE_ROOTS[elements.automationSite.value] || '';
       if (!elements.automationRootUrl.value || Object.values(SITE_ROOTS).includes(elements.automationRootUrl.value)) {
@@ -1019,9 +2608,11 @@
     elements.automationRootUrl?.addEventListener('input', resetDiscovery);
     elements.automationDiscoverBtn?.addEventListener('click', discoverTargets);
     elements.automationSaveBtn?.addEventListener('click', saveJob);
-    elements.automationResetBtn?.addEventListener('click', resetForm);
+    elements.automationResetBtn?.addEventListener('click', closeJobEditor);
     elements.automationIncludeAllBtn?.addEventListener('click', () => setAllDiscoveryTargetsActive(true));
     elements.automationSkipAllBtn?.addEventListener('click', () => setAllDiscoveryTargetsActive(false));
+    elements.automationProductsCsvBtn?.addEventListener('click', exportProductsCsv);
+    elements.automationProductsXlsxBtn?.addEventListener('click', exportProductsXlsx);
 
     elements.automationDiscoveredTargets?.addEventListener('click', event => {
       const button = event.target.closest('[data-action="toggle-target"]');
@@ -1031,14 +2622,89 @@
 
     elements.automationJobs?.addEventListener('click', event => {
       const button = event.target.closest('[data-action]');
-      if (!button) return;
-      handleJobAction(button.dataset.action, button.dataset.jobId);
+      if (button) {
+        if (button.dataset.action === 'retry-jobs') {
+          loadJobs({ silent: false });
+          return;
+        }
+        handleJobAction(button.dataset.action, button.dataset.jobId);
+        return;
+      }
+      const jobCard = event.target.closest('[data-job-id]');
+      if (!jobCard) return;
+      selectJob(jobCard.dataset.jobId, { silent: false });
     });
 
-    elements.automationRuns?.addEventListener('click', event => {
-      const runButton = event.target.closest('[data-run-id]');
-      if (!runButton) return;
-      state.selectedRunId = Number(runButton.dataset.runId);
+    elements.automationRuns?.addEventListener('click', async event => {
+      const retryButton = event.target.closest('[data-action="retry-runs"]');
+      if (retryButton) {
+        await loadRuns(state.selectedJobId, { silent: false });
+        return;
+      }
+      const pauseBtn = event.target.closest('[data-action="pause-run"]');
+      if (pauseBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const runId = pauseBtn.dataset.runId;
+        try {
+          await api(`/api/automation/runs/${encodeURIComponent(runId)}/pause`, { method: 'POST', body: JSON.stringify({}) });
+          showAlert('info', 'Run pause requested. Active browser pages will finish before the worker stops.');
+          await loadRuns(state.selectedJobId, { silent: true });
+          if (Number(state.selectedRunId) === Number(runId)) {
+            await loadRunDetail(runId, { silent: true });
+          }
+        } catch (err) {
+          showAlert('error', err.message || 'Failed to pause run.');
+        }
+        return;
+      }
+      const resumeBtn = event.target.closest('[data-action="resume-run"]');
+      if (resumeBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const runId = resumeBtn.dataset.runId;
+        try {
+          await api(`/api/automation/runs/${encodeURIComponent(runId)}/resume`, { method: 'POST', body: JSON.stringify({}) });
+          showAlert('success', 'Run resumed from its saved checkpoint.');
+          state.selectedRunId = Number(runId);
+          state.lastRunDetailFetchAt = 0;
+          await loadRuns(state.selectedJobId, { silent: true });
+          await loadRunDetail(runId, { silent: true });
+        } catch (err) {
+          showAlert('error', err.message || 'Failed to resume run.');
+        }
+        return;
+      }
+      const deleteBtn = event.target.closest('[data-action="delete"]');
+      if (deleteBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const runId = deleteBtn.dataset.runId;
+        if (window.confirm('Are you sure you want to delete this past run?')) {
+          try {
+            await api(`/api/automation/runs/${encodeURIComponent(runId)}/delete`, {
+              method: 'POST',
+              headers: { 'X-Confirm-Destructive': 'permanently-delete' }
+            });
+            showAlert('success', 'Run deleted successfully');
+            if (Number(state.selectedRunId) === Number(runId)) {
+              state.selectedRunId = null;
+            }
+            await loadRuns(null, { silent: false });
+          } catch (err) {
+            showAlert('error', err.message || 'Failed to delete run');
+          }
+        }
+        return;
+      }
+
+      const runCard = event.target.closest('[data-run-id]');
+      if (!runCard) return;
+      if (Number(state.selectedRunId) !== Number(runCard.dataset.runId)) {
+        resetProductFilters();
+      }
+      state.selectedRunId = Number(runCard.dataset.runId);
+      state.lastRunDetailFetchAt = 0;
       loadRunDetail(state.selectedRunId, { silent: false });
     });
 
@@ -1046,27 +2712,151 @@
       const filterButton = event.target.closest('[data-change-view]');
       if (!filterButton) return;
       state.selectedChangeView = String(filterButton.dataset.changeView || 'all');
+      state.productFilters.page = 1;
       renderRunDetail(state.runDetail);
     });
 
+    elements.automationReviewFilters?.addEventListener('click', event => {
+      const filterButton = event.target.closest('[data-change-view]');
+      if (!filterButton) return;
+      const changeView = String(filterButton.dataset.changeView || 'all');
+      state.selectedChangeView = changeView;
+      state.productFilters.page = 1;
+      // Duplicate Listings lives in the Products Table tab — auto-switch there
+      if (changeView === 'duplicates' && typeof window.switchToTab === 'function') {
+        window.switchToTab('table-view');
+      }
+      renderRunDetail(state.runDetail);
+    });
+
+    elements.automationScrapedProducts?.addEventListener('click', event => {
+      const clearButton = event.target.closest('[data-product-clear]');
+      if (clearButton) {
+        resetAllProductFilters();
+        renderRunDetail(state.runDetail);
+        return;
+      }
+
+      const pageButton = event.target.closest('[data-product-page]');
+      if (pageButton && !pageButton.disabled) {
+        const direction = String(pageButton.dataset.productPage || '');
+        const currentPage = Math.max(1, Number(state.productFilters.page) || 1);
+        state.productFilters.page = direction === 'previous' ? Math.max(1, currentPage - 1) : currentPage + 1;
+        renderRunDetail(state.runDetail);
+        const tableWrap = elements.automationScrapedProducts?.querySelector('.automation-product-table-wrap');
+        if (tableWrap) tableWrap.scrollTop = 0;
+        return;
+      }
+
+      const sortButton = event.target.closest('[data-product-sort]');
+      if (sortButton) {
+        const key = String(sortButton.dataset.productSort || '').trim();
+        if (key) {
+          if (state.productFilters.sortKey === key) {
+            state.productFilters.sortDir = state.productFilters.sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            state.productFilters.sortKey = key;
+            state.productFilters.sortDir = 'asc';
+          }
+          state.productFilters.page = 1;
+          renderRunDetail(state.runDetail);
+        }
+        return;
+      }
+
+      const filterButton = event.target.closest('[data-change-view]');
+      if (!filterButton) return;
+      state.selectedChangeView = String(filterButton.dataset.changeView || 'all');
+      state.productFilters.page = 1;
+      renderRunDetail(state.runDetail);
+    });
+
+    elements.automationScrapedProducts?.addEventListener('error', event => {
+      const image = event.target;
+      if (!(image instanceof HTMLImageElement) || !image.matches('[data-product-image]')) return;
+      image.hidden = true;
+      const fallback = image.nextElementSibling;
+      if (fallback?.classList.contains('automation-product-no-image')) fallback.hidden = false;
+    }, true);
+
+    elements.automationScrapedProducts?.addEventListener('input', event => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      if (target.matches('[data-product-search]')) {
+        state.productFilters.search = target.value;
+        state.productFilters.page = 1;
+        scheduleProductTableRender({
+          kind: 'search',
+          start: target.selectionStart,
+          end: target.selectionEnd
+        });
+        return;
+      }
+      if (target.matches('[data-product-min-price], [data-product-max-price]')) {
+        const isMinimum = target.matches('[data-product-min-price]');
+        const key = isMinimum ? 'minPrice' : 'maxPrice';
+        const selector = isMinimum ? '[data-product-min-price]' : '[data-product-max-price]';
+        state.productFilters[key] = target.value;
+        state.productFilters.page = 1;
+        scheduleProductTableRender({
+          kind: 'control',
+          selector,
+          start: target.selectionStart,
+          end: target.selectionEnd
+        });
+      }
+    });
+
+    elements.automationScrapedProducts?.addEventListener('change', event => {
+      const target = event.target;
+      if (!(target instanceof HTMLSelectElement)) return;
+      if (target.matches('[data-product-mode]')) {
+        state.productFilters.mode = target.value || 'all';
+        state.productFilters.page = 1;
+        renderRunDetail(state.runDetail);
+        return;
+      }
+      if (target.matches('[data-product-source]')) {
+        state.productFilters.source = target.value || '';
+        state.productFilters.page = 1;
+        renderRunDetail(state.runDetail);
+        return;
+      }
+      if (target.matches('[data-product-sort-select]')) {
+        const [sortKey = '', sortDir = 'asc'] = String(target.value || '').split(':');
+        state.productFilters.sortKey = sortKey;
+        state.productFilters.sortDir = sortDir === 'desc' ? 'desc' : 'asc';
+        state.productFilters.page = 1;
+        renderRunDetail(state.runDetail);
+        return;
+      }
+      if (target.matches('[data-product-page-size]')) {
+        const pageSize = Number(target.value);
+        state.productFilters.pageSize = [50, 100, 250, 500].includes(pageSize) ? pageSize : 100;
+        state.productFilters.page = 1;
+        renderRunDetail(state.runDetail);
+      }
+    });
+
     elements.automationModelFilter?.addEventListener('change', () => {
+      state.productFilters.page = 1;
       renderRunDetail(state.runDetail);
     });
   }
 
   async function boot() {
     initTheme();
+    removeDiscoveryControls();
     bindEvents();
     resetForm();
+    syncSupplierTabs();
+    updateSupplierUrl(state.activeSite, 'replace');
     syncFormMode();
     renderDiscovery();
+    // Yield to main thread so initial paint (LCP) occurs immediately without blocking
+    await new Promise(resolve => window.requestAnimationFrame ? window.requestAnimationFrame(() => setTimeout(resolve, 0)) : setTimeout(resolve, 0));
     await loadJobs({ silent: false });
-    window.setInterval(() => {
-      loadJobs({ silent: true }).catch(() => { });
-      if (state.selectedRunId) {
-        loadRunDetail(state.selectedRunId, { silent: true }).catch(() => { });
-      }
-    }, 20000);
+    startRealtimeUpdates();
   }
 
   document.addEventListener('DOMContentLoaded', boot);

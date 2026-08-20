@@ -8,7 +8,11 @@ import { applyJobUpdateFromServer } from './api.js';
 const API_BASE = (() => {
     const explicit = String(window.__SCRAPER_API_BASE__ || '').trim();
     if (explicit) return explicit.replace(/\/+$/, '');
-    return window.location.protocol === 'file:' ? 'http://localhost:3001' : '';
+    if (window.location.protocol === 'file:') return 'http://localhost:3001';
+    if (['localhost', '127.0.0.1'].includes(window.location.hostname) && window.location.port !== '3001') {
+        return 'http://localhost:3001';
+    }
+    return '';
 })();
 
 let eventSource = null;
@@ -60,6 +64,11 @@ function connect() {
             const payload = JSON.parse(event.data);
             const updatedJob = applyJobUpdateFromServer(payload);
             if (updatedJob) {
+                if (state.currentJob === updatedJob.id && Number(updatedJob.images || 0) > state.images.length) {
+                    import('./gallery.js')
+                        .then(({ syncCurrentJobImages }) => syncCurrentJobImages())
+                        .catch((error) => console.warn('Failed to sync gallery after SSE update:', error));
+                }
                 scheduleRefresh();
             }
         } catch (error) {

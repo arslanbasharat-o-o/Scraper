@@ -19,6 +19,17 @@ function toDisplayUrl(src) {
     }
 }
 
+function filenameFromImageUrl(src, fallback = 'image.png') {
+    try {
+        const parsed = new URL(src, window.location.origin);
+        const explicit = parsed.searchParams.get('download_name');
+        if (explicit) return explicit;
+        return decodeURIComponent(parsed.pathname.split('/').pop() || fallback);
+    } catch {
+        return decodeURIComponent((String(src || '').split('/').pop() || fallback).split('?')[0]);
+    }
+}
+
 // Open modal with specific image source
 export function openModalWithSrc(src) {
     state.modalImages = [...state.filteredImages];
@@ -86,7 +97,7 @@ export function updateModalImage() {
     if (title) title.textContent = 'Image Preview';
 
     // Show full filename
-    const filename = decodeURIComponent(src.split('/').pop());
+    const filename = filenameFromImageUrl(src, `image_${state.modalIndex + 1}.png`);
     if (subtitle) subtitle.textContent = filename;
 
     // Reset dimensions until image loads
@@ -194,7 +205,7 @@ export function copyCurrentFilename() {
     const src = state.modalImages[state.modalIndex];
     if (!src) return;
 
-    const filename = decodeURIComponent(src.split('/').pop());
+    const filename = filenameFromImageUrl(src, `image_${state.modalIndex + 1}.png`);
     navigator.clipboard.writeText(filename).then(() => {
         showToast('success', 'Copied!', filename.substring(0, 50) + (filename.length > 50 ? '...' : ''));
     }).catch(() => {

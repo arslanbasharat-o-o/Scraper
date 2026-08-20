@@ -73,10 +73,10 @@
 }
 
 .comparison-item {
-  padding: .75rem;
-  border-radius: 12px;
-  background: var(--surface-3);
-  border: 1px solid rgba(255, 255, 255, .06);
+  padding: .75rem .9rem;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
 }
 
 .comparison-item__title {
@@ -200,9 +200,6 @@
 /* ── Table column widths (override compact-select) ───────────── */
 #resultsTable .col-title {
   min-width: 220px;
-  max-width: 320px;
-  overflow: visible;
-  text-overflow: clip;
   white-space: normal;
   vertical-align: top;
 }

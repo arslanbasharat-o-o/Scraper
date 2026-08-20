@@ -4,7 +4,7 @@ This project is ready for Railway using the included Dockerfile and `railway.tom
 
 ## What Railway Uses
 
-- `Dockerfile` to build runtime dependencies (Chromium, chromedriver, Python, Pillow)
+- `Dockerfile` to build Chromium, Botasaurus, parser, and image-conversion dependencies
 - `railway.toml` for health checks and restart policy
 - `PORT` from Railway runtime (defaults to `3001` locally)
 
@@ -15,7 +15,7 @@ This project is ready for Railway using the included Dockerfile and `railway.tom
 3. Select this repository and branch.
 4. Railway will build using the Dockerfile automatically.
 5. After deploy, open service logs and confirm:
-   - `Scraper API running at http://localhost:<PORT>`
+   - `Scraper API running at http://0.0.0.0:<PORT>`
    - `GET /health` returns `{"status":"healthy"...}`
 
 ## Option 2: Deploy with Railway CLI
@@ -31,10 +31,13 @@ railway up
 
 Set these in Railway service variables:
 
-- `PERSIST_JOBS=false`
+- `APP_ACCESS_TOKEN=<long-random-secret>`
+- `PERSIST_JOBS=true`
+- `PERSIST_JOB_LIMIT=0`
+- `AUTO_RESUME_RESTORED_JOBS=false`
+- `IMAGE_CLEANUP_ENABLED=false`
 - `MAX_ACTIVE_SCRAPES=3`
 - `JOB_MAX_RUNTIME_MS=2700000`
-- `CHROME_HEADLESS=true`
 
 You can copy additional defaults from `.env.example`.
 

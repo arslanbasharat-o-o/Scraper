@@ -289,6 +289,18 @@
                         <span id="pause-resume-text">Pause All</span>
                     </button>
 
+                    <button id="bulk-zip-btn" onclick="window.appFunctions.downloadBulkZip()"
+                        class="flex items-center gap-2 px-3 py-1.5 bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-800 dark:hover:bg-slate-600 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed rounded-full text-sm font-medium transition-all cursor-pointer"
+                        title="Download all job folders">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 7a2 2 0 012-2h5l2 2h7a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 10v6m0 0l-3-3m3 3l3-3" />
+                        </svg>
+                        <span>Download Bulk</span>
+                    </button>
+
                     <div id="global-status"
                         class="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-full text-sm font-medium">
                         <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
@@ -411,8 +423,16 @@
             <!-- Bulk URL Input -->
             <div id="bulk-url-mode" class="hidden">
                 <textarea id="bulk-urls" rows="4"
-                    placeholder="Paste multiple URLs, one per line...&#10;https://example.com/category/iphone-15/"
+                    placeholder="Paste one per line:&#10;iPhone 17 Pro Max - https://www.mobilesentrix.ca/replacement-parts/apple/iphone-parts/iphone-17-pro-max&#10;https://example.com/category/iphone-15/"
                     class="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all resize-none font-mono"></textarea>
+                <div class="mt-3">
+                    <input type="text" id="bulk-title-filter"
+                        placeholder="Optional product filter, e.g. Display Assembly"
+                        class="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all" />
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Display Assembly also matches OLED Assembly, LCD Assembly, Screen Assembly, Soft OLED Assembly, and similar wording.
+                    </p>
+                </div>
                 <div class="flex items-center justify-between mt-3">
                     <span id="bulk-url-count" class="text-xs text-slate-500 dark:text-slate-400">0 URLs detected</span>
                     <button onclick="window.appFunctions.startBulkScrape()"
@@ -559,7 +579,7 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                             d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                     </svg>
-                                    Download ZIP
+                                    Download Folder
                                 </button>
                             </div>
                         </div>
@@ -813,14 +833,14 @@
                 <p class="text-sm text-slate-500 dark:text-slate-400">&copy; 2025 MobileSentrix & XCellParts Image
                     Scraper</p>
                 <p class="text-sm text-slate-400 dark:text-slate-500">Made with ❤️ by <span
-                        class="font-medium text-slate-600 dark:text-slate-300">Arslan and Jamin</span>
+                        class="font-medium text-slate-600 dark:text-slate-300">TXparts</span>
                     for <span class="font-medium text-brand-600">TXparts</span> • UI v2.0</p>
             </div>
         </div>
     </footer>
 
     <!-- Modular JavaScript -->
-    <script type="module" src="js/main.js?v=2.0.4"></script>
+    <script type="module" src="js/main.js?v=2.1.1"></script>
 </body>
 
 </html>

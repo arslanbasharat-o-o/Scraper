@@ -7,6 +7,7 @@ import sqlite3
 import json
 import datetime
 import re
+import uuid
 from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import asdict
 import threading
@@ -51,9 +52,9 @@ class DatabaseManager:
             os.makedirs(db_dir, exist_ok=True)
 
         self._connection_key = os.path.abspath(self.db_path)
-        
+
         self.init_database()
-    
+
     def get_connection(self):
         """Get thread-local database connection"""
         connections = getattr(_local, 'connections', None)
@@ -63,9 +64,15 @@ class DatabaseManager:
 
         conn = connections.get(self._connection_key)
         if conn is None:
-            conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
+            conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
             conn.row_factory = sqlite3.Row  # Enable dict-like access
-            conn.execute('PRAGMA foreign_keys = ON')
+            try:
+                conn.execute('PRAGMA foreign_keys = ON')
+                conn.execute('PRAGMA busy_timeout = 30000')
+                conn.execute('PRAGMA journal_mode = WAL')
+                conn.execute('PRAGMA synchronous = NORMAL')
+            except Exception:
+                pass
             connections[self._connection_key] = conn
         return conn
 
@@ -91,12 +98,22 @@ class DatabaseManager:
             connections.pop(self._connection_key, None)
             if not connections and hasattr(_local, 'connections'):
                 delattr(_local, 'connections')
-    
+
     def init_database(self):
         """Initialize database tables"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        
+
+        # Create schema version tracking table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS _schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                description TEXT
+            )
+        ''')
+        cursor.execute('INSERT OR IGNORE INTO _schema_version (version, description) VALUES (1, "Initial baseline")')
+
         # Create fetch_history table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS fetch_history (
@@ -109,7 +126,7 @@ class DatabaseManager:
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
+
         # Create items table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS items (
@@ -173,7 +190,7 @@ class DatabaseManager:
                 retries INTEGER NOT NULL DEFAULT 1,
                 verify_ssl INTEGER NOT NULL DEFAULT 1,
                 use_parallel INTEGER NOT NULL DEFAULT 1,
-                enrich_details INTEGER NOT NULL DEFAULT 0,
+                enrich_details INTEGER NOT NULL DEFAULT 1,
                 drop_pct REAL NOT NULL DEFAULT 10,
                 rules_json TEXT NOT NULL DEFAULT '{}',
                 last_discovery_at DATETIME,
@@ -223,9 +240,21 @@ class DatabaseManager:
                 FOREIGN KEY (job_id) REFERENCES automation_jobs (id) ON DELETE CASCADE
             )
         ''')
-        
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_run_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                item_index INTEGER NOT NULL,
+                item_json TEXT NOT NULL,
+                created_at DATETIME NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES automation_runs (id) ON DELETE CASCADE,
+                UNIQUE (run_id, item_index)
+            )
+        ''')
+
         # ===== AUTO-SCRAPER TABLES =====
-        
+
         # Scraper runs tracking
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS scraper_runs (
@@ -249,7 +278,7 @@ class DatabaseManager:
                 config TEXT  -- JSON with schedule config
             )
         ''')
-        
+
         # Brands table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS ms_brands (
@@ -261,7 +290,7 @@ class DatabaseManager:
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
+
         # Categories table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS ms_categories (
@@ -276,7 +305,7 @@ class DatabaseManager:
                 UNIQUE (brand_id, slug)
             )
         ''')
-        
+
         # Models table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS ms_models (
@@ -291,7 +320,7 @@ class DatabaseManager:
                 UNIQUE (category_id, slug)
             )
         ''')
-        
+
         # Products table - the main data store
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS ms_products (
@@ -315,7 +344,18 @@ class DatabaseManager:
                 FOREIGN KEY (model_id) REFERENCES ms_models (id) ON DELETE CASCADE
             )
         ''')
-        
+
+        # Users table for multi-user auth
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'viewer',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Price history for tracking changes
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS ms_price_history (
@@ -327,7 +367,7 @@ class DatabaseManager:
                 FOREIGN KEY (product_id) REFERENCES ms_products (id) ON DELETE CASCADE
             )
         ''')
-        
+
         # Ensure schema migrations on existing databases before creating indexes.
         self._ensure_history_columns()
         self._ensure_item_columns()
@@ -347,6 +387,7 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_targets_job ON automation_job_targets (job_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_runs_job ON automation_runs (job_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_runs_started ON automation_runs (started_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_run_items_run ON automation_run_items (run_id, item_index)')
 
         # Auto-scraper indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_scraper_runs_status ON scraper_runs (status)')
@@ -359,8 +400,9 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ms_products_url ON ms_products (product_url)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ms_price_history_product ON ms_price_history (product_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ms_price_history_recorded ON ms_price_history (recorded_at)')
-        
+
         conn.commit()
+        self._bootstrap_auth()
         self._backfill_urls_key()
 
     def _ensure_column(self, table: str, column: str, definition: str):
@@ -610,11 +652,20 @@ class DatabaseManager:
             'updated_at': row['updated_at'],
         }
 
-    def _row_to_automation_job(self, row: sqlite3.Row, *, targets: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    def _row_to_automation_job(self, row: sqlite3.Row, *, targets: Optional[List[Dict[str, Any]]] = None, target_counts: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
         scraper_key = str(row['scraper_key'] or 'standard')
         interval_minutes = int(row['interval_minutes'] or 1440)
         target_list = list(targets or [])
-        active_target_count = sum(1 for target in target_list if target.get('active', True))
+        if targets is not None:
+            total_target_count = len(target_list)
+            active_target_count = sum(1 for target in target_list if target.get('active', True))
+        elif target_counts is not None:
+            total_target_count = int(target_counts.get('target_count', 0))
+            active_target_count = int(target_counts.get('active_target_count', 0))
+        else:
+            total_target_count = 0
+            active_target_count = 0
+
         return {
             'id': int(row['id']),
             'name': row['name'] or '',
@@ -642,9 +693,9 @@ class DatabaseManager:
             'last_error': row['last_error'] or '',
             'last_history_ids': self._parse_json_text(row['last_history_ids'], []),
             'targets': target_list,
-            'target_count': len(target_list),
+            'target_count': total_target_count,
             'active_target_count': active_target_count,
-            'skipped_target_count': max(0, len(target_list) - active_target_count),
+            'skipped_target_count': max(0, total_target_count - active_target_count),
             'created_at': row['created_at'],
             'updated_at': row['updated_at'],
         }
@@ -670,19 +721,22 @@ class DatabaseManager:
             'error_text': row['error_text'] or '',
             'created_at': row['created_at'],
         }
-    
+
     def save_fetch_history(self, history_id: str, urls: List[str], items: List[Any], rules: Dict) -> bool:
         """Save fetch history and items to database"""
+        conn = None
         try:
             conn = self.get_connection()
+            # Explicitly begin a transaction to guarantee atomicity of history + items
+            conn.execute("BEGIN TRANSACTION")
             cursor = conn.cursor()
-            
+
             # Save fetch history - use the history_id as timestamp (it's already a Unix timestamp in ms)
             # Convert to Pakistan timezone for consistent storage
             timestamp_ms = int(history_id)
             timestamp_utc = datetime.datetime.fromtimestamp(timestamp_ms / 1000.0, tz=pytz.UTC)
             timestamp_pakistan = timestamp_utc.astimezone(PAKISTAN_TZ)
-            
+
             cursor.execute('''
                 INSERT INTO fetch_history (id, timestamp, urls, urls_key, items_count, rules)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -694,7 +748,7 @@ class DatabaseManager:
                 len(items),
                 json.dumps(rules)
             ))
-            
+
             # Save items
             for item in items:
                 item_dict = asdict(item) if hasattr(item, '__dict__') else item
@@ -725,13 +779,17 @@ class DatabaseManager:
                     item_dict.get('source', ''),
                     item_dict.get('image_url', '')
                 ))
-            
+
             conn.commit()
             return True
-            
+
         except Exception as e:
             print(f"Error saving to database: {e}")
-            conn.rollback()
+            if conn:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             return False
 
     def save_watchlist_item(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -850,6 +908,38 @@ class DatabaseManager:
             print(f"Error getting watchlist items: {e}")
             return []
 
+    def get_product_metadata_cache(self, urls: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Look up known SKU, description, stock_status for a list of URLs from previous scrape items."""
+        if not urls:
+            return {}
+        result: Dict[str, Dict[str, Any]] = {}
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            for i in range(0, len(urls), 500):
+                batch = [str(u).strip() for u in urls[i:i+500] if str(u).strip()]
+                if not batch:
+                    continue
+                placeholders = ','.join('?' for _ in batch)
+                cursor.execute(f'''
+                    SELECT url, sku, description, stock_status
+                    FROM items
+                    WHERE url IN ({placeholders})
+                      AND ((sku IS NOT NULL AND sku != '') OR (description IS NOT NULL AND description != ''))
+                    ORDER BY id DESC
+                ''', batch)
+                for row in cursor.fetchall():
+                    url_key = str(row['url'] or '').strip()
+                    if url_key and url_key not in result:
+                        result[url_key] = {
+                            'sku': row['sku'] or '',
+                            'description': row['description'] or '',
+                            'stock_status': row['stock_status'] or '',
+                        }
+        except Exception as e:
+            print(f"Error getting product metadata cache: {e}")
+        return result
+
     def get_watchlist_urls(self) -> List[str]:
         try:
             conn = self.get_connection()
@@ -961,21 +1051,42 @@ class DatabaseManager:
             ''', (max(1, int(limit)),))
             rows = cursor.fetchall()
             targets_by_job: Dict[int, List[Dict[str, Any]]] = {}
-            if include_targets and rows:
+            target_counts_by_job: Dict[int, Dict[str, int]] = {}
+
+            if rows:
                 job_ids = [int(row['id']) for row in rows]
                 placeholders = ','.join(['?' for _ in job_ids])
+
+                # Fetch counts for all jobs
                 cursor.execute(f'''
-                    SELECT id, job_id, label, group_label, url, url_key, active, position, created_at, updated_at
+                    SELECT job_id, COUNT(*) as total_count, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) as active_count
                     FROM automation_job_targets
                     WHERE job_id IN ({placeholders})
-                    ORDER BY job_id ASC, position ASC, label COLLATE NOCASE ASC, id ASC
+                    GROUP BY job_id
                 ''', job_ids)
-                for target_row in cursor.fetchall():
-                    target = self._row_to_automation_target(target_row)
-                    targets_by_job.setdefault(target['job_id'], []).append(target)
+                for count_row in cursor.fetchall():
+                    target_counts_by_job[int(count_row['job_id'])] = {
+                        'target_count': int(count_row['total_count'] or 0),
+                        'active_target_count': int(count_row['active_count'] or 0),
+                    }
+
+                if include_targets:
+                    cursor.execute(f'''
+                        SELECT id, job_id, label, group_label, url, url_key, active, position, created_at, updated_at
+                        FROM automation_job_targets
+                        WHERE job_id IN ({placeholders})
+                        ORDER BY job_id ASC, position ASC, label COLLATE NOCASE ASC, id ASC
+                    ''', job_ids)
+                    for target_row in cursor.fetchall():
+                        target = self._row_to_automation_target(target_row)
+                        targets_by_job.setdefault(target['job_id'], []).append(target)
 
             return [
-                self._row_to_automation_job(row, targets=targets_by_job.get(int(row['id']), []))
+                self._row_to_automation_job(
+                    row,
+                    targets=targets_by_job.get(int(row['id']), []) if include_targets else None,
+                    target_counts=target_counts_by_job.get(int(row['id']))
+                )
                 for row in rows
             ]
         except Exception as e:
@@ -991,6 +1102,7 @@ class DatabaseManager:
         conn = None
         try:
             conn = self.get_connection()
+            conn.execute("BEGIN TRANSACTION")
             cursor = conn.cursor()
             now_iso = get_pakistan_time().isoformat()
             cursor.execute('SELECT url_key, active FROM automation_job_targets WHERE job_id = ?', (normalized_job_id,))
@@ -1084,7 +1196,7 @@ class DatabaseManager:
             retries = max(1, min(5, int(payload.get('retries') or 1)))
             verify_ssl = 1 if bool(payload.get('verify_ssl', True)) else 0
             use_parallel = 1 if bool(payload.get('use_parallel', True)) else 0
-            enrich_details = 1 if bool(payload.get('enrich_details', False)) else 0
+            enrich_details = 1 if bool(payload.get('enrich_details', True)) else 0
             drop_pct = max(1.0, min(90.0, float(payload.get('drop_pct') or 10.0)))
             rules = payload.get('rules') if isinstance(payload.get('rules'), dict) else {}
             rules_json = json.dumps(rules, ensure_ascii=True, separators=(',', ':'))
@@ -1227,6 +1339,25 @@ class DatabaseManager:
                 conn.rollback()
             return False
 
+    def delete_automation_run(self, run_id: int) -> bool:
+        conn = None
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return False
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM automation_runs WHERE id = ?', (normalized_run_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Error deleting automation run: {e}")
+            if conn:
+                conn.rollback()
+            return False
+
     def set_automation_job_enabled(self, job_id: int, enabled: bool) -> Optional[Dict[str, Any]]:
         conn = None
         try:
@@ -1273,7 +1404,7 @@ class DatabaseManager:
                 WHERE enabled = 1
                   AND next_run_at IS NOT NULL
                   AND next_run_at <= ?
-                  AND (last_status IS NULL OR last_status != 'running')
+                  AND (last_status IS NULL OR last_status NOT IN ('running', 'resuming'))
                 ORDER BY next_run_at ASC, id ASC
                 LIMIT ?
             ''', (now_iso, max(1, int(limit))))
@@ -1283,7 +1414,13 @@ class DatabaseManager:
             print(f"Error getting due automation jobs: {e}")
             return []
 
-    def create_automation_run(self, job_id: int, trigger_type: str = 'manual', target_urls: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+    def create_automation_run(
+        self,
+        job_id: int,
+        trigger_type: str = 'manual',
+        target_urls: Optional[List[str]] = None,
+        previous_history_id: str = '',
+    ) -> Optional[Dict[str, Any]]:
         conn = None
         try:
             normalized_job_id = int(job_id)
@@ -1293,22 +1430,42 @@ class DatabaseManager:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
+            began_transaction = False
+            if not conn.in_transaction:
+                cursor.execute('BEGIN IMMEDIATE')
+                began_transaction = True
             cursor.execute('SELECT id FROM automation_jobs WHERE id = ?', (normalized_job_id,))
             if not cursor.fetchone():
+                if began_transaction:
+                    conn.rollback()
+                return None
+            cursor.execute('''
+                SELECT id
+                FROM automation_runs
+                WHERE job_id = ?
+                  AND status IN ('running', 'resuming')
+                ORDER BY started_at DESC, id DESC
+                LIMIT 1
+            ''', (normalized_job_id,))
+            if cursor.fetchone():
+                if began_transaction:
+                    conn.rollback()
                 return None
 
             now_iso = get_pakistan_time().isoformat()
-            run_uuid = f"automation-{normalized_job_id}-{int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)}"
+            run_uuid = f"automation-{normalized_job_id}-{int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)}-{uuid.uuid4().hex[:8]}"
             cursor.execute('''
                 INSERT INTO automation_runs (
-                    job_id, run_uuid, trigger_type, status, started_at, target_urls_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    job_id, run_uuid, trigger_type, status, started_at,
+                    previous_history_id, target_urls_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 normalized_job_id,
                 run_uuid,
                 str(trigger_type or 'manual').strip() or 'manual',
                 'running',
                 now_iso,
+                str(previous_history_id or ''),
                 json.dumps(list(target_urls or []), ensure_ascii=True, separators=(',', ':')),
                 now_iso,
             ))
@@ -1381,6 +1538,305 @@ class DatabaseManager:
             return self.get_automation_run(normalized_run_id)
         except Exception as e:
             print(f"Error updating automation run progress: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
+    def append_automation_run_items(self, run_id: int, items: List[Dict[str, Any]]) -> int:
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return 0
+
+        rows = []
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            rows.append(json.dumps(item, ensure_ascii=True, separators=(',', ':')))
+        if not rows:
+            return 0
+
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT COALESCE(MAX(item_index), -1) AS max_index FROM automation_run_items WHERE run_id = ?', (normalized_run_id,))
+            row = cursor.fetchone()
+            start_index = int((row['max_index'] if row else -1) or -1) + 1
+            now_iso = get_pakistan_time().isoformat()
+            cursor.executemany('''
+                INSERT INTO automation_run_items (run_id, item_index, item_json, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', [
+                (normalized_run_id, start_index + offset, item_json, now_iso)
+                for offset, item_json in enumerate(rows)
+            ])
+            conn.commit()
+            return len(rows)
+        except Exception as e:
+            print(f"Error appending automation run items: {e}")
+            if conn:
+                conn.rollback()
+            return 0
+
+    def get_automation_run_items(self, run_id: int, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return []
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            params: List[Any] = [normalized_run_id]
+            limit_clause = ''
+            if limit not in (None, ''):
+                limit_clause = 'LIMIT ?'
+                params.append(max(1, int(limit)))
+            cursor.execute(f'''
+                SELECT item_json
+                FROM automation_run_items
+                WHERE run_id = ?
+                ORDER BY item_index ASC
+                {limit_clause}
+            ''', tuple(params))
+            items = []
+            for row in cursor.fetchall():
+                parsed = self._parse_json_text(row['item_json'], {})
+                if isinstance(parsed, dict):
+                    items.append(parsed)
+            return items
+        except Exception as e:
+            print(f"Error getting automation run items: {e}")
+            return []
+
+    def mark_automation_run_resuming(
+        self,
+        run_id: int,
+        *,
+        target_urls: Optional[List[str]] = None,
+        previous_history_id: str = '',
+        summary: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        conn = None
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT r.id, r.job_id, r.target_urls_json, r.previous_history_id
+                FROM automation_runs r
+                WHERE r.id = ?
+                LIMIT 1
+            ''', (normalized_run_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            serialized_targets = json.dumps(
+                list(target_urls if target_urls is not None else self._parse_json_text(row['target_urls_json'], [])),
+                ensure_ascii=True,
+                separators=(',', ':'),
+            )
+            safe_previous_history_id = str(previous_history_id or row['previous_history_id'] or '')
+            safe_summary = dict(summary or {})
+            now_iso = get_pakistan_time().isoformat()
+
+            cursor.execute('''
+                UPDATE automation_runs
+                SET
+                    status = 'running',
+                    completed_at = NULL,
+                    current_history_id = '',
+                    previous_history_id = ?,
+                    target_urls_json = ?,
+                    items_count = ?,
+                    summary_json = ?,
+                    error_text = ''
+                WHERE id = ?
+            ''', (
+                safe_previous_history_id,
+                serialized_targets,
+                int(safe_summary.get('current_items') or safe_summary.get('items_count') or 0),
+                json.dumps(safe_summary, ensure_ascii=True, separators=(',', ':')),
+                normalized_run_id,
+            ))
+            cursor.execute('''
+                UPDATE automation_jobs
+                SET last_status = 'running', last_error = '', updated_at = ?
+                WHERE id = ?
+            ''', (now_iso, int(row['job_id'])))
+            conn.commit()
+            return self.get_automation_run(normalized_run_id)
+        except Exception as e:
+            print(f"Error marking automation run as resuming: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
+    def claim_automation_run_resume(self, run_id: int) -> Optional[Dict[str, Any]]:
+        """Atomically reserve one resumable run before launching its worker process."""
+        conn = None
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('BEGIN IMMEDIATE')
+            cursor.execute('''
+                SELECT id, job_id, status, summary_json
+                FROM automation_runs
+                WHERE id = ?
+                LIMIT 1
+            ''', (normalized_run_id,))
+            row = cursor.fetchone()
+            if not row:
+                conn.rollback()
+                return None
+
+            current_status = str(row['status'] or '').strip().lower()
+            if current_status not in {'paused', 'interrupted', 'failed'}:
+                conn.rollback()
+                return None
+
+            now_iso = get_pakistan_time().isoformat()
+            summary = self._parse_json_text(row['summary_json'], {})
+            summary = dict(summary) if isinstance(summary, dict) else {}
+            summary['resume_launch_requested_at'] = now_iso
+            summary['resumed_from_status'] = current_status
+            summary['resume_available'] = False
+            cursor.execute('''
+                UPDATE automation_runs
+                SET status = 'resuming', summary_json = ?, error_text = ''
+                WHERE id = ? AND status = ?
+            ''', (
+                json.dumps(summary, ensure_ascii=True, separators=(',', ':')),
+                normalized_run_id,
+                row['status'],
+            ))
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return None
+            cursor.execute('''
+                UPDATE automation_jobs
+                SET last_status = 'resuming', last_error = '', updated_at = ?
+                WHERE id = ?
+            ''', (now_iso, int(row['job_id'])))
+            conn.commit()
+            return self.get_automation_run(normalized_run_id)
+        except Exception as e:
+            print(f"Error claiming automation run resume: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
+    def fail_automation_run_resume_launch(self, run_id: int, error_text: str) -> Optional[Dict[str, Any]]:
+        """Return a claimed run to a resumable failed state if its worker cannot launch."""
+        conn = None
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, job_id, summary_json
+                FROM automation_runs
+                WHERE id = ? AND status = 'resuming'
+                LIMIT 1
+            ''', (normalized_run_id,))
+            row = cursor.fetchone()
+            if not row:
+                return self.get_automation_run(normalized_run_id)
+
+            now_iso = get_pakistan_time().isoformat()
+            summary = self._parse_json_text(row['summary_json'], {})
+            summary = dict(summary) if isinstance(summary, dict) else {}
+            summary['resume_available'] = True
+            summary['resume_launch_failed_at'] = now_iso
+            message = str(error_text or 'Failed to launch resume worker.')
+            cursor.execute('''
+                UPDATE automation_runs
+                SET status = 'failed', summary_json = ?, error_text = ?
+                WHERE id = ? AND status = 'resuming'
+            ''', (
+                json.dumps(summary, ensure_ascii=True, separators=(',', ':')),
+                message,
+                normalized_run_id,
+            ))
+            cursor.execute('''
+                UPDATE automation_jobs
+                SET last_status = 'failed', last_error = ?, updated_at = ?
+                WHERE id = ?
+            ''', (message, now_iso, int(row['job_id'])))
+            conn.commit()
+            return self.get_automation_run(normalized_run_id)
+        except Exception as e:
+            print(f"Error recording automation resume launch failure: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
+    def pause_automation_run(
+        self,
+        run_id: int,
+        *,
+        reason: str = 'Automation run paused.',
+    ) -> Optional[Dict[str, Any]]:
+        conn = None
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, job_id, summary_json, error_text
+                FROM automation_runs
+                WHERE id = ?
+                LIMIT 1
+            ''', (normalized_run_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            existing_summary = self._parse_json_text(row['summary_json'], {})
+            paused_summary = dict(existing_summary)
+            paused_summary['paused'] = True
+            paused_summary['paused_at'] = get_pakistan_time().isoformat()
+            paused_summary['resume_available'] = True
+            next_error_text = str(reason or row['error_text'] or 'Automation run paused.')
+            now_iso = get_pakistan_time().isoformat()
+
+            cursor.execute('''
+                UPDATE automation_runs
+                SET status = 'paused', summary_json = ?, error_text = ?
+                WHERE id = ?
+            ''', (
+                json.dumps(paused_summary, ensure_ascii=True, separators=(',', ':')),
+                next_error_text,
+                normalized_run_id,
+            ))
+            cursor.execute('''
+                UPDATE automation_jobs
+                SET last_status = 'paused', last_error = ?, updated_at = ?
+                WHERE id = ?
+            ''', (next_error_text, now_iso, int(row['job_id'])))
+            conn.commit()
+            return self.get_automation_run(normalized_run_id)
+        except Exception as e:
+            print(f"Error pausing automation run: {e}")
             if conn:
                 conn.rollback()
             return None
@@ -1487,9 +1943,10 @@ class DatabaseManager:
             conn = self.get_connection()
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT DISTINCT r.id, r.job_id
+                SELECT DISTINCT r.id, r.job_id, r.previous_history_id, r.summary_json, j.last_history_ids
                 FROM automation_runs r
-                WHERE r.status = 'running'
+                JOIN automation_jobs j ON j.id = r.job_id
+                WHERE r.status IN ('running', 'resuming')
             ''')
             running_rows = cursor.fetchall()
             if not running_rows:
@@ -1501,14 +1958,32 @@ class DatabaseManager:
             run_placeholders = ','.join(['?' for _ in run_ids])
             job_placeholders = ','.join(['?' for _ in job_ids])
 
-            cursor.execute(f'''
-                UPDATE automation_runs
-                SET status = 'failed', completed_at = ?, error_text = ?
-                WHERE id IN ({run_placeholders})
-            ''', [now_iso, str(reason or '')] + run_ids)
+            for row in running_rows:
+                previous_history_id = str(row['previous_history_id'] or '').strip()
+                if not previous_history_id:
+                    last_history_ids = self._parse_json_text(row['last_history_ids'], [])
+                    if isinstance(last_history_ids, list) and last_history_ids:
+                        previous_history_id = str(last_history_ids[0] or '').strip()
+                summary = self._parse_json_text(row['summary_json'], {})
+                if not isinstance(summary, dict):
+                    summary = {}
+                summary['interrupted'] = True
+                summary['interrupted_at'] = now_iso
+                summary['resume_available'] = True
+                cursor.execute('''
+                    UPDATE automation_runs
+                    SET status = 'interrupted', completed_at = ?, error_text = ?, previous_history_id = ?, summary_json = ?
+                    WHERE id = ?
+                ''', (
+                    now_iso,
+                    str(reason or ''),
+                    previous_history_id,
+                    json.dumps(summary, ensure_ascii=True, separators=(',', ':')),
+                    int(row['id']),
+                ))
             cursor.execute(f'''
                 UPDATE automation_jobs
-                SET last_status = 'failed', last_error = ?, updated_at = ?
+                SET last_status = 'interrupted', last_error = ?, updated_at = ?
                 WHERE id IN ({job_placeholders})
             ''', [str(reason or ''), now_iso] + job_ids)
             conn.commit()
@@ -1519,15 +1994,28 @@ class DatabaseManager:
                 conn.rollback()
             return 0
 
-    def list_automation_runs(self, job_id: Optional[int] = None, limit: int = 25) -> List[Dict[str, Any]]:
+    def list_automation_runs(
+        self,
+        job_id: Optional[int] = None,
+        scraper_key: Optional[str] = None,
+        limit: int = 25,
+    ) -> List[Dict[str, Any]]:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
             params: List[Any] = []
-            where_clause = ''
+            where_parts: List[str] = []
             if job_id not in (None, ''):
-                where_clause = 'WHERE r.job_id = ?'
+                where_parts.append('r.job_id = ?')
                 params.append(int(job_id))
+            normalized_scraper_key = str(scraper_key or '').strip().lower()
+            if normalized_scraper_key:
+                if normalized_scraper_key not in SCRAPER_CONFIG:
+                    normalized_scraper_key = detect_scraper_key(normalized_scraper_key)
+                if normalized_scraper_key in SCRAPER_CONFIG:
+                    where_parts.append('j.scraper_key = ?')
+                    params.append(normalized_scraper_key)
+            where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ''
             params.append(max(1, int(limit)))
             cursor.execute(f'''
                 SELECT
@@ -1546,6 +2034,35 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error listing automation runs: {e}")
             return []
+
+    def get_active_automation_run_for_job(self, job_id: int) -> Optional[Dict[str, Any]]:
+        try:
+            normalized_job_id = int(job_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT
+                    r.id, r.job_id, r.run_uuid, r.trigger_type, r.status,
+                    r.started_at, r.completed_at, r.current_history_id,
+                    r.previous_history_id, r.target_urls_json, r.items_count,
+                    r.summary_json, r.error_text, r.created_at,
+                    j.name AS job_name, j.scraper_key, j.category_query
+                FROM automation_runs r
+                JOIN automation_jobs j ON j.id = r.job_id
+                WHERE r.job_id = ?
+                  AND r.status IN ('running', 'resuming')
+                ORDER BY r.started_at DESC, r.id DESC
+                LIMIT 1
+            ''', (normalized_job_id,))
+            row = cursor.fetchone()
+            return self._row_to_automation_run(row) if row else None
+        except Exception as e:
+            print(f"Error getting active automation run: {e}")
+            return None
 
     def get_automation_run(self, run_id: int) -> Optional[Dict[str, Any]]:
         try:
@@ -1662,20 +2179,20 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error getting latest prices: {e}")
             return {}
-    
+
     def get_history_list(self, limit: int = 50, offset: int = 0) -> List[Dict]:
         """Get list of fetch history entries"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 SELECT id, timestamp, urls, items_count, rules, created_at
                 FROM fetch_history
                 ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
             ''', (limit, offset))
-            
+
             histories = []
             for row in cursor.fetchall():
                 # Convert ISO timestamp back to milliseconds for frontend
@@ -1685,7 +2202,7 @@ class DatabaseManager:
                     timestamp_ms = int(timestamp_dt.timestamp() * 1000)
                 else:  # Already a number
                     timestamp_ms = int(timestamp_str)
-                
+
                 histories.append({
                     'id': row['id'],
                     'timestamp': timestamp_ms,
@@ -1694,30 +2211,30 @@ class DatabaseManager:
                     'rules': json.loads(row['rules']),
                     'created_at': row['created_at']
                 })
-            
+
             return histories
-            
+
         except Exception as e:
             print(f"Error getting history list: {e}")
             return []
-    
+
     def get_history_detail(self, history_id: str) -> Optional[Dict]:
         """Get detailed history entry with items"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             # Get history entry
             cursor.execute('''
                 SELECT id, timestamp, urls, urls_key, items_count, rules, created_at
                 FROM fetch_history
                 WHERE id = ?
             ''', (history_id,))
-            
+
             row = cursor.fetchone()
             if not row:
                 return None
-            
+
             # Get items for this history
             cursor.execute('''
                 SELECT url, site, title, price_value, price_currency, price_text,
@@ -1727,7 +2244,7 @@ class DatabaseManager:
                 WHERE history_id = ?
                 ORDER BY id
             ''', (history_id,))
-            
+
             items = []
             for item_row in cursor.fetchall():
                 items.append({
@@ -1747,7 +2264,7 @@ class DatabaseManager:
                     'source': item_row['source'],
                     'image_url': item_row['image_url']
                 })
-            
+
             # Convert ISO timestamp back to milliseconds for frontend
             timestamp_str = row['timestamp']
             if 'T' in timestamp_str:  # ISO format
@@ -1755,7 +2272,7 @@ class DatabaseManager:
                 timestamp_ms = int(timestamp_dt.timestamp() * 1000)
             else:  # Already a number
                 timestamp_ms = int(timestamp_str)
-            
+
             return {
                 'id': row['id'],
                 'timestamp': timestamp_ms,
@@ -1766,10 +2283,18 @@ class DatabaseManager:
                 'created_at': row['created_at'],
                 'items': items
             }
-            
+
         except Exception as e:
             print(f"Error getting history detail: {e}")
             return None
+
+    @staticmethod
+    def _history_rules_mark_baseline_rejected(rules_text: str) -> bool:
+        try:
+            rules = json.loads(rules_text or '{}')
+            return bool(isinstance(rules, dict) and rules.get('_baseline_rejected'))
+        except Exception:
+            return False
 
     def get_latest_history_for_urls(self, urls: List[str]) -> Optional[Dict]:
         """Get the most recent saved session for the exact same target URL set."""
@@ -1781,20 +2306,21 @@ class DatabaseManager:
             conn = self.get_connection()
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT id
+                SELECT id, rules
                 FROM fetch_history
                 WHERE urls_key = ?
                 ORDER BY timestamp DESC
-                LIMIT 1
+                LIMIT 20
             ''', (urls_key,))
-            row = cursor.fetchone()
-            if not row:
-                return None
-            return self.get_history_detail(row['id'])
+            for row in cursor.fetchall():
+                if self._history_rules_mark_baseline_rejected(row['rules']):
+                    continue
+                return self.get_history_detail(row['id'])
+            return None
         except Exception as e:
             print(f"Error getting latest history for urls: {e}")
             return None
-    
+
     def delete_history(self, history_id: str) -> bool:
         """Delete history entry and associated items"""
         conn = None
@@ -1805,52 +2331,98 @@ class DatabaseManager:
 
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             # Delete items first (due to foreign key)
             cursor.execute('DELETE FROM items WHERE history_id = ?', (normalized_history_id,))
-            
+
             # Delete history entry
             cursor.execute('DELETE FROM fetch_history WHERE id = ?', (normalized_history_id,))
             deleted_rows = cursor.rowcount
-            
+
             conn.commit()
             return deleted_rows > 0
-            
+
         except Exception as e:
             print(f"Error deleting history: {e}")
             if conn:
                 conn.rollback()
             return False
-    
+
+    def prune_histories_for_urls(self, urls: List[str], keep: int = 2) -> List[str]:
+        """Keep the newest valid histories for an exact URL set and delete older ones."""
+        conn = None
+        try:
+            urls_key = self.build_urls_key(urls)
+            keep = max(1, int(keep or 2))
+            if not urls_key:
+                return []
+
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, rules
+                FROM fetch_history
+                WHERE urls_key = ?
+                ORDER BY timestamp DESC
+            ''', (urls_key,))
+            rows = cursor.fetchall()
+            if len(rows) <= keep:
+                return []
+
+            kept_valid = 0
+            ids_to_delete = []
+            for row in rows:
+                if self._history_rules_mark_baseline_rejected(row['rules']):
+                    ids_to_delete.append(row['id'])
+                    continue
+                if kept_valid < keep:
+                    kept_valid += 1
+                    continue
+                ids_to_delete.append(row['id'])
+
+            if not ids_to_delete:
+                return []
+
+            placeholders = ','.join(['?' for _ in ids_to_delete])
+            cursor.execute(f'DELETE FROM items WHERE history_id IN ({placeholders})', ids_to_delete)
+            cursor.execute(f'DELETE FROM fetch_history WHERE id IN ({placeholders})', ids_to_delete)
+            conn.commit()
+            return ids_to_delete
+        except Exception as e:
+            print(f"Error pruning histories for urls: {e}")
+            if conn:
+                conn.rollback()
+            return []
+
     def get_statistics(self) -> Dict:
         """Get comprehensive database statistics"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             # Total histories
             cursor.execute('SELECT COUNT(*) as count FROM fetch_history')
             total_histories = cursor.fetchone()['count']
-            
+
             # Total items
             cursor.execute('SELECT COUNT(*) as count FROM items')
             total_items = cursor.fetchone()['count']
-            
+
             # Recent activity (last 30 days in Pakistan timezone)
             now_pakistan = get_pakistan_time()
             thirty_days_ago = now_pakistan - datetime.timedelta(days=30)
             thirty_days_ago_str = thirty_days_ago.isoformat()
-            
+
             cursor.execute('''
                 SELECT COUNT(*) as count FROM fetch_history
                 WHERE timestamp >= ?
             ''', (thirty_days_ago_str,))
             recent_histories = cursor.fetchone()['count']
-            
+
             # Unique models (approximation based on titles)
             cursor.execute('''
-                SELECT COUNT(DISTINCT 
-                    CASE 
+                SELECT COUNT(DISTINCT
+                    CASE
                         WHEN title LIKE '%iPhone%' THEN 'iPhone'
                         WHEN title LIKE '%Galaxy%' THEN 'Galaxy'
                         WHEN title LIKE '%iPad%' THEN 'iPad'
@@ -1861,48 +2433,48 @@ class DatabaseManager:
                 ) as unique_models FROM items WHERE title != ''
             ''')
             unique_models = cursor.fetchone()['unique_models'] or 0
-            
+
             # Unique sites
             cursor.execute('SELECT COUNT(DISTINCT site) as count FROM items WHERE site != ""')
             unique_sites = cursor.fetchone()['count']
-            
+
             # Database size
             cursor.execute("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()")
             db_size = cursor.fetchone()['size']
-            
+
             # Average items per session
             avg_items = round(total_items / max(total_histories, 1), 1)
-            
+
             # Average price (from items with valid prices)
             cursor.execute('''
-                SELECT AVG(price_value) as avg_price FROM items 
+                SELECT AVG(price_value) as avg_price FROM items
                 WHERE price_value IS NOT NULL AND price_value > 0
             ''')
             avg_price_result = cursor.fetchone()
             avg_price = round(avg_price_result['avg_price'] or 0, 2)
-            
+
             # Success rate (items with prices vs total items)
             cursor.execute('''
-                SELECT 
+                SELECT
                     COUNT(CASE WHEN price_value IS NOT NULL AND price_value > 0 THEN 1 END) as successful,
                     COUNT(*) as total
                 FROM items
             ''')
             success_data = cursor.fetchone()
             success_rate = round((success_data['successful'] / max(success_data['total'], 1)) * 100, 1)
-            
+
             # Top site by item count
             cursor.execute('''
-                SELECT site, COUNT(*) as item_count 
-                FROM items 
-                WHERE site != "" 
-                GROUP BY site 
-                ORDER BY item_count DESC 
+                SELECT site, COUNT(*) as item_count
+                FROM items
+                WHERE site != ""
+                GROUP BY site
+                ORDER BY item_count DESC
                 LIMIT 1
             ''')
             top_site_result = cursor.fetchone()
             top_site = top_site_result['site'] if top_site_result else 'N/A'
-            
+
             # Clean up site name for display
             if top_site and top_site != 'N/A':
                 # Remove common prefixes and make it shorter
@@ -1910,12 +2482,12 @@ class DatabaseManager:
                 if '.' in top_site:
                     top_site = top_site.split('.')[0]
                 top_site = top_site.capitalize()
-            
+
             # Latest session date
             cursor.execute('''
-                SELECT timestamp 
-                FROM fetch_history 
-                ORDER BY timestamp DESC 
+                SELECT timestamp
+                FROM fetch_history
+                ORDER BY timestamp DESC
                 LIMIT 1
             ''')
             latest_session_result = cursor.fetchone()
@@ -1934,17 +2506,17 @@ class DatabaseManager:
                         # Assume it's already in Pakistan time
                         ts = datetime.datetime.fromisoformat(ts_str)
                         ts_pakistan = PAKISTAN_TZ.localize(ts)
-                    
+
                     latest_session = ts_pakistan.strftime('%b %d')  # e.g., "Oct 17"
                 except Exception as e:
                     print(f"Error parsing latest session timestamp: {e}")
                     latest_session = 'Recent'
-            
+
             # Oldest session date
             cursor.execute('''
-                SELECT timestamp 
-                FROM fetch_history 
-                ORDER BY timestamp ASC 
+                SELECT timestamp
+                FROM fetch_history
+                ORDER BY timestamp ASC
                 LIMIT 1
             ''')
             oldest_session_result = cursor.fetchone()
@@ -1963,36 +2535,36 @@ class DatabaseManager:
                         # Assume it's already in Pakistan time
                         ts = datetime.datetime.fromisoformat(ts_str)
                         ts_pakistan = PAKISTAN_TZ.localize(ts)
-                    
+
                     oldest_session = ts_pakistan.strftime('%b %d, %Y')  # e.g., "Oct 17, 2024"
                 except Exception as e:
                     print(f"Error parsing oldest session timestamp: {e}")
                     oldest_session = 'Unknown'
-            
+
             # Total value of all items
             cursor.execute('''
-                SELECT SUM(price_value) as total_value FROM items 
+                SELECT SUM(price_value) as total_value FROM items
                 WHERE price_value IS NOT NULL AND price_value > 0
             ''')
             total_value_result = cursor.fetchone()
             total_value = round(total_value_result['total_value'] or 0, 2)
-            
+
             # Highest price
             cursor.execute('''
-                SELECT MAX(price_value) as highest_price FROM items 
+                SELECT MAX(price_value) as highest_price FROM items
                 WHERE price_value IS NOT NULL AND price_value > 0
             ''')
             highest_price_result = cursor.fetchone()
             highest_price = round(highest_price_result['highest_price'] or 0, 2)
-            
+
             # Lowest price
             cursor.execute('''
-                SELECT MIN(price_value) as lowest_price FROM items 
+                SELECT MIN(price_value) as lowest_price FROM items
                 WHERE price_value IS NOT NULL AND price_value > 0
             ''')
             lowest_price_result = cursor.fetchone()
             lowest_price = round(lowest_price_result['lowest_price'] or 0, 2)
-            
+
             return {
                 'total_histories': total_histories,
                 'total_items': total_items,
@@ -2010,70 +2582,70 @@ class DatabaseManager:
                 'highest_price': highest_price,
                 'lowest_price': lowest_price
             }
-            
+
         except Exception as e:
             print(f"Error getting statistics: {e}")
             return {}
-    
-    
+
+
     def cleanup_old_entries(self, days: int = 90) -> int:
         """Remove entries older than specified days (calculated in Pakistan timezone)"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             # If days is very large (99999), delete everything
             if days >= 99999:
                 # Count total entries before deletion
                 cursor.execute('SELECT COUNT(*) as count FROM fetch_history')
                 total_count = cursor.fetchone()['count']
-                
+
                 # Delete all items
                 cursor.execute('DELETE FROM items')
-                
+
                 # Delete all history
                 cursor.execute('DELETE FROM fetch_history')
-                
+
                 conn.commit()
                 return total_count
-            
+
             # Calculate cutoff date in Pakistan timezone
             now_pakistan = get_pakistan_time()
             cutoff_date = now_pakistan - datetime.timedelta(days=days)
             cutoff_date_str = cutoff_date.isoformat()
-            
+
             # Get old history IDs
             cursor.execute('''
                 SELECT id FROM fetch_history
                 WHERE timestamp < ?
             ''', (cutoff_date_str,))
-            
+
             old_ids = [row['id'] for row in cursor.fetchall()]
-            
+
             if old_ids:
                 # Delete items for old histories
                 placeholders = ','.join(['?' for _ in old_ids])
                 cursor.execute(f'DELETE FROM items WHERE history_id IN ({placeholders})', old_ids)
-                
+
                 # Delete old histories
                 cursor.execute(f'DELETE FROM fetch_history WHERE id IN ({placeholders})', old_ids)
-                
+
                 conn.commit()
                 return len(old_ids)
-            
+
             return 0
-            
+
         except Exception as e:
             print(f"Error cleaning up old entries: {e}")
             conn.rollback()
             return 0
-    
+
     def search_items(self, query: str, limit: int = 100) -> List[Dict]:
         """Search items by title or URL"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 SELECT i.*, h.timestamp
                 FROM items i
@@ -2082,7 +2654,7 @@ class DatabaseManager:
                 ORDER BY h.timestamp DESC
                 LIMIT ?
             ''', (f'%{query}%', f'%{query}%', limit))
-            
+
             items = []
             for row in cursor.fetchall():
                 items.append({
@@ -2100,43 +2672,43 @@ class DatabaseManager:
                     'timestamp': row['timestamp'],
                     'history_id': row['history_id']
                 })
-            
+
             return items
-            
+
         except Exception as e:
             print(f"Error searching items: {e}")
             return []
 
     # ===== AUTO-SCRAPER METHODS =====
-    
+
     def create_scraper_run(self, run_id: str, config: Dict = None) -> bool:
         """Create a new scraper run entry"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 INSERT INTO scraper_runs (run_id, status, started_at, config)
                 VALUES (?, 'running', ?, ?)
             ''', (run_id, datetime.datetime.now(), json.dumps(config or {})))
-            
+
             conn.commit()
             return True
         except Exception as e:
             print(f"Error creating scraper run: {e}")
             return False
-    
+
     def update_scraper_run(self, run_id: str, updates: Dict) -> bool:
         """Update scraper run with progress or completion"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             set_clauses = []
             values = []
-            
+
             for key, value in updates.items():
-                if key in ['status', 'completed_at', 'total_brands', 'total_categories', 
+                if key in ['status', 'completed_at', 'total_brands', 'total_categories',
                            'total_models', 'total_products', 'new_products', 'updated_products',
                            'errors_count', 'current_brand', 'current_category', 'current_model']:
                     set_clauses.append(f"{key} = ?")
@@ -2144,35 +2716,35 @@ class DatabaseManager:
                 elif key in ['checkpoint', 'error_log']:
                     set_clauses.append(f"{key} = ?")
                     values.append(json.dumps(value) if value else None)
-            
+
             if not set_clauses:
                 return False
-            
+
             values.append(run_id)
             query = f"UPDATE scraper_runs SET {', '.join(set_clauses)} WHERE run_id = ?"
-            
+
             cursor.execute(query, values)
             conn.commit()
             return cursor.rowcount > 0
-            
+
         except Exception as e:
             print(f"Error updating scraper run: {e}")
             return False
-    
+
     def get_scraper_run(self, run_id: str) -> Optional[Dict]:
         """Get scraper run details"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 SELECT * FROM scraper_runs WHERE run_id = ?
             ''', (run_id,))
-            
+
             row = cursor.fetchone()
             if not row:
                 return None
-            
+
             return {
                 'id': row['id'],
                 'run_id': row['run_id'],
@@ -2193,17 +2765,17 @@ class DatabaseManager:
                 'error_log': json.loads(row['error_log']) if row['error_log'] else [],
                 'config': json.loads(row['config']) if row['config'] else {}
             }
-            
+
         except Exception as e:
             print(f"Error getting scraper run: {e}")
             return None
-    
+
     def get_scraper_runs_list(self, limit: int = 20) -> List[Dict]:
         """Get list of recent scraper runs"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 SELECT id, run_id, status, started_at, completed_at,
                        total_brands, total_categories, total_models, total_products,
@@ -2212,7 +2784,7 @@ class DatabaseManager:
                 ORDER BY started_at DESC
                 LIMIT ?
             ''', (limit,))
-            
+
             runs = []
             for row in cursor.fetchall():
                 runs.append({
@@ -2229,19 +2801,19 @@ class DatabaseManager:
                     'updated_products': row['updated_products'],
                     'errors_count': row['errors_count']
                 })
-            
+
             return runs
-            
+
         except Exception as e:
             print(f"Error getting scraper runs list: {e}")
             return []
-    
+
     def save_brand(self, name: str, slug: str, url: str) -> int:
         """Save or update brand, returns brand_id"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 INSERT INTO ms_brands (name, slug, url, updated_at)
                 VALUES (?, ?, ?, ?)
@@ -2250,22 +2822,22 @@ class DatabaseManager:
                     url = excluded.url,
                     updated_at = excluded.updated_at
             ''', (name, slug, url, datetime.datetime.now()))
-            
+
             conn.commit()
-            
+
             cursor.execute('SELECT id FROM ms_brands WHERE slug = ?', (slug,))
             return cursor.fetchone()['id']
-            
+
         except Exception as e:
             print(f"Error saving brand: {e}")
             return 0
-    
+
     def save_category(self, brand_id: int, name: str, slug: str, url: str) -> int:
         """Save or update category, returns category_id"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 INSERT INTO ms_categories (brand_id, name, slug, url, updated_at)
                 VALUES (?, ?, ?, ?, ?)
@@ -2274,22 +2846,22 @@ class DatabaseManager:
                     url = excluded.url,
                     updated_at = excluded.updated_at
             ''', (brand_id, name, slug, url, datetime.datetime.now()))
-            
+
             conn.commit()
-            
+
             cursor.execute('SELECT id FROM ms_categories WHERE brand_id = ? AND slug = ?', (brand_id, slug))
             return cursor.fetchone()['id']
-            
+
         except Exception as e:
             print(f"Error saving category: {e}")
             return 0
-    
+
     def save_model(self, category_id: int, name: str, slug: str, url: str) -> int:
         """Save or update model, returns model_id"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 INSERT INTO ms_models (category_id, name, slug, url, updated_at)
                 VALUES (?, ?, ?, ?, ?)
@@ -2298,16 +2870,16 @@ class DatabaseManager:
                     url = excluded.url,
                     updated_at = excluded.updated_at
             ''', (category_id, name, slug, url, datetime.datetime.now()))
-            
+
             conn.commit()
-            
+
             cursor.execute('SELECT id FROM ms_models WHERE category_id = ? AND slug = ?', (category_id, slug))
             return cursor.fetchone()['id']
-            
+
         except Exception as e:
             print(f"Error saving model: {e}")
             return 0
-    
+
     def save_product(self, product_data: Dict) -> Tuple[int, bool]:
         """
         Save or update product, returns (product_id, is_new)
@@ -2316,15 +2888,15 @@ class DatabaseManager:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             # Check if product exists
-            cursor.execute('SELECT id, price, stock_status FROM ms_products WHERE sku = ?', 
+            cursor.execute('SELECT id, price, stock_status FROM ms_products WHERE sku = ?',
                           (product_data['sku'],))
             existing = cursor.fetchone()
-            
+
             is_new = existing is None
             now = datetime.datetime.now()
-            
+
             if is_new:
                 # Insert new product
                 cursor.execute('''
@@ -2350,13 +2922,13 @@ class DatabaseManager:
                     json.dumps(product_data.get('bulk_discounts', {})),
                     now, now, now
                 ))
-                
+
                 product_id = cursor.lastrowid
-                
+
             else:
                 # Update existing product
                 product_id = existing['id']
-                
+
                 cursor.execute('''
                     UPDATE ms_products SET
                         title = ?, description = ?, price = ?, stock_status = ?,
@@ -2377,50 +2949,50 @@ class DatabaseManager:
                     json.dumps(product_data.get('bulk_discounts', {})),
                     now, now, product_id
                 ))
-                
+
                 # Track price change
                 if existing and product_data.get('price') != existing['price']:
                     cursor.execute('''
                         INSERT INTO ms_price_history (product_id, price, stock_status, recorded_at)
                         VALUES (?, ?, ?, ?)
-                    ''', (product_id, product_data.get('price'), 
+                    ''', (product_id, product_data.get('price'),
                           product_data.get('stock_status', ''), now))
-            
+
             conn.commit()
             return (product_id, is_new)
-            
+
         except Exception as e:
             print(f"Error saving product: {e}")
             return (0, False)
-    
+
     def get_scraper_statistics(self) -> Dict:
         """Get comprehensive auto-scraper statistics"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             stats = {}
-            
+
             # Total counts
             cursor.execute('SELECT COUNT(*) as count FROM ms_brands')
             stats['total_brands'] = cursor.fetchone()['count']
-            
+
             cursor.execute('SELECT COUNT(*) as count FROM ms_categories')
             stats['total_categories'] = cursor.fetchone()['count']
-            
+
             cursor.execute('SELECT COUNT(*) as count FROM ms_models')
             stats['total_models'] = cursor.fetchone()['count']
-            
+
             cursor.execute('SELECT COUNT(*) as count FROM ms_products')
             stats['total_products'] = cursor.fetchone()['count']
-            
+
             # Recent runs
             cursor.execute('''
                 SELECT COUNT(*) as count FROM scraper_runs
                 WHERE started_at >= datetime('now', '-7 days')
             ''')
             stats['runs_last_7_days'] = cursor.fetchone()['count']
-            
+
             # Last run info
             cursor.execute('''
                 SELECT status, started_at, completed_at, total_products
@@ -2433,7 +3005,7 @@ class DatabaseManager:
                 stats['last_run_status'] = last_run['status']
                 stats['last_run_date'] = last_run['started_at']
                 stats['last_run_products'] = last_run['total_products']
-            
+
             # Products with price changes (last 7 days)
             cursor.execute('''
                 SELECT COUNT(DISTINCT product_id) as count
@@ -2441,34 +3013,34 @@ class DatabaseManager:
                 WHERE recorded_at >= datetime('now', '-7 days')
             ''')
             stats['price_changes_7_days'] = cursor.fetchone()['count']
-            
+
             # Average price
             cursor.execute('SELECT AVG(price) as avg FROM ms_products WHERE price > 0')
             avg_result = cursor.fetchone()
             stats['avg_price'] = round(avg_result['avg'] or 0, 2)
-            
+
             # In stock products
             cursor.execute('''
                 SELECT COUNT(*) as count FROM ms_products
                 WHERE stock_status = 'in_stock'
             ''')
             stats['in_stock_products'] = cursor.fetchone()['count']
-            
+
             return stats
-            
+
         except Exception as e:
             print(f"Error getting scraper statistics: {e}")
             return {}
-    
-    def search_products(self, query: str = '', brand: str = '', category: str = '', 
+
+    def search_products(self, query: str = '', brand: str = '', category: str = '',
                        model: str = '', limit: int = 100) -> List[Dict]:
         """Search products with filters"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             sql = '''
-                SELECT 
+                SELECT
                     p.*,
                     m.name as model_name,
                     c.name as category_name,
@@ -2480,28 +3052,28 @@ class DatabaseManager:
                 WHERE 1=1
             '''
             params = []
-            
+
             if query:
                 sql += ' AND (p.title LIKE ? OR p.description LIKE ? OR p.sku LIKE ?)'
                 params.extend([f'%{query}%', f'%{query}%', f'%{query}%'])
-            
+
             if brand:
                 sql += ' AND b.slug = ?'
                 params.append(brand)
-            
+
             if category:
                 sql += ' AND c.slug = ?'
                 params.append(category)
-            
+
             if model:
                 sql += ' AND m.slug = ?'
                 params.append(model)
-            
+
             sql += ' ORDER BY p.updated_at DESC LIMIT ?'
             params.append(limit)
-            
+
             cursor.execute(sql, params)
-            
+
             products = []
             for row in cursor.fetchall():
                 products.append({
@@ -2520,12 +3092,105 @@ class DatabaseManager:
                     'model_name': row['model_name'],
                     'updated_at': row['updated_at']
                 })
-            
+
             return products
-            
+
         except Exception as e:
             print(f"Error searching products: {e}")
             return []
+
+# ===== USER MANAGEMENT =====
+
+    def _bootstrap_auth(self):
+        """Bootstrap the initial admin user from environment variables if the users table is empty."""
+        import os
+
+        # We need to import this carefully or we can just read the env.
+        # It's better to just use os.environ or dotenv here.
+        # Actually auth.py handles the default env. Let's just do it directly.
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as count FROM users")
+        row = cursor.fetchone()
+        if row and row['count'] == 0:
+            username = os.environ.get("AUTH_USERNAME", "admin")
+            role = os.environ.get("AUTH_ROLE", "admin")
+            password = os.environ.get("AUTH_PASSWORD", "admin")
+            password_hash = os.environ.get("AUTH_PASSWORD_HASH", "")
+
+            if not password_hash and password:
+                from werkzeug.security import generate_password_hash
+                password_hash = generate_password_hash(password)
+
+            if password_hash:
+                print(f"Bootstrapping initial user: {username} ({role})")
+                self.add_user(username, password_hash, role)
+
+
+    def get_all_users(self):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, username, role, created_at FROM users')
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_user_by_username(self, username):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def get_user_by_id(self, user_id):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def add_user(self, username, password_hash, role):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO users (username, password_hash, role)
+                VALUES (?, ?, ?)
+            """, (username, password_hash, role))
+            conn.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            conn.rollback()
+            print(f'Error adding user: {e}')
+            return None
+
+    def update_user(self, user_id, role=None, password_hash=None):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            if password_hash and role:
+                cursor.execute('UPDATE users SET password_hash = ?, role = ? WHERE id = ?', (password_hash, role, user_id))
+            elif password_hash:
+                cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash, user_id))
+            elif role:
+                cursor.execute('UPDATE users SET role = ? WHERE id = ?', (role, user_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            print(f'Error updating user: {e}')
+            return False
+
+    def delete_user(self, user_id):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            conn.rollback()
+            print(f'Error deleting user: {e}')
+            return False
 
 class MultiDatabaseManager:
     """Facade that keeps one SQLite database per scraper/site while aggregating reads."""
@@ -2537,7 +3202,7 @@ class MultiDatabaseManager:
         self.app_dir = app_dir
         self.managers: Dict[str, DatabaseManager] = {}
 
-        for scraper_key in ('standard', 'xcell', 'txparts', 'parts4cells'):
+        for scraper_key in SCRAPER_CONFIG.keys():
             db_path = os.path.join(self.base_dir, get_db_filename(scraper_key))
             self._seed_site_database(scraper_key, db_path)
             self.managers[scraper_key] = DatabaseManager(db_path=db_path)
@@ -2738,6 +3403,27 @@ class MultiDatabaseManager:
             if manager.delete_history(raw_history_id):
                 return True
         return False
+
+    def prune_histories_for_urls(self, urls: List[str], keep: int = 2) -> List[str]:
+        deleted_public_ids = []
+        urls_by_scraper = split_urls_by_scraper(urls)
+        for scraper_key, site_urls in urls_by_scraper.items():
+            raw_deleted = self._get_manager(scraper_key).prune_histories_for_urls(site_urls, keep=keep)
+            deleted_public_ids.extend(
+                self._public_history_id(scraper_key, history_id)
+                for history_id in raw_deleted
+            )
+        return deleted_public_ids
+
+    def get_product_metadata_cache(self, urls: List[str], scraper_key: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+        if not urls:
+            return {}
+        if scraper_key and scraper_key in self.managers:
+            return self._get_manager(scraper_key).get_product_metadata_cache(urls)
+        result: Dict[str, Dict[str, Any]] = {}
+        for manager in self.managers.values():
+            result.update(manager.get_product_metadata_cache(urls))
+        return result
 
     def save_watchlist_item(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
@@ -2948,4 +3634,28 @@ class MultiDatabaseManager:
 
 
 # Global database instance
+
+
+
+
+    # ===== USER MANAGEMENT DELEGATORS =====
+    def get_all_users(self):
+        return self.managers['standard'].get_all_users()
+
+    def get_user_by_username(self, username):
+        return self.managers['standard'].get_user_by_username(username)
+
+    def get_user_by_id(self, user_id):
+        return self.managers['standard'].get_user_by_id(user_id)
+
+    def add_user(self, username, password_hash, role):
+        return self.managers['standard'].add_user(username, password_hash, role)
+
+    def update_user(self, user_id, role=None, password_hash=None):
+        return self.managers['standard'].update_user(user_id, role, password_hash)
+
+    def delete_user(self, user_id):
+        return self.managers['standard'].delete_user(user_id)
+
+
 db_manager = MultiDatabaseManager()

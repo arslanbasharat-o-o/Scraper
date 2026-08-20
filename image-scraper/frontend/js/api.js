@@ -9,7 +9,11 @@ const locallyDeletedJobIds = new Set();
 const API_BASE = (() => {
     const explicit = String(window.__SCRAPER_API_BASE__ || '').trim();
     if (explicit) return explicit.replace(/\/+$/, '');
-    return window.location.protocol === 'file:' ? 'http://localhost:3001' : '';
+    if (window.location.protocol === 'file:') return 'http://localhost:3001';
+    if (['localhost', '127.0.0.1'].includes(window.location.hostname) && window.location.port !== '3001') {
+        return 'http://localhost:3001';
+    }
+    return '';
 })();
 
 function storageGetJobs() {
@@ -90,11 +94,13 @@ function toImageUrl(entry, jobId = '') {
     if (typeof entry !== 'object') return '';
 
     // Prefer the local endpoint for converted images so the gallery can render
-    // consistent JPG output without relying on third-party hotlink behavior.
+    // consistent PNG output without relying on third-party hotlink behavior.
     const imageId = normalizeId(entry.id);
     const isConverted = entry.converted === true || entry.converted === 1 || String(entry.converted).toLowerCase() === 'true';
     if (jobId && imageId && isConverted) {
-        return normalizeUrl(`${API_BASE}/jobs/${encodeURIComponent(jobId)}/images/${encodeURIComponent(imageId)}`);
+        const endpoint = `${API_BASE}/jobs/${encodeURIComponent(jobId)}/images/${encodeURIComponent(imageId)}`;
+        const fileName = String(entry.file_name || '').trim();
+        return normalizeUrl(fileName ? `${endpoint}?download_name=${encodeURIComponent(fileName)}` : endpoint);
     }
 
     return normalizeUrl(
@@ -105,6 +111,24 @@ function toImageUrl(entry, jobId = '') {
         entry.href ||
         ''
     );
+}
+
+function toImageRecord(entry, jobId = '') {
+    const src = toImageUrl(entry, jobId);
+    if (!src) return null;
+
+    if (typeof entry === 'string') {
+        return { id: '', src, original_url: src, file_name: '' };
+    }
+
+    return {
+        id: normalizeId(entry?.id),
+        src,
+        original_url: normalizeUrl(entry?.original_url || entry?.url || src),
+        file_name: String(entry?.file_name || '').trim(),
+        product_name: String(entry?.product_name || '').trim(),
+        product_index: Number.isFinite(Number(entry?.product_index)) ? Number(entry.product_index) : null
+    };
 }
 
 function normalizeProduct(product, jobId = '') {
@@ -163,12 +187,27 @@ function inferModel(url, products) {
     }
 }
 
+function normalizeFolderName(value) {
+    return String(value || '')
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+}
+
 async function requestJSON(url, options = {}, timeoutMs = 180000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-        const response = await fetch(url, { ...options, signal: controller.signal });
+        const response = await fetch(url, {
+            ...options,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                ...(options.headers || {})
+            },
+            signal: controller.signal
+        });
 
         let payload = null;
         try {
@@ -214,7 +253,10 @@ function normalizeStoredJob(job) {
         id,
         url: String(job?.url || '').trim(),
         status,
-        model: String(job?.model || inferModel(job?.url || '', products)),
+        folder_name: normalizeFolderName(job?.folder_name || ''),
+        download_folder: normalizeFolderName(job?.download_folder || ''),
+        title_filter: String(job?.title_filter || ''),
+        model: String(job?.model || job?.folder_name || inferModel(job?.url || '', products)),
         images: Math.max(0, imageCount),
         total_items: Math.max(0, totalItems),
         processed_items: Math.max(0, processedItems),
@@ -232,6 +274,9 @@ function toUiJob(job) {
         url: normalized.url,
         status: normalized.status,
         model: normalized.model,
+        folder_name: normalized.folder_name,
+        download_folder: normalized.download_folder,
+        title_filter: normalized.title_filter,
         images: normalized.images,
         total_items: normalized.total_items,
         processed_items: normalized.processed_items,
@@ -261,12 +306,6 @@ function mergeServerJobs(serverJobs) {
         existingById.delete(id);
         return nextRecord;
     });
-
-    // Keep local-only jobs (useful if user started a request and server was restarted).
-    for (const leftover of existingById.values()) {
-        if (locallyDeletedJobIds.has(normalizeId(leftover?.id))) continue;
-        merged.push(leftover);
-    }
 
     merged.sort((a, b) => {
         const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
@@ -314,9 +353,11 @@ export async function fetchJobs() {
     return storageGetJobs().map(toUiJob).filter(Boolean);
 }
 
-export async function startScrapeAPI(url) {
+export async function startScrapeAPI(url, options = {}) {
     const cleanUrl = String(url || '').trim();
     if (!cleanUrl) throw new Error('URL is required');
+    const titleFilter = String(options.titleFilter || '').trim();
+    const folderName = normalizeFolderName(options.folderName || '');
 
     const jobId = createJobId();
 
@@ -324,7 +365,9 @@ export async function startScrapeAPI(url) {
         id: jobId,
         url: cleanUrl,
         status: 'running',
-        model: inferModel(cleanUrl, []),
+        folder_name: folderName,
+        download_folder: folderName,
+        model: folderName || inferModel(cleanUrl, []),
         images: 0,
         total_items: 0,
         processed_items: 0,
@@ -335,8 +378,14 @@ export async function startScrapeAPI(url) {
     });
 
     try {
-        const endpoint = `${API_BASE}/scrape?url=${encodeURIComponent(cleanUrl)}&job_id=${encodeURIComponent(jobId)}`;
-        const payload = await requestJSON(endpoint, { method: 'POST' }, 1800000);
+        const params = new URLSearchParams({
+            url: cleanUrl,
+            job_id: jobId
+        });
+        if (titleFilter) params.set('title_filter', titleFilter);
+        if (folderName) params.set('folder_name', folderName);
+        const endpoint = `${API_BASE}/scrape?${params.toString()}`;
+        const payload = await requestJSON(endpoint, { method: 'POST' }, 60000);
 
         if (!payload?.success) {
             throw new Error(payload?.error || 'Scrape failed');
@@ -347,15 +396,43 @@ export async function startScrapeAPI(url) {
             : (Array.isArray(payload.data) ? payload.data : []);
 
         const products = rawProducts.map(normalizeProduct);
+        const acceptedStatus = ['queued', 'running'].includes(String(payload.status || '').toLowerCase());
 
         if (wasRemovedLocally(jobId)) {
             return { success: false, canceled: true };
         }
 
+        if (acceptedStatus && products.length === 0) {
+            upsertJob({
+                ...runningJob,
+                status: payload.status || 'queued',
+                folder_name: payload.folder_name || folderName,
+                download_folder: payload.download_folder || payload.folder_name || folderName,
+                model: payload.folder_name || folderName || inferModel(cleanUrl, []),
+                products: [],
+                images: 0,
+                total_items: 0,
+                processed_items: 0,
+                updated_at: new Date().toISOString(),
+                error: null
+            });
+
+            return {
+                success: true,
+                queued: true,
+                job_id: jobId,
+                folder_name: payload.folder_name || folderName,
+                download_folder: payload.download_folder || payload.folder_name || folderName,
+                products: []
+            };
+        }
+
         upsertJob({
             ...runningJob,
             status: 'completed',
-            model: inferModel(cleanUrl, products),
+            folder_name: payload.folder_name || folderName,
+            download_folder: payload.download_folder || payload.folder_name || folderName,
+            model: payload.folder_name || folderName || inferModel(cleanUrl, products),
             products,
             images: flattenImages(products).length,
             total_items: products.length,
@@ -368,6 +445,8 @@ export async function startScrapeAPI(url) {
         return {
             success: true,
             job_id: jobId,
+            folder_name: payload.folder_name || folderName,
+            download_folder: payload.download_folder || payload.folder_name || folderName,
             products
         };
     } catch (error) {
@@ -391,14 +470,12 @@ export async function startModelScrapeAPI() {
 
 export async function deleteJobAPI(jobId) {
     const id = normalizeId(jobId);
+    await requestJSON(`${API_BASE}/jobs/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'X-Confirm-Destructive': 'permanently-delete' }
+    }, 30000);
     locallyDeletedJobIds.add(id);
     removeJob(id);
-
-    try {
-        await requestJSON(`${API_BASE}/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' }, 30000);
-    } catch (error) {
-        console.warn('Failed to delete remote job, removing local record only:', error.message);
-    }
     return { success: true };
 }
 
@@ -419,21 +496,75 @@ export async function stopJobAPI(jobId) {
     return { success: true };
 }
 
-export async function resetJobsAPI() {
-    locallyDeletedJobIds.clear();
-    try {
-        await requestJSON(`${API_BASE}/jobs/reset`, { method: 'POST' }, 60000);
-    } catch (error) {
-        console.warn('Failed to reset remote jobs, clearing local cache only:', error.message);
+export async function pauseJobAPI(jobId) {
+    const id = normalizeId(jobId);
+    const payload = await requestJSON(`${API_BASE}/jobs/${encodeURIComponent(id)}/pause`, { method: 'POST' }, 30000);
+    if (!payload?.success) {
+        throw new Error(payload?.error || 'Pause failed');
     }
 
+    const current = getJob(id);
+    if (current) {
+        upsertJob({ ...current, status: 'paused', updated_at: new Date().toISOString() });
+    }
+
+    return payload;
+}
+
+export async function resumeJobAPI(jobId) {
+    const id = normalizeId(jobId);
+    const payload = await requestJSON(`${API_BASE}/jobs/${encodeURIComponent(id)}/resume`, { method: 'POST' }, 30000);
+    if (!payload?.success) {
+        throw new Error(payload?.error || 'Resume failed');
+    }
+
+    const current = getJob(id);
+    if (current) {
+        upsertJob({ ...current, status: payload.status || 'queued', updated_at: new Date().toISOString() });
+    }
+
+    return payload;
+}
+
+export async function resetJobsAPI() {
+    await requestJSON(`${API_BASE}/jobs/reset`, {
+        method: 'POST',
+        headers: { 'X-Confirm-Destructive': 'permanently-delete' }
+    }, 60000);
+    locallyDeletedJobIds.clear();
     storageSetJobs([]);
     return { success: true };
 }
 
 export async function fetchImagesAPI(jobId) {
+    const records = await fetchImageRecordsAPI(jobId);
+    if (records.length) {
+        return records.map((record) => record.src);
+    }
+
+    return [];
+}
+
+export async function fetchImageRecordsAPI(jobId) {
     const id = normalizeId(jobId);
     let job = null;
+
+    try {
+        const payload = await requestJSON(`${API_BASE}/jobs/${encodeURIComponent(id)}/images`, {}, 60000);
+        if (payload?.success && Array.isArray(payload.images)) {
+            const seen = new Set();
+            const records = [];
+            for (const img of payload.images) {
+                const record = toImageRecord(img, id);
+                if (!record || seen.has(record.src)) continue;
+                seen.add(record.src);
+                records.push(record);
+            }
+            return records;
+        }
+    } catch (error) {
+        console.warn('Could not fetch image list endpoint, falling back to full job payload:', error.message);
+    }
 
     // Always try to refresh the selected job with full product payload first.
     // This prevents stale local cache from showing only a subset of images.
@@ -452,7 +583,30 @@ export async function fetchImagesAPI(jobId) {
     }
 
     if (!job || !Array.isArray(job.products)) return [];
-    return flattenImages(job.products);
+    return flattenImages(job.products).map((src) => ({ id: '', src, original_url: src, file_name: '' }));
+}
+
+export async function deleteImageAPI(jobId, imageId) {
+    const id = normalizeId(jobId);
+    const imgId = normalizeId(imageId);
+    if (!id || !imgId) {
+        throw new Error('Image id is missing');
+    }
+
+    const payload = await requestJSON(
+        `${API_BASE}/jobs/${encodeURIComponent(id)}/images/${encodeURIComponent(imgId)}`,
+        {
+            method: 'DELETE',
+            headers: { 'X-Confirm-Destructive': 'permanently-delete' }
+        },
+        30000
+    );
+
+    if (!payload?.success) {
+        throw new Error(payload?.error || 'Image delete failed');
+    }
+
+    return payload;
 }
 
 export async function pauseAllJobsAPI() {

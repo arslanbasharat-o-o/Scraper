@@ -33,6 +33,8 @@ env/
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 mobilesentrix.db
@@ -46,21 +48,44 @@ mobilesentrix.db
 
 # Logs
 *.log
+*.log.*
 logs/
 server.log
+server.log.*
 
-# Testing
+# Testing & Tools
 .pytest_cache/
-.playwright-cli/
+.ruff_cache/
 .coverage
+.playwright-cli/
 htmlcov/
+test-tmp/
+storage/pytest_cache/
 
 # Temporary files
+.tmp/
 tmp/
 temp/
 *.tmp
+test-tmp/
 mise.toml
 output/
+data/site_dbs/*.bak*
+data/site_dbs/*.before*
+error_logs/
+browser_profiles/
+
+# Centralized Storage & Runtime Data
+storage/exports/*
+!storage/exports/.gitkeep
+storage/backups/*
+!storage/backups/.gitkeep
+storage/error_logs/*
+!storage/error_logs/.gitkeep
+storage/temp/*
+!storage/temp/.gitkeep
+logs/*
+!logs/.gitkeep
 
 # OS Files
 Thumbs.db

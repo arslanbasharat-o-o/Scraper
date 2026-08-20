@@ -1,6 +1,6 @@
 # MobileSentrix Scraper API
 
-Production-oriented scraper service for product pages and category pages, with Selenium extraction, Python image conversion, and ZIP export.
+Production-oriented scraper service for product pages and category pages, with headless Botasaurus rendering, Python image conversion, and ZIP export.
 
 [![Node.js](https://img.shields.io/badge/Node.js-v20+-green?logo=node.js)](https://nodejs.org/)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://www.python.org/)
@@ -34,7 +34,7 @@ Production-oriented scraper service for product pages and category pages, with S
 
 - Node.js 20+
 - Python 3.11+ (recommended)
-- Chrome/Chromium runtime for Selenium
+- Chrome/Chromium runtime for Botasaurus
 
 ## Quick Start
 
@@ -87,8 +87,10 @@ curl -G "http://localhost:3001/scrape" \
 - `GET /jobs/:id` - job summary
 - `GET /jobs/:id?include_products=true` - include product payload
 - `POST /jobs/:id/stop` - stop a running job
-- `DELETE /jobs/:id` - delete job and files
-- `POST /jobs/reset` - reset all jobs
+- `POST /jobs/:id/pause` - pause a running job
+- `POST /jobs/:id/resume` - resume a paused or failed job from saved checkpoints
+- `DELETE /jobs/:id` - delete job and files (requires `X-Confirm-Destructive: permanently-delete`)
+- `POST /jobs/reset` - reset all jobs (requires `X-Confirm-Destructive: permanently-delete`)
 
 ### Asset endpoints
 
@@ -111,11 +113,14 @@ Detailed endpoint examples: [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)
 Main environment variables:
 
 - `PORT` (default `3001`)
-- `PERSIST_JOBS` (default `false`)
+- `HOST` (default `127.0.0.1`; use `0.0.0.0` only for intentional network access)
+- `APP_ACCESS_TOKEN` (required when `NODE_ENV=production`)
+- `PERSIST_JOBS` (default `true`)
+- `PERSIST_JOB_LIMIT` (default `0`, unlimited)
+- `AUTO_RESUME_RESTORED_JOBS` (default `false`)
+- `IMAGE_CLEANUP_ENABLED` (default `false`)
 - `MAX_ACTIVE_SCRAPES` (default `3`)
 - `JOB_MAX_RUNTIME_MS` (default `2700000`)
-- `CHROME_HEADLESS` (default `true`)
-- `PRODUCTS_PER_BROWSER` (default `8`)
 - `IMAGE_DOWNLOAD_CONCURRENCY` (default `3`)
 
 Use `.env.example` as a baseline for local and hosted environments.
@@ -226,8 +231,6 @@ python3 -m py_compile convert_image.py create_zip.py
 
 - [`docs/README.md`](docs/README.md)
 - [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)
-- [`docs/QUICK_START.md`](docs/QUICK_START.md)
-- [`docs/OPTIMIZATION.md`](docs/OPTIMIZATION.md)
 - [`docs/PYTHON_SETUP.md`](docs/PYTHON_SETUP.md)
 - [`docs/START_SERVER.md`](docs/START_SERVER.md)
 

@@ -11,6 +11,8 @@ set "PORT_END=5050"
 
 if not defined OPEN_BROWSER set "OPEN_BROWSER=1"
 if not defined FLASK_DEBUG set "FLASK_DEBUG=0"
+if not defined PAUSE_ON_EXIT set "PAUSE_ON_EXIT=1"
+if not defined STOP_EXISTING set "STOP_EXISTING=1"
 
 echo.
 echo ================================================
@@ -66,38 +68,53 @@ if not "%EXIT_CODE%"=="0" (
     echo + %APP_NAME% stopped.
 )
 
-pause
+call :pause_if_enabled
 exit /b %EXIT_CODE%
 
 :startup_failed
 echo.
-pause
+call :pause_if_enabled
 exit /b 1
+
+:pause_if_enabled
+if /I "%PAUSE_ON_EXIT%"=="1" pause
+goto :eof
 
 :ensure_venv
 if exist "%VENV_PY%" (
-    echo + Using existing virtual environment
-    goto :eof
+    "%VENV_PY%" -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)" >nul 2>nul
+    if not errorlevel 1 (
+        echo + Using existing Python 3.12 virtual environment
+        goto :eof
+    )
+    echo - Existing virtual environment is not Python 3.12; rebuilding it...
+    rmdir /s /q "%VENV_DIR%" >nul 2>nul
+    if exist "%VENV_DIR%" (
+        color 4c
+        echo X Could not remove the broken virtual environment.
+        echo   Close any running Python/app windows and run start.bat again.
+        exit /b 1
+    )
 )
 
 set "BOOTSTRAP_CMD="
-py -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)" >nul 2>nul
-if not errorlevel 1 set "BOOTSTRAP_CMD=py -3"
+py -3.12 -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)" >nul 2>nul
+if not errorlevel 1 set "BOOTSTRAP_CMD=py -3.12"
 
 if not defined BOOTSTRAP_CMD (
-    python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)" >nul 2>nul
+    python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)" >nul 2>nul
     if not errorlevel 1 set "BOOTSTRAP_CMD=python"
 )
 
 if not defined BOOTSTRAP_CMD (
-    py -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)" >nul 2>nul
+    py -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)" >nul 2>nul
     if not errorlevel 1 set "BOOTSTRAP_CMD=py"
 )
 
 if not defined BOOTSTRAP_CMD (
     color 4c
-    echo X Python 3.12 or newer was not found.
-    echo   Install Python 3.12+ and make sure `python` or `py` is available.
+    echo X Python 3.12 was not found.
+    echo   Install Python 3.12 and make sure `python` or `py -3.12` is available.
     exit /b 1
 )
 
@@ -131,8 +148,14 @@ goto :eof
 :ensure_dependencies
 set "INSTALL_DEPS=1"
 
+if not exist "requirements.txt" (
+    color 4c
+    echo X requirements.txt was not found in %CD%.
+    exit /b 1
+)
+
 if exist "%REQ_MARKER%" (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "$req=(Get-Item 'requirements.txt').LastWriteTimeUtc; $mark=(Get-Item '.venv/.requirements_installed').LastWriteTimeUtc; if ($mark -ge $req) { exit 0 } else { exit 1 }" >nul 2>nul
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$req=(Get-Item -LiteralPath 'requirements.txt').LastWriteTimeUtc; $mark=(Get-Item -LiteralPath $env:REQ_MARKER).LastWriteTimeUtc; if ($mark -ge $req) { exit 0 } else { exit 1 }" >nul 2>nul
     if not errorlevel 1 set "INSTALL_DEPS=0"
 )
 
@@ -180,24 +203,75 @@ if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" set "CHROME
 if "%CHROME_FOUND%"=="1" (
     echo + Chrome-compatible browser found
 ) else (
-    echo - Chrome-compatible browser not found ^(recommended for Selenium scraping^)
+    echo - Chrome-compatible browser not found ^(Botasaurus may install its own runtime^)
 )
 goto :eof
 
 :ensure_port
-if defined PORT (
-    echo + Using preset PORT=%PORT%
-    goto :eof
+if not defined PORT (
+    set "PORT=%PORT_START%"
 )
 
-for /f "usebackq delims=" %%i in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$port=$null; foreach($p in %PORT_START%..%PORT_END%){ try { $listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any,$p); $listener.Start(); $listener.Stop(); $port=$p; break } catch {} }; if ($port) { $port } else { exit 1 }"`) do set "PORT=%%i"
+call :validate_port "%PORT%"
+if errorlevel 1 exit /b 1
 
-if not defined PORT (
+call :stop_existing_on_port "%PORT%"
+if errorlevel 1 exit /b 1
+
+call :is_port_free "%PORT%"
+if errorlevel 1 (
     color 4c
-    echo X No free port found in range %PORT_START%-%PORT_END%.
-    echo   Set the PORT environment variable to a free port and run again.
+    echo X Port %PORT% is already in use.
+    echo   Close the existing app or run with STOP_EXISTING=1.
     exit /b 1
 )
 
 echo + Using PORT=%PORT%
+goto :eof
+
+:stop_existing_on_port
+set "CHECK_PORT=%~1"
+call :is_port_free "%CHECK_PORT%"
+if not errorlevel 1 goto :eof
+
+if /I not "%STOP_EXISTING%"=="1" (
+    color 4c
+    echo X Port %CHECK_PORT% is already in use.
+    echo   Set STOP_EXISTING=1 to let startup close an older copy of this app.
+    exit /b 1
+)
+
+echo - Port %CHECK_PORT% is already in use; checking for an older %APP_NAME% server...
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\stop_existing_server.ps1" -Port "%CHECK_PORT%" -Workspace "%CD%"
+if errorlevel 1 (
+    color 4c
+    echo X Could not safely clear port %CHECK_PORT%.
+    echo   Close the existing app window and run start.bat again.
+    exit /b 1
+)
+goto :eof
+
+:validate_port
+set "CHECK_PORT=%~1"
+if not defined CHECK_PORT (
+    color 4c
+    echo X PORT is empty.
+    exit /b 1
+)
+for /f "delims=0123456789" %%a in ("%CHECK_PORT%") do (
+    color 4c
+    echo X PORT must be a number, got "%CHECK_PORT%".
+    exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=[int]$env:CHECK_PORT; if ($p -ge 1 -and $p -le 65535) { exit 0 } else { exit 1 }" >nul 2>nul
+if errorlevel 1 (
+    color 4c
+    echo X PORT must be between 1 and 65535, got "%CHECK_PORT%".
+    exit /b 1
+)
+goto :eof
+
+:is_port_free
+set "CHECK_PORT=%~1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=[int]$env:CHECK_PORT; try { $listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any,$p); $listener.Start(); $listener.Stop(); exit 0 } catch { exit 1 }" >nul 2>nul
 goto :eof

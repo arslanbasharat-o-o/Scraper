@@ -31,12 +31,9 @@ const log = {
 const APP_DIR = __dirname;
 const LOCAL_NODE_MODULES_PATH = path.join(APP_DIR, 'node_modules');
 const SPEED_DEFAULTS = {
-  IMAGE_DOWNLOAD_CONCURRENCY: '6',
+  IMAGE_DOWNLOAD_CONCURRENCY: '3',
   PRODUCT_DELAY_MIN_MS: '40',
-  PRODUCT_DELAY_MAX_MS: '120',
-  IMAGE_SELECTOR_TIMEOUT_MS: '7000',
-  IMAGE_EXTRACT_RETRIES: '1',
-  IMAGE_EMPTY_RETRIES: '0'
+  PRODUCT_DELAY_MAX_MS: '120'
 };
 
 /**
@@ -138,7 +135,7 @@ async function main() {
     failed++;
   } else {
     const nodeModulesPath = path.join(APP_DIR, 'node_modules');
-    const requiredPackages = ['express', 'selenium-webdriver', 'chromedriver', 'archiver'];
+    const requiredPackages = ['express', 'archiver'];
 
     if (!dirExists(nodeModulesPath)) {
       log.info('Installing npm packages...');
@@ -182,7 +179,7 @@ async function main() {
 
   if ([commandExists('google-chrome'), commandExists('chromium'), commandExists('chromium-browser')].includes(true)) {
     chromeFound = true;
-    const cmd = commandExists('google-chrome') ? 'google-chrome' : 
+    const cmd = commandExists('google-chrome') ? 'google-chrome' :
                 commandExists('chromium') ? 'chromium' : 'chromium-browser';
     const version = getVersion(cmd);
     log.success(`Chrome/Chromium found (${version})`);
@@ -211,7 +208,7 @@ async function main() {
 
   if (!chromeFound) {
     log.warn('Chrome/Chromium not found (optional but recommended)');
-    log.info('WebDriver needs a Chrome-compatible browser for scraping');
+    log.info('Botasaurus needs a Chrome-compatible browser for rendered scraping');
     log.info('Install from: https://www.google.com/chrome/');
   }
 

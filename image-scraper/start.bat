@@ -7,7 +7,7 @@ setlocal enabledelayedexpansion
 set NODE_PATH=%~dp0node_modules;%NODE_PATH%
 
 REM Fast scrape defaults (can be overridden by pre-set env vars)
-if not defined IMAGE_DOWNLOAD_CONCURRENCY set IMAGE_DOWNLOAD_CONCURRENCY=6
+if not defined IMAGE_DOWNLOAD_CONCURRENCY set IMAGE_DOWNLOAD_CONCURRENCY=3
 if not defined PRODUCT_DELAY_MIN_MS set PRODUCT_DELAY_MIN_MS=40
 if not defined PRODUCT_DELAY_MAX_MS set PRODUCT_DELAY_MAX_MS=120
 if not defined IMAGE_SELECTOR_TIMEOUT_MS set IMAGE_SELECTOR_TIMEOUT_MS=7000
@@ -58,12 +58,12 @@ if not exist "node_modules" (
 ) else (
     REM Check if required packages exist
     set MISSING=0
-    for %%P in (express selenium-webdriver sharp webdriver-manager chromedriver) do (
+    for %%P in (express archiver) do (
         if not exist "node_modules\%%P" (
             set MISSING=1
         )
     )
-    
+
     if !MISSING! equ 1 (
         echo   - Missing packages found
         echo   - Installing npm packages...

@@ -1,3 +1,5 @@
+import threading
+_CURL_LOCK = threading.Lock()
 """
 MobileSentrix Scraper Engine
 ============================
@@ -11,6 +13,7 @@ This module handles:
 """
 
 from bs4 import BeautifulSoup
+import importlib.util
 import requests
 import re
 import json
@@ -19,6 +22,7 @@ from urllib.parse import urlparse, urljoin, parse_qs, urlencode, urlunparse
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Set, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_mode
 
 # Optional curl_cffi for better Cloudflare bypass
 try:
@@ -28,10 +32,9 @@ except Exception:
     HAS_CURL = False
 
 # Check for lxml parser (faster than html.parser)
-try:
-    from lxml import etree
+if importlib.util.find_spec('lxml') is not None:
     PARSER = 'lxml'
-except ImportError:
+else:
     PARSER = 'html.parser'
 
 # -------- Data Classes --------
@@ -128,32 +131,36 @@ def apply_rules(price: Optional[float], percent_off: float, absolute_off: float,
 
 # -------- HTTP Session Management --------
 
-def build_session(retries: int = 1, verify_ssl: bool = True, use_curl: bool = False):
+def build_session(retries: int = 1, verify_ssl: bool = True, use_curl: bool = True):
     """
     Build HTTP session with retries and proper headers.
     Returns (session, is_curl_session)
     """
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
     }
-    
+
     if use_curl and HAS_CURL:
-        s = curl_requests.Session(impersonate="chrome120")
-        s.headers.update(headers)
-        s.verify = verify_ssl
-        s.timeout = 30  # Increased from 8 to 30 seconds
-        return s, True
-    
+        try:
+            with _CURL_LOCK:
+                s = curl_requests.Session(impersonate="safari15_5")
+            s.headers.update(headers)
+            s.verify = verify_ssl
+            s.timeout = 30
+            return s, True
+        except Exception:
+            pass
+
     from requests.adapters import HTTPAdapter
     from urllib3.util.retry import Retry
-    
+
     s = requests.Session()
     s.headers.update(headers)
-    
+
     # Increased retries and backoff for better reliability
     retry = Retry(
         total=max(1, int(retries) * 2),  # Double the retries
@@ -163,21 +170,80 @@ def build_session(retries: int = 1, verify_ssl: bool = True, use_curl: bool = Fa
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=frozenset(['GET', 'HEAD', 'OPTIONS'])
     )
-    
+
     adapter = HTTPAdapter(max_retries=retry, pool_connections=20, pool_maxsize=20)
     s.mount('https://', adapter)
     s.mount('http://', adapter)
     s.verify = verify_ssl
-    
+
     return s, False
 
 
+def _set_fetch_metadata(sess, *, status_code=None, final_url: str = "", error: str = "", blocked: bool = False):
+    """Attach the latest MobileSentrix fetch metadata to the session for logging."""
+    try:
+        sess.mobilesentrix_last_status = status_code
+        sess.mobilesentrix_last_url = final_url or ""
+        sess.mobilesentrix_last_error = error or ""
+        sess.mobilesentrix_blocked = bool(blocked)
+    except Exception:
+        pass
+
+
+def _looks_like_antibot_challenge(status_code: int, html: str) -> bool:
+    sample = (html or "")[:3000].lower()
+    challenge_markers = (
+        "just a moment",
+        "cloudflare",
+        "captcha",
+        "verify you are human",
+        "access denied",
+    )
+    if any(marker in sample for marker in challenge_markers):
+        return True
+    return int(status_code or 0) in {401, 403, 429} and bool(sample)
+
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
     """Fetch HTML from URL. Returns (final_url, html_content)"""
-    # Increased timeout from 8 to 30 seconds to handle slower responses
-    r = sess.get(url, timeout=timeout, allow_redirects=True)
-    r.raise_for_status()
-    return (str(r.url), r.text)
+    _set_fetch_metadata(sess, status_code=None, final_url=url)
+    try:
+        # Fast Safari TLS HTTP request first
+        r = sess.get(url, timeout=timeout, allow_redirects=True)
+        status_code = int(getattr(r, 'status_code', 0) or 0)
+        final_url = str(getattr(r, 'url', '') or url)
+        html = getattr(r, 'text', '') or ''
+        blocked = _looks_like_antibot_challenge(status_code, html)
+        _set_fetch_metadata(sess, status_code=status_code, final_url=final_url, blocked=blocked)
+        if blocked:
+            if should_use_browser_fetch():
+                logger.info(f"[fetch] HTTP {status_code} blocked on {url} - falling back to browser")
+                result = fetch_html_with_browser(url, timeout=max(timeout, 60))
+                _set_fetch_metadata(sess, status_code=200, final_url=result.final_url, blocked=False)
+                return result.final_url, result.html
+            logger.warning(f"[fetch] HTTP {status_code} blocked on {url} - browser fallback disabled")
+            raise requests.HTTPError(f"blocked by anti-bot challenge ({status_code})", response=r)
+        r.raise_for_status()
+        return (final_url, html)
+    except Exception as exc:
+        if should_use_browser_fetch() and not isinstance(exc, (KeyboardInterrupt, SystemExit)):
+            logger.info(f"[fetch] HTTP error ({type(exc).__name__}) on {url} - falling back to browser")
+            try:
+                result = fetch_html_with_browser(url, timeout=max(timeout, 60))
+                _set_fetch_metadata(sess, status_code=200, final_url=result.final_url, blocked=False)
+                return result.final_url, result.html
+            except Exception as browser_exc:
+                logger.error(f"[fetch] Browser fallback failed for {url}: {browser_exc}")
+        error = f'{type(exc).__name__}: {exc}'
+        status_code = getattr(sess, 'mobilesentrix_last_status', None)
+        final_url = getattr(sess, 'mobilesentrix_last_url', url)
+        blocked = bool(getattr(sess, 'mobilesentrix_blocked', False))
+        _set_fetch_metadata(sess, status_code=status_code, final_url=final_url, error=error, blocked=blocked)
+        raise
 
 
 def get_html_safe(sess, url: str, delay_ms: int):
@@ -187,7 +253,15 @@ def get_html_safe(sess, url: str, delay_ms: int):
     try:
         return get_html(sess, url)
     except Exception as e:
-        return None, f'{type(e).__name__}: {e}'
+        error = f'{type(e).__name__}: {e}'
+        _set_fetch_metadata(
+            sess,
+            status_code=getattr(sess, 'mobilesentrix_last_status', None),
+            final_url=getattr(sess, 'mobilesentrix_last_url', url),
+            error=error,
+            blocked=bool(getattr(sess, 'mobilesentrix_blocked', False)),
+        )
+        return None, error
 
 
 # -------- HTML Parsing Utilities --------
@@ -200,14 +274,14 @@ def find_jsonld_products(soup: BeautifulSoup) -> List[dict]:
             data = json.loads(tag.string or tag.get_text() or '')
         except Exception:
             continue
-        
+
         if isinstance(data, dict):
             candidates = [data]
         elif isinstance(data, list):
             candidates = data
         else:
             continue
-        
+
         for obj in candidates:
             if isinstance(obj, dict) and (obj.get('@type') == 'Product'):
                 out.append(obj)
@@ -215,7 +289,7 @@ def find_jsonld_products(soup: BeautifulSoup) -> List[dict]:
                 for g in obj['@graph']:
                     if isinstance(g, dict) and g.get('@type') == 'Product':
                         out.append(g)
-    
+
     return out
 
 
@@ -228,13 +302,13 @@ def price_from_offers(offers) -> Tuple[Optional[float], Optional[str]]:
             return float(price), currency
         except Exception:
             return parse_price_number(str(price)), currency
-    
+
     if isinstance(offers, list):
         for off in offers:
             v, c = price_from_offers(off)
             if v is not None:
                 return v, c
-    
+
     return None, None
 
 
@@ -277,11 +351,11 @@ def extract_title(soup: BeautifulSoup) -> str:
             t = clean_text(el.get_text())
             if t:
                 return t
-    
+
     og = soup.select_one('meta[property="og:title"]')
     if og and og.get('content'):
         return clean_text(og['content'])
-    
+
     return ""
 
 
@@ -290,11 +364,11 @@ def extract_canonical_or_og_url(soup: BeautifulSoup, fallback: str) -> str:
     can = soup.select_one('link[rel="canonical"]')
     if can and can.get('href'):
         return can['href']
-    
+
     og = soup.select_one('meta[property="og:url"]')
     if og and og.get('content'):
         return og['content']
-    
+
     return fallback
 
 
@@ -322,7 +396,7 @@ def extract_price(soup: BeautifulSoup) -> Tuple[Optional[float], str, str]:
         v = parse_price_number(el.get('content', ''))
         if v is not None:
             return v, '', sel
-    
+
     for sel in [
         'span.price-final_price [data-price-amount]',
         'span.price-final_price span.price',
@@ -338,7 +412,7 @@ def extract_price(soup: BeautifulSoup) -> Tuple[Optional[float], str, str]:
             v = parse_price_number(txt)
             if v is not None:
                 return v, '', sel
-    
+
     return None, '', ''
 
 
@@ -616,7 +690,8 @@ def enrich_item_details(sess, item: Item, rules: Optional[Dict] = None, logger=N
         return item
 
     try:
-        final_url, html = get_html(sess, item.url)
+        with browser_fetch_mode(False):
+            final_url, html = get_html(sess, item.url, timeout=5)
         soup = BeautifulSoup(html, PARSER)
         detail = extract_product_detail_snapshot(soup, final_url)
 
@@ -662,18 +737,23 @@ def enrich_item_details(sess, item: Item, rules: Optional[Dict] = None, logger=N
 
 
 def is_product_page(soup: BeautifulSoup) -> bool:
-    """Detect if page is a product detail page"""
+    """Detect if page is a product detail page without matching category headings."""
     if soup.select_one(
         'form#product_addtocart_form, .product-info-main, .product-detail-right, '
+        '.product-info-stock-sku, .product.media, '
         '[itemprop="sku"], meta[itemprop="price"], [itemprop="price"][content]'
     ):
         return True
 
-    title = extract_title(soup)
-    if title and soup.select_one('h1'):
+    og_type = soup.select_one('meta[property="og:type"]')
+    if og_type and clean_text(og_type.get('content', '')).lower() == 'product':
         return True
 
-    return bool(soup.select_one('h1.page-title, h1.product')) or bool(find_jsonld_products(soup))
+    jsonld_products = find_jsonld_products(soup)
+    if jsonld_products and not is_category_page(soup):
+        return True
+
+    return False
 
 
 def is_category_page(soup: BeautifulSoup) -> bool:
@@ -692,17 +772,17 @@ def find_next_page_url(soup: BeautifulSoup, base_url: str) -> Optional[str]:
     cand = soup.select_one('li.pages-item-next a, a.action.next, a[rel="next"], .pages .next')
     if cand and cand.get('href'):
         return urljoin(base_url, cand['href'])
-    
+
     # For MobileSentrix specifically, try to detect pagination patterns
     parsed = urlparse(base_url)
     query_params = parse_qs(parsed.query)
-    
+
     # Get current page number (default to 1)
     current_page = int(query_params.get('p', ['1'])[0])
-    
+
     # Look for pagination indicators in the page
     products = soup.select('ul.product-listing li.item')
-    
+
     if products:
         # Look for pagination info or toolbar
         toolbar = soup.select('.toolbar-amount, .limiter, .pages-items, .pagination')
@@ -718,16 +798,16 @@ def find_next_page_url(soup: BeautifulSoup, base_url: str) -> Optional[str]:
                         # There are more items, construct next page URL
                         query_params['p'] = [str(current_page + 1)]
                         new_query = urlencode(query_params, doseq=True)
-                        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, 
+                        return urlunparse((parsed.scheme, parsed.netloc, parsed.path,
                                          parsed.params, new_query, parsed.fragment))
-        
+
         # If no clear pagination indicator but we have products, try next page anyway
         if len(products) >= 20:
             query_params['p'] = [str(current_page + 1)]
             new_query = urlencode(query_params, doseq=True)
-            return urlunparse((parsed.scheme, parsed.netloc, parsed.path, 
+            return urlunparse((parsed.scheme, parsed.netloc, parsed.path,
                              parsed.params, new_query, parsed.fragment))
-    
+
     return None
 
 
@@ -776,7 +856,7 @@ def scrape_product(sess, final_url: str, html: str, rules: Dict) -> List[Item]:
     )]
 
 
-def scrape_category_page(sess, final_url: str, html: str, rules: Dict) -> List[Item]:
+def scrape_category_page(sess, final_url: str, html: str, rules: Dict, logger=None) -> List[Item]:
     """
     Scrape a category/listing page (single page, no pagination).
     Returns list of Items found on the page.
@@ -789,6 +869,8 @@ def scrape_category_page(sess, final_url: str, html: str, rules: Dict) -> List[I
     cards = soup.select('ul.product-listing li.item')
     if not cards:
         cards = soup.select('ol.products li.product-item, div.product-item-info, div.product-card, li.product')
+    if logger:
+        logger.info(f"[mobilesentrix] Product card selector count={len(cards)} url={final_url}")
 
     percent_off = float(rules.get('percent_off') or 0.0)
     absolute_off = float(rules.get('absolute_off') or 0.0)
@@ -797,7 +879,7 @@ def scrape_category_page(sess, final_url: str, html: str, rules: Dict) -> List[I
         a = card.select_one('a[href]')
         if not a:
             continue
-        
+
         title = clean_text(a.get_text())
         href = a.get('href') or ''
         prod_url = urljoin(final_url, href)
@@ -812,7 +894,7 @@ def scrape_category_page(sess, final_url: str, html: str, rules: Dict) -> List[I
                 price_val = float(pel['data-price-amount'])
             except Exception:
                 price_val = None
-        
+
         if price_val is None:
             pt_el = card.select_one('.price, .price-final_price .price, [class*="price"]')
             price_text = clean_text(pt_el.get_text()) if pt_el else ''
@@ -835,6 +917,8 @@ def scrape_category_page(sess, final_url: str, html: str, rules: Dict) -> List[I
             image_url=image
         ))
 
+    if logger:
+        logger.info(f"[mobilesentrix] Product count found={len(out)} url={final_url}")
     return out
 
 
@@ -851,15 +935,21 @@ def scrape_category_all_pages(sess, start_url: str, rules: Dict, max_pages: int 
     url = start_url
     pages = 0
     consecutive_empty_pages = 0
-    
+
     # Stop if: reached max_pages OR found 2 consecutive pages with NO new items
     while url and pages < max_pages and consecutive_empty_pages < 2:
         pages += 1
         if logger:
-            logger.info(f"Scraping page {pages}: {url}")
-        
+            logger.info(f"[mobilesentrix] Scraping category page {pages}: {url}")
+
         pair = get_html_safe(sess, url, delay_ms)
         if pair[0] is None:
+            if logger:
+                logger.error(
+                    f"[mobilesentrix] Request failed url={url} "
+                    f"status={getattr(sess, 'mobilesentrix_last_status', None)} "
+                    f"error={pair[1]}"
+                )
             # Fetch failed - add error item
             items.append(Item(
                 url=url,
@@ -875,13 +965,18 @@ def scrape_category_all_pages(sess, start_url: str, rules: Dict, max_pages: int 
                 image_url=''
             ))
             break
-            
+
         final_url, html = pair
+        if logger:
+            logger.info(
+                f"[mobilesentrix] Response status={getattr(sess, 'mobilesentrix_last_status', None)} "
+                f"url={url} final_url={final_url} bytes={len(html)}"
+            )
         soup = BeautifulSoup(html, PARSER)
-        
+
         # Get products from this page
-        page_items = scrape_category_page(sess, final_url, html, rules)
-        
+        page_items = scrape_category_page(sess, final_url, html, rules, logger=logger)
+
         # Check for new products
         new_products_found = 0
         for item in page_items:
@@ -889,49 +984,59 @@ def scrape_category_all_pages(sess, start_url: str, rules: Dict, max_pages: int 
                 seen_products.add(item.url)
                 items.append(item)
                 new_products_found += 1
-        
+
         if logger:
-            logger.info(f"Page {pages}: Found {len(page_items)} total items, {new_products_found} new items")
-        
+            logger.info(f"[mobilesentrix] Page {pages}: found={len(page_items)} new={new_products_found}")
+
         # If no new products found, increment counter
         if new_products_found == 0:
             consecutive_empty_pages += 1
             if logger:
-                logger.info(f"No new products on page {pages}. Empty pages count: {consecutive_empty_pages}")
+                logger.info(f"[mobilesentrix] No new products on page {pages}; empty_pages={consecutive_empty_pages}")
         else:
             consecutive_empty_pages = 0
-        
+
         # Mark this URL as seen
         seen_urls.add(final_url)
-        
+
         # Find next page
         nxt = find_next_page_url(soup, final_url)
-        
+
         # Free memory
         del html
         del soup
-        
+
         if not nxt or nxt in seen_urls:
             if logger:
-                logger.info(f"No more pages found or URL already visited")
+                logger.info("[mobilesentrix] No more pages found or URL already visited")
             break
-            
+
         url = nxt
-    
+
     if logger:
-        logger.info(f"Finished scraping after {pages} pages. Total unique items: {len(items)}")
-    
+        logger.info(f"[mobilesentrix] Finished scraping after {pages} page(s); total_unique_items={len(items)}")
+
     return items
 
 
-def scrape_url(sess, url: str, rules: Dict, crawl_pagination: bool, 
+def scrape_url(sess, url: str, rules: Dict, crawl_pagination: bool,
               max_pages: int, delay_ms: int, logger=None) -> List[Item]:
     """
     Main entry point for scraping a URL.
     Automatically detects if it's a product or category page.
     """
+    started_at = time.strftime('%Y-%m-%d %H:%M:%S')
+    if logger:
+        logger.info(f"[mobilesentrix] Scraper started_at={started_at} url={url}")
+
     pair = get_html_safe(sess, url, delay_ms=0)
     if pair[0] is None:
+        if logger:
+            logger.error(
+                f"[mobilesentrix] Request failed url={url} "
+                f"status={getattr(sess, 'mobilesentrix_last_status', None)} "
+                f"error={pair[1]}"
+            )
         return [Item(
             url=url,
             site=urlparse(url).hostname or '',
@@ -945,42 +1050,66 @@ def scrape_url(sess, url: str, rules: Dict, crawl_pagination: bool,
             source='error',
             image_url=''
         )]
-    
+
     final_url, html = pair
+    if logger:
+        logger.info(
+            f"[mobilesentrix] Response status={getattr(sess, 'mobilesentrix_last_status', None)} "
+            f"url={url} final_url={final_url} bytes={len(html)}"
+        )
     soup = BeautifulSoup(html, PARSER)
-    
-    if is_product_page(soup):
-        return scrape_product(sess, final_url, html, rules)
-    
-    if is_category_page(soup):
+    page_is_product = is_product_page(soup)
+    page_is_category = is_category_page(soup)
+    if logger:
+        logger.info(
+            f"[mobilesentrix] Page classification url={final_url} "
+            f"is_product={page_is_product} is_category={page_is_category}"
+        )
+
+    if page_is_product:
+        items = scrape_product(sess, final_url, html, rules)
+        if logger:
+            logger.info(f"[mobilesentrix] Product count found={len(items)} url={final_url}")
+        return items
+
+    if page_is_category:
         if crawl_pagination:
-            return scrape_category_all_pages(sess, final_url, rules, 
-                                            max_pages=max_pages, delay_ms=delay_ms, logger=logger)
-        return scrape_category_page(sess, final_url, html, rules)
-    
+            items = scrape_category_all_pages(sess, final_url, rules,
+                                             max_pages=max_pages, delay_ms=delay_ms, logger=logger)
+        else:
+            items = scrape_category_page(sess, final_url, html, rules, logger=logger)
+        if logger:
+            logger.info(f"[mobilesentrix] Scraper finished url={final_url} product_count={len(items)}")
+        return items
+
     # Default: treat as product page
-    return scrape_product(sess, final_url, html, rules)
+    if logger:
+        logger.warning(f"[mobilesentrix] Page type unclear; treating as product url={final_url}")
+    items = scrape_product(sess, final_url, html, rules)
+    if logger:
+        logger.info(f"[mobilesentrix] Product count found={len(items)} url={final_url}")
+    return items
 
 
-def scrape_urls_parallel(urls: List[str], rules: Dict, crawl_pagination: bool, 
-                        max_pages: int, delay_ms: int, retries: int, 
+def scrape_urls_parallel(urls: List[str], rules: Dict, crawl_pagination: bool,
+                        max_pages: int, delay_ms: int, retries: int,
                         verify_ssl: bool, use_curl: bool, max_workers: int = 3, logger=None) -> List[Item]:
     """
     Scrape multiple URLs in parallel for faster processing.
     Each URL gets its own session to avoid threading conflicts.
     """
     all_items: List[Item] = []
-    
+
     def scrape_single_url(url: str) -> List[Item]:
         # Each thread gets its own session
         sess, _ = build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
         return scrape_url(sess, url, rules, crawl_pagination, max_pages, delay_ms, logger)
-    
+
     # Use ThreadPoolExecutor for parallel processing
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all URL scraping tasks
         future_to_url = {executor.submit(scrape_single_url, url): url for url in urls}
-        
+
         # Collect results as they complete
         for future in as_completed(future_to_url):
             url = future_to_url[future]
@@ -1006,5 +1135,5 @@ def scrape_urls_parallel(urls: List[str], rules: Dict, crawl_pagination: bool,
                     source='error',
                     image_url=''
                 ))
-    
+
     return all_items

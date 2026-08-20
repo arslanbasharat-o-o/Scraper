@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse, urlencode, parse_qs, urlunparse
+from .browser_fetcher import fetch_html as fetch_html_with_browser
 
 try:
     from curl_cffi import requests as curl_req
@@ -80,48 +81,49 @@ _PLACEHOLDERS = ('placeholder', 'magento-menu-logo', 'no_selection', 'no-image',
 
 # ── Session / HTTP ────────────────────────────────────────────────────────────
 
-def build_session(retries: int = 2, verify_ssl: bool = True):
+def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = True, **kwargs):
     """Return (session_or_None, using_curl_cffi: bool)."""
     return None, _HAS_CURL   # we use curl_cffi per-request (stateless)
 
 
-def _fetch(url: str, logger=None) -> Optional[str]:
-    """
-    Fetch URL content using curl_cffi with safari15_3 impersonation.
-    Falls back to regular requests if curl_cffi is unavailable.
+def _looks_like_block_page(html: str) -> bool:
+    sample = (html or "").strip().lower()
+    if not sample:
+        return True
+    if len(sample) < 500 and any(marker in sample for marker in ("forbidden", "access denied", "403")):
+        return True
+    head = sample[:30_000]
+    return any(marker in head for marker in (
+        "<title>just a moment",
+        "<title>attention required",
+        'id="challenge-form"',
+        "id='challenge-form'",
+        "cf-browser-verification",
+        "performing security verification",
+        "enable javascript and cookies to continue",
+    ))
 
-    Parts4Cells returns 403 for paginated ?p=N URLs when using
-    standard requests / Chrome TLS fingerprints but allows Safari.
-    """
-    headers = {
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-    }
-    try:
-        if _HAS_CURL:
-            r = curl_req.get(url, impersonate='safari15_3', timeout=30, headers=headers)
-        else:
-            import requests as req_fallback
-            r = req_fallback.get(url, timeout=30, headers={
-                **headers,
-                'User-Agent': (
-                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-                    'AppleWebKit/605.1.15 (KHTML, like Gecko) '
-                    'Version/15.3 Safari/605.1.15'
-                ),
-            })
-        if r.status_code == 200:
-            return r.text
-        if logger:
-            logger.warning(f"[parts4cells] HTTP {r.status_code} for {url}")
-        return None
-    except Exception as e:
-        if logger:
-            logger.warning(f"[parts4cells] Fetch error for {url}: {e}")
-        else:
-            print(f"[parts4cells] Fetch error: {e}")
-        return None
+
+def _fetch(url: str, logger=None) -> Optional[str]:
+    """Fetch Parts4Cells through high-speed Safari TLS session with 3-attempt backoff."""
+    if _HAS_CURL:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Connection": "keep-alive",
+        }
+        for attempt in range(3):
+            try:
+                resp = curl_req.get(url, impersonate="safari15_5", headers=headers, timeout=12)
+                if resp.status_code == 200 and resp.text and not _looks_like_block_page(resp.text):
+                    return resp.text
+                elif resp.status_code in (429, 503):
+                    time.sleep(0.5 + attempt * 0.5)
+            except Exception as exc:
+                time.sleep(0.3)
+
+    return None
 
 
 def _extract_canonical_url(soup: BeautifulSoup, fallback: str) -> str:
@@ -256,6 +258,10 @@ def scrape_product_page(url: str, rules: dict, logger=None,
 
 def enrich_item_details(session, item: Item, rules: dict | None = None, logger=None) -> Item:
     """Merge a product detail page into a listing item."""
+    if not getattr(item, 'url', ''):
+        return item
+    if getattr(item, 'sku', '') and getattr(item, 'stock_status', '') and getattr(item, 'original', 0) > 0:
+        return item
     detail = scrape_product_page(item.url, rules or {}, logger)
     if not detail:
         return item
@@ -461,7 +467,6 @@ def _scrape_all_pages(base_url: str, rules: dict,
                       first_page_html: Optional[str] = None,
                       first_page_soup: Optional[BeautifulSoup] = None) -> List[Item]:
     all_items_by_url: dict = {}   # product_url -> Item (dedup)
-    page_num = 1
 
     # Page 1 — fetch from clean base URL (no ?p= param)
     page_url = _page_url(base_url, 1)

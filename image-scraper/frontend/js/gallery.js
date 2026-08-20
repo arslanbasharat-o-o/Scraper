@@ -5,8 +5,24 @@
 import { state, persistToStorage } from './state.js';
 import { showToast } from './toast.js';
 import { playSound } from './sound.js';
-import { fetchImagesAPI } from './api.js';
+import { deleteImageAPI, fetchImageRecordsAPI } from './api.js';
 import { openModalWithSrc } from './modal.js';
+
+let imageRecordsBySrc = new Map();
+
+const API_BASE = (() => {
+    const explicit = String(window.__SCRAPER_API_BASE__ || '').trim();
+    if (explicit) return explicit.replace(/\/+$/, '');
+    if (window.location.protocol === 'file:') return 'http://localhost:3001';
+    if (['localhost', '127.0.0.1'].includes(window.location.hostname) && window.location.port !== '3001') {
+        return 'http://localhost:3001';
+    }
+    return '';
+})();
+
+function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function toDisplayUrl(src) {
     if (!src) return '';
@@ -18,6 +34,17 @@ function toDisplayUrl(src) {
         return new URL(src, window.location.origin).href;
     } catch {
         return src;
+    }
+}
+
+function filenameFromImageUrl(src, fallback = 'image.png') {
+    try {
+        const parsed = new URL(src, window.location.origin);
+        const explicit = parsed.searchParams.get('download_name');
+        if (explicit) return explicit;
+        return decodeURIComponent(parsed.pathname.split('/').pop() || fallback);
+    } catch {
+        return decodeURIComponent((String(src || '').split('/').pop() || fallback).split('?')[0]);
     }
 }
 
@@ -36,6 +63,35 @@ function parseFilenameFromDisposition(dispositionHeader) {
         return plainMatch[1].trim().replace(/^["']|["']$/g, '');
     }
     return '';
+}
+
+function applyImageRecords(records = []) {
+    imageRecordsBySrc = new Map();
+    const seen = new Set();
+    const urls = [];
+
+    for (const record of records) {
+        const src = String(record?.src || '').trim();
+        if (!src || seen.has(src)) continue;
+        seen.add(src);
+        urls.push(src);
+        imageRecordsBySrc.set(src, record);
+    }
+
+    return urls;
+}
+
+function imageIdFromDisplaySrc(src) {
+    const record = imageRecordsBySrc.get(src);
+    if (record?.id) return record.id;
+
+    try {
+        const parsed = new URL(src, window.location.origin);
+        const match = parsed.pathname.match(/\/jobs\/[^/]+\/images\/([^/]+)/);
+        return match?.[1] ? decodeURIComponent(match[1]) : '';
+    } catch {
+        return '';
+    }
 }
 
 // Load images for a job
@@ -71,7 +127,7 @@ export async function loadImages(jobId, jobModel) {
                     <div class="absolute inset-0 w-16 h-16 rounded-full border-4 border-transparent border-t-brand-500 animate-spin"></div>
                     <div class="absolute inset-2 w-12 h-12 rounded-full border-4 border-transparent border-t-blue-400 animate-spin" style="animation-direction: reverse; animation-duration: 0.8s;"></div>
                 </div>
-                
+
                 <!-- Animated text -->
                 <p class="text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Loading images</p>
                 <p class="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1">
@@ -83,7 +139,7 @@ export async function loadImages(jobId, jobModel) {
                     </span>
                 </p>
             </div>
-            
+
             <!-- Skeleton grid -->
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mt-4">
                 ${Array(10).fill('').map((_, i) => `
@@ -92,7 +148,7 @@ export async function loadImages(jobId, jobModel) {
                     </div>
                 `).join('')}
             </div>
-            
+
             <style>
                 @keyframes shimmer {
                     0% { transform: translateX(-100%); }
@@ -106,7 +162,7 @@ export async function loadImages(jobId, jobModel) {
     }
 
     try {
-        state.images = await fetchImagesAPI(jobId);
+        state.images = applyImageRecords(await fetchImageRecordsAPI(jobId));
         state.filteredImages = [...state.images];
 
         const imageCountEl = document.getElementById('image-count');
@@ -116,10 +172,12 @@ export async function loadImages(jobId, jobModel) {
         if (zipBtn) zipBtn.disabled = state.images.length === 0;
 
         if (job && subtitleEl) {
+            const folderLabel = job.download_folder || job.folder_name || job.model || '';
+            const folderSuffix = folderLabel ? ` - Folder: ${folderLabel}` : '';
             subtitleEl.textContent = job.status === 'completed'
-                ? `${state.images.length} images scraped`
+                ? `${state.images.length} images scraped${folderSuffix}`
                 : job.status === 'running'
-                    ? 'Scraping in progress...'
+                    ? `Scraping in progress${folderSuffix}...`
                     : job.status;
         }
 
@@ -159,8 +217,7 @@ export async function syncCurrentJobImages() {
     if (!job) return false;
 
     try {
-        const latestImages = await fetchImagesAPI(state.currentJob);
-        const normalized = Array.from(new Set((latestImages || []).filter(Boolean)));
+        const normalized = applyImageRecords(await fetchImageRecordsAPI(state.currentJob));
 
         const sameLength = normalized.length === state.images.length;
         const sameOrder = sameLength && normalized.every((src, idx) => src === state.images[idx]);
@@ -197,11 +254,15 @@ export async function syncCurrentJobImages() {
         const zipBtn = document.getElementById('zip-btn');
         if (zipBtn) zipBtn.disabled = state.images.length === 0;
 
+        const toolsEl = document.getElementById('gallery-tools');
+        if (toolsEl) toolsEl.classList.toggle('hidden', state.images.length === 0);
+
         const subtitleEl = document.getElementById('gallery-subtitle');
         if (subtitleEl && job.status === 'running') {
             subtitleEl.textContent = `${state.images.length} images scraped`;
         }
 
+        updateSelectionUI();
         return true;
     } catch (error) {
         console.warn('Failed to sync current gallery images:', error);
@@ -359,8 +420,7 @@ function createImageCard(src, idx, animate) {
     downloadLink.title = 'Download';
     downloadLink.className = 'p-1.5 bg-white/90 dark:bg-slate-800/90 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-white text-xs';
     downloadLink.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>';
-    const rawName = decodeURIComponent((src.split('/').pop() || `image_${idx + 1}.jpg`).split('?')[0]);
-    downloadLink.download = rawName || `image_${idx + 1}.jpg`;
+    downloadLink.download = filenameFromImageUrl(src, `image_${idx + 1}.png`);
     downloadLink.addEventListener('click', (event) => {
         event.stopPropagation();
         window.appFunctions.playSound('download');
@@ -548,7 +608,7 @@ export async function downloadZip() {
     if (state.currentJob) {
         const zipUrl = `${window.location.origin}/jobs/${encodeURIComponent(state.currentJob)}/zip`;
         try {
-            showToast('info', 'Preparing ZIP', 'Generating server ZIP...');
+            showToast('info', 'Preparing Folder ZIP', 'Generating server ZIP...');
             const response = await fetch(zipUrl);
             if (!response.ok) {
                 const message = await response.text().catch(() => '');
@@ -563,7 +623,7 @@ export async function downloadZip() {
             const headerName = parseFilenameFromDisposition(response.headers.get('content-disposition'));
             const fallbackName = `${model || 'images'}_images.zip`;
             saveAs(blob, headerName || fallbackName);
-            showToast('success', 'ZIP Ready', 'ZIP downloaded from server');
+            showToast('success', 'Folder ZIP Ready', 'ZIP downloaded from server');
             playSound('download');
             return;
         } catch (error) {
@@ -592,10 +652,10 @@ export async function downloadZip() {
 
             const arrayBuffer = await response.arrayBuffer();
             const urlPath = new URL(src, window.location.origin).pathname;
-            const rawName = decodeURIComponent(urlPath.split('/').pop() || `image_${index + 1}.jpg`);
-            const fileName = rawName.toLowerCase().endsWith('.jpg') || rawName.toLowerCase().endsWith('.jpeg')
+            const rawName = decodeURIComponent(urlPath.split('/').pop() || `image_${index + 1}.png`);
+            const fileName = /\.(png|jpe?g|webp)$/i.test(rawName)
                 ? rawName
-                : `${rawName.replace(/\.[a-z0-9]+$/i, '')}.jpg`;
+                : `${rawName.replace(/\.[a-z0-9]+$/i, '')}.png`;
 
             zip.file(fileName, arrayBuffer);
             successCount++;
@@ -614,6 +674,85 @@ export async function downloadZip() {
 
     showToast('success', 'ZIP Ready', `${successCount} image${successCount !== 1 ? 's' : ''} downloaded`);
     playSound('download');
+}
+
+export async function downloadBulkZip() {
+    const bulkButton = document.getElementById('bulk-zip-btn');
+    if (bulkButton?.disabled) {
+        return;
+    }
+
+    const jobsWithFiles = state.allJobs.filter((job) => {
+        const images = Number(job?.images || 0);
+        return images > 0 || job?.download_folder || job?.folder_name;
+    });
+
+    if (!jobsWithFiles.length) {
+        showToast('warning', 'No Bulk Folders', 'No downloaded job folders are available yet');
+        return;
+    }
+
+    const endpoint = `${API_BASE}/jobs/bulk/zip`;
+    try {
+        if (bulkButton) {
+            bulkButton.disabled = true;
+            bulkButton.dataset.originalText = bulkButton.textContent || 'Download Bulk';
+            const label = bulkButton.querySelector('span');
+            if (label) label.textContent = 'Preparing...';
+        }
+
+        showToast('info', 'Preparing Bulk ZIP', 'Collecting job folders into Bulk Jobs. This can take a while for thousands of images.');
+        const deadline = Date.now() + (2 * 60 * 60 * 1000);
+        let result = null;
+
+        while (Date.now() < deadline) {
+            const response = await fetch(`${endpoint}?prepare=1&_=${Date.now()}`);
+            const bodyText = await response.text();
+            let body = null;
+            try {
+                body = bodyText ? JSON.parse(bodyText) : null;
+            } catch {
+                body = null;
+            }
+
+            if (!response.ok && response.status !== 202) {
+                throw new Error(body?.error || bodyText || `HTTP ${response.status}`);
+            }
+            if (body?.preparing) {
+                await wait(5000);
+                continue;
+            }
+            if (body?.success) {
+                result = body;
+                break;
+            }
+            throw new Error(body?.error || bodyText || 'Bulk ZIP preparation failed');
+        }
+
+        if (!result) {
+            throw new Error('Bulk ZIP preparation timed out');
+        }
+
+        const link = document.createElement('a');
+        link.href = `${API_BASE}${result.url || '/jobs/bulk/zip'}`;
+        link.download = result.filename || 'bulk_jobs.zip';
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        showToast('success', 'Bulk ZIP Ready', `${result.folders || jobsWithFiles.length} folders ready (${result.size_mb || '?'}MB)`);
+        playSound('download');
+    } catch (error) {
+        console.warn('Bulk ZIP download failed:', error);
+        showToast('error', 'Bulk ZIP Failed', error.message || 'Could not download bulk job folders');
+    } finally {
+        if (bulkButton) {
+            bulkButton.disabled = false;
+            const label = bulkButton.querySelector('span');
+            if (label) label.textContent = 'Download Bulk';
+            delete bulkButton.dataset.originalText;
+        }
+    }
 }
 
 // Image Selection Functions
@@ -692,25 +831,50 @@ export async function deleteSelectedImages() {
 
     showToast('info', 'Deleting Images', `Removing ${selectedCount} images...`);
 
-    // For now, just remove from frontend (backend deletion would require endpoint)
     const imagesToDelete = Array.from(state.selectedImages);
-    imagesToDelete.forEach(src => {
+    const deleted = [];
+    const failed = [];
+
+    for (const src of imagesToDelete) {
+        const imageId = imageIdFromDisplaySrc(src);
+        if (!imageId || !state.currentJob) {
+            failed.push(src);
+            continue;
+        }
+
+        try {
+            await deleteImageAPI(state.currentJob, imageId);
+            deleted.push(src);
+        } catch (error) {
+            console.warn('Image delete failed:', error);
+            failed.push(src);
+        }
+    }
+
+    deleted.forEach(src => {
         state.images = state.images.filter(img => img !== src);
         state.filteredImages = state.filteredImages.filter(img => img !== src);
+        imageRecordsBySrc.delete(src);
     });
 
     state.selectedImages.clear();
     renderGallery();
     updateSelectionUI();
 
-    showToast('success', 'Images Deleted', `Removed ${selectedCount} image${selectedCount > 1 ? 's' : ''} from view`);
-    playSound('success');
+    if (deleted.length > 0) {
+        showToast('success', 'Images Deleted', `Deleted ${deleted.length} image${deleted.length > 1 ? 's' : ''}`);
+        playSound('success');
+    }
 
-    // Reload to refresh from server
+    if (failed.length > 0) {
+        showToast('error', 'Delete Failed', `${failed.length} image${failed.length > 1 ? 's' : ''} could not be deleted`);
+    }
+
+    // Reload to verify against server state.
     if (state.currentJob) {
         const job = state.allJobs.find(j => j.id === state.currentJob);
         if (job) {
-            setTimeout(() => loadImages(state.currentJob, job.model || job.url), 1500);
+            setTimeout(() => loadImages(state.currentJob, job.model || job.url), 800);
         }
     }
 }

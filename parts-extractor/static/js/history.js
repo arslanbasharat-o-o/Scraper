@@ -39,6 +39,16 @@
   let historyData = [];
   let filteredHistory = [];
   let confirmResolver = null;
+  const dialogStack = [];
+  const focusableSelector = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+    '[contenteditable="true"]'
+  ].join(',');
   const defaultFilterState = {
     search: '',
     startDate: null,
@@ -52,8 +62,33 @@
   const utils = {
     setLoading(on) {
       if (elements.overlay) {
-        elements.overlay.style.display = on ? 'flex' : 'none';
+        elements.overlay.classList.toggle('d-none', !on);
       }
+    },
+
+    renderHistorySkeleton() {
+      if (!elements.historyContainer) return;
+      if (elements.emptyState) elements.emptyState.classList.add('d-none');
+      elements.historyContainer.innerHTML = Array.from({ length: 5 }).map(() => `
+        <div class="history-card history-card--skeleton" aria-hidden="true">
+          <div class="history-card__main">
+            <div class="history-card__identity">
+              <div class="skeleton-box" style="width: 180px; height: 18px;"></div>
+              <div class="skeleton-box" style="width: 240px; height: 13px;"></div>
+              <div class="skeleton-box" style="width: 320px; max-width: 100%; height: 13px;"></div>
+            </div>
+            <div class="history-meta">
+              <div class="skeleton-box" style="width: 64px; height: 34px; border-radius: 8px;"></div>
+              <div class="skeleton-box" style="width: 64px; height: 34px; border-radius: 8px;"></div>
+              <div class="skeleton-box" style="width: 86px; height: 34px; border-radius: 8px;"></div>
+            </div>
+            <div class="history-actions">
+              <div class="skeleton-box" style="width: 78px; height: 32px; border-radius: 8px;"></div>
+              <div class="skeleton-box" style="width: 92px; height: 32px; border-radius: 8px;"></div>
+            </div>
+          </div>
+        </div>
+      `).join('');
     },
 
     showAlert(type, msg) {
@@ -81,7 +116,7 @@
         } else {
           date = new Date(isoString);
         }
-        
+
         return new Intl.DateTimeFormat('en-PK', {
           day: '2-digit',
           month: 'short',
@@ -100,7 +135,7 @@
     formatDuration(timestamp) {
       const now = new Date();
       let then;
-      
+
       try {
         if (typeof timestamp === 'string') {
           // If the string doesn't have timezone info, assume it's already in Pakistan time
@@ -113,12 +148,12 @@
         } else {
           then = new Date(timestamp);
         }
-        
+
         const diffMs = now - then;
         const diffMinutes = Math.floor(diffMs / (1000 * 60));
         const diffHours = Math.floor(diffMinutes / 60);
         const diffDays = Math.floor(diffHours / 24);
-        
+
         if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
         if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
         if (diffMinutes > 0) return `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
@@ -136,14 +171,101 @@
     }
   };
 
+  function getTopDialog() {
+    return dialogStack[dialogStack.length - 1] || null;
+  }
+
+  function getFocusableElements(dialog) {
+    if (!dialog) return [];
+    return Array.from(dialog.querySelectorAll(focusableSelector)).filter(element => {
+      return !element.hidden && element.getAttribute('aria-hidden') !== 'true';
+    });
+  }
+
+  function syncBodyScrollLock() {
+    document.body.classList.toggle('modal-open', dialogStack.length > 0);
+  }
+
+  function handleDialogKeydown(event) {
+    const activeDialog = getTopDialog();
+    if (!activeDialog) return;
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      activeDialog.onEscape();
+      return;
+    }
+
+    if (event.key !== 'Tab') return;
+
+    const focusableElements = getFocusableElements(activeDialog.dialog);
+    if (!focusableElements.length) {
+      event.preventDefault();
+      activeDialog.dialog.focus();
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    const focusIsInside = activeDialog.dialog.contains(document.activeElement);
+
+    if (event.shiftKey && (!focusIsInside || document.activeElement === firstElement)) {
+      event.preventDefault();
+      lastElement.focus();
+    } else if (!event.shiftKey && (!focusIsInside || document.activeElement === lastElement)) {
+      event.preventDefault();
+      firstElement.focus();
+    }
+  }
+
+  function openAccessibleDialog(overlay, { initialFocus = null, onEscape } = {}) {
+    if (!overlay) return;
+
+    const existingIndex = dialogStack.findIndex(state => state.overlay === overlay);
+    if (existingIndex !== -1) dialogStack.splice(existingIndex, 1);
+
+    const dialog = overlay.querySelector('[role="dialog"]') || overlay;
+    const returnFocus = document.activeElement;
+    dialogStack.push({
+      overlay,
+      dialog,
+      returnFocus,
+      onEscape: typeof onEscape === 'function' ? onEscape : () => closeAccessibleDialog(overlay)
+    });
+
+    overlay.classList.remove('d-none');
+    overlay.setAttribute('aria-hidden', 'false');
+    syncBodyScrollLock();
+
+    requestAnimationFrame(() => {
+      const focusTarget = initialFocus || getFocusableElements(dialog)[0] || dialog;
+      focusTarget.focus();
+    });
+  }
+
+  function closeAccessibleDialog(overlay, { restoreFocus = true } = {}) {
+    if (!overlay) return;
+
+    const dialogIndex = dialogStack.findIndex(state => state.overlay === overlay);
+    const dialogState = dialogIndex === -1 ? null : dialogStack.splice(dialogIndex, 1)[0];
+    overlay.classList.add('d-none');
+    overlay.setAttribute('aria-hidden', 'true');
+    syncBodyScrollLock();
+
+    const returnFocus = dialogState && dialogState.returnFocus;
+    if (restoreFocus && returnFocus && typeof returnFocus.focus === 'function' && document.contains(returnFocus)) {
+      returnFocus.focus();
+    }
+  }
+
+  function closeHistoryModal() {
+    closeAccessibleDialog(elements.historyModal);
+  }
+
   function resolveConfirmDialog(result) {
     const resolver = confirmResolver;
     confirmResolver = null;
-    if (elements.confirmModal) {
-      elements.confirmModal.classList.add('d-none');
-      elements.confirmModal.setAttribute('aria-hidden', 'true');
-    }
-    document.body.classList.remove('modal-open');
+    closeAccessibleDialog(elements.confirmModal);
     if (typeof resolver === 'function') resolver(Boolean(result));
   }
 
@@ -165,11 +287,6 @@
 
     document.addEventListener('keydown', event => {
       if (!confirmResolver || elements.confirmModal?.classList.contains('d-none')) return;
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        resolveConfirmDialog(false);
-        return;
-      }
       if (event.key === 'Enter' && event.target !== elements.confirmCancelBtn) {
         event.preventDefault();
         resolveConfirmDialog(true);
@@ -198,14 +315,11 @@
     elements.confirmCancelBtn.textContent = cancelLabel;
     elements.confirmConfirmBtn.classList.toggle('btn-danger', danger);
     elements.confirmConfirmBtn.classList.toggle('btn-export', !danger);
-    elements.confirmModal.classList.remove('d-none');
-    elements.confirmModal.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('modal-open');
-
     return new Promise(resolve => {
       confirmResolver = resolve;
-      requestAnimationFrame(() => {
-        (danger ? elements.confirmConfirmBtn : elements.confirmCancelBtn).focus();
+      openAccessibleDialog(elements.confirmModal, {
+        initialFocus: danger ? elements.confirmConfirmBtn : elements.confirmCancelBtn,
+        onEscape: () => resolveConfirmDialog(false)
       });
     });
   }
@@ -255,7 +369,7 @@
     const safeEntry = entry && typeof entry === 'object' ? entry : {};
     const urls = Array.isArray(safeEntry.urls) ? safeEntry.urls.filter(Boolean) : [];
     const items = Array.isArray(safeEntry.items) ? safeEntry.items : [];
-    
+
     let timestampObj = null;
     if (safeEntry.timestamp) {
       try {
@@ -336,24 +450,24 @@
     if (!value) return null;
     const [year, month, day] = value.split('-').map(Number);
     if (!year || !month || !day) return null;
-    
+
     // Create date in Pakistan timezone
     const date = new Date(year, month - 1, day, 0, 0, 0, 0);
     if (Number.isNaN(date.valueOf())) return null;
-    
+
     if (endOfDay) {
       date.setHours(23, 59, 59, 999);
     }
-    
+
     // Convert to Pakistan timezone by adjusting for the timezone offset
     // Pakistan is UTC+5, so we need to account for this when filtering
     const pakistanOffset = 5 * 60; // 5 hours in minutes
     const localOffset = date.getTimezoneOffset(); // Local timezone offset from UTC in minutes
     const adjustmentMinutes = pakistanOffset + localOffset;
-    
+
     // Adjust the date to account for Pakistan timezone
     date.setMinutes(date.getMinutes() - adjustmentMinutes);
-    
+
     return date;
   }
 
@@ -431,7 +545,7 @@
         // Convert entry timestamp to comparable format
         let entryTime = entry.timestamp_obj.getTime();
         let startTime = startDate.getTime();
-        
+
         if (entryTime < startTime) {
           return false;
         }
@@ -444,7 +558,7 @@
         // Convert entry timestamp to comparable format
         let entryTime = entry.timestamp_obj.getTime();
         let endTime = endDate.getTime();
-        
+
         if (entryTime > endTime) {
           return false;
         }
@@ -506,7 +620,7 @@
     const sortedHistory = [...entries].sort((a, b) => (b.timestamp_ms || 0) - (a.timestamp_ms || 0));
 
     const fragment = document.createDocumentFragment();
-    
+
     sortedHistory.forEach(entry => {
       const card = createHistoryCard(entry);
       fragment.appendChild(card);
@@ -518,63 +632,65 @@
   function createHistoryCard(entry) {
     const card = document.createElement('div');
     card.className = 'history-card';
-    
+
     const urlList = Array.isArray(entry.urls) ? entry.urls : [];
     const rules = entry.rules || { add_percent: 0, percent_off: 0, absolute_off: 0 };
     const addPercent = Number(rules.add_percent) || 0;
     const percentOff = Number(rules.percent_off) || 0;
     const absoluteOff = Number(rules.absolute_off) || 0;
     const itemsCount = Number(entry.items_count) || 0;
-    const urlsPreview = urlList.slice(0, 2).map(url => {
+    const sourceHosts = [...new Set(urlList.map(url => {
       try {
         return new URL(url).hostname.replace('www.', '');
       } catch {
-        return url;
+        return '';
       }
-    }).join(', ');
+    }).filter(Boolean))];
+    const urlsPreview = sourceHosts.slice(0, 2).join(', ');
     const remainingUrls = urlList.length > 2 ? ` +${urlList.length - 2} more` : '';
-    
+    const sourceLabel = sourceHosts.length === 1
+      ? sourceHosts[0]
+      : sourceHosts.length > 1
+        ? `${sourceHosts.length} sources`
+        : 'Saved extraction';
+    const pricingLabel = addPercent || percentOff || absoluteOff
+      ? `+${addPercent}% / -${percentOff}% / -$${absoluteOff}`
+      : 'No adjustment';
+
     card.innerHTML = `
-      <div class="history-header">
-        <div>
-          <h3 class="history-title">Fetch Session</h3>
+      <div class="history-card__main">
+        <div class="history-card__identity">
+          <h3 class="history-title">${utils.escapeHtml(sourceLabel)}</h3>
           <div class="history-timestamp">${utils.formatDate(entry.timestamp)} | ${utils.formatDuration(entry.timestamp)}</div>
+          <div class="history-source-preview">${utils.escapeHtml(urlsPreview)}${utils.escapeHtml(remainingUrls)}</div>
+        </div>
+        <div class="history-meta" aria-label="Run summary">
+          <div class="meta-item">
+            <span class="meta-value">${itemsCount.toLocaleString()}</span>
+            <span class="meta-label">Items</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-value">${urlList.length.toLocaleString()}</span>
+            <span class="meta-label">URLs</span>
+          </div>
+          <div class="meta-item meta-item--pricing">
+            <span class="meta-value">${pricingLabel}</span>
+            <span class="meta-label">Pricing</span>
+          </div>
         </div>
         <div class="history-actions">
-          <button class="btn btn-sm btn-ghost" data-action="export" data-id="${entry.id}">Export XLSX</button>
-          <button class="btn btn-sm btn-ghost" data-action="view" data-id="${entry.id}">View Details</button>
+          <button class="btn btn-sm btn-ghost" data-action="view" data-id="${entry.id}">Open</button>
+          <button class="btn btn-sm btn-ghost" data-action="export" data-id="${entry.id}">XLSX</button>
           <button class="btn btn-sm btn-ghost danger" data-action="delete" data-id="${entry.id}">Delete</button>
         </div>
       </div>
-      
-      <div class="history-meta">
-        <div class="meta-item">
-          <span class="meta-label">Items:</span>
-          <span class="meta-value">${itemsCount}</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">URLs:</span>
-          <span class="meta-value">${urlList.length}</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">Pricing:</span>
-          <span class="meta-value">+${addPercent}% / -${percentOff}% / $${absoluteOff}</span>
-        </div>
-      </div>
-      
-      <div class="history-urls">
-        <div class="meta-label mb-2">Target URLs:</div>
-        <div class="text-muted" style="font-size: 0.85rem;">
-          ${utils.escapeHtml(urlsPreview)}${utils.escapeHtml(remainingUrls)}
-        </div>
-      </div>
     `;
-    
+
     // Event delegation for buttons
     card.querySelector('[data-action="export"]').addEventListener('click', () => exportHistory(entry.id));
     card.querySelector('[data-action="view"]').addEventListener('click', () => viewHistory(entry.id));
     card.querySelector('[data-action="delete"]').addEventListener('click', () => deleteHistory(entry.id));
-    
+
     return card;
   }
 
@@ -582,6 +698,7 @@
   async function loadHistory() {
     try {
       utils.setLoading(true);
+      utils.renderHistorySkeleton();
       const response = await fetch('/api/history?limit=50');
       if (!response.ok) throw new Error('Failed to load history');
       const data = await response.json();
@@ -610,7 +727,7 @@
       const response = await fetch('/api/statistics');
       if (!response.ok) throw new Error('Failed to load statistics');
       const stats = await response.json();
-      
+
       updateStatCard('totalHistories', stats.total_histories || 0);
       updateStatCard('totalItems', (stats.total_items || 0).toLocaleString());
       updateStatCard('uniqueModels', stats.unique_models || 0);
@@ -620,13 +737,13 @@
       updateStatCard('successRate', stats.success_rate ? `${stats.success_rate}%` : '0%');
       updateStatCard('topSite', stats.top_site || 'N/A');
       updateStatCard('latestSession', stats.latest_session || 'Never');
-      
+
       const sizeInMB = (stats.database_size || 0) / 1024 / 1024;
-      updateStatCard('dbSize', sizeInMB < 1 
+      updateStatCard('dbSize', sizeInMB < 1
         ? `${(sizeInMB * 1024).toFixed(0)} KB`
         : `${sizeInMB.toFixed(1)} MB`
       );
-      
+
       // Update new stats
       updateStatCard('avgItemsPerSession', stats.avg_items_per_session || 0);
       updateStatCard('totalValue', stats.total_value ? `$${stats.total_value.toLocaleString()}` : '$0');
@@ -663,11 +780,18 @@
 
   async function requestDeleteHistory(normalizedHistoryId) {
     const encodedId = encodeURIComponent(normalizedHistoryId);
-    let response = await fetch(`/api/history/${encodedId}`, { method: 'DELETE' });
+    const destructiveHeaders = { 'X-Confirm-Destructive': 'permanently-delete' };
+    let response = await fetch(`/api/history/${encodedId}`, {
+      method: 'DELETE',
+      headers: destructiveHeaders
+    });
 
     // Some deployments/proxies block DELETE; fallback route keeps behavior consistent.
     if (response.status === 405 || response.status === 501) {
-      response = await fetch(`/api/history/${encodedId}/delete`, { method: 'POST' });
+      response = await fetch(`/api/history/${encodedId}/delete`, {
+        method: 'POST',
+        headers: destructiveHeaders
+      });
     }
 
     return response;
@@ -688,7 +812,7 @@
       danger: true
     });
     if (!confirmed) return;
-    
+
     try {
       utils.setLoading(true);
       const response = await requestDeleteHistory(normalizedHistoryId);
@@ -720,9 +844,24 @@
     }
   }
 
+  function renderHistoryModalSkeleton() {
+    if (!elements.modalContent || !elements.historyModal) return;
+    elements.modalContent.innerHTML = `
+      <div class="skeleton-container" style="padding: 1rem;">
+        <div class="skeleton-box" style="width: 50%; height: 22px; margin-bottom: 12px;"></div>
+        <div class="skeleton-box" style="width: 80%; height: 14px; margin-bottom: 20px;"></div>
+        <div class="skeleton-row"><div class="skeleton-box" style="width: 35px; height: 35px; border-radius:4px;"></div><div style="flex:1;"><div class="skeleton-box" style="width:70%; height:14px; margin-bottom:4px;"></div><div class="skeleton-box" style="width:30%; height:11px;"></div></div><div class="skeleton-box" style="width:60px; height:18px; border-radius:4px;"></div></div>
+        <div class="skeleton-row"><div class="skeleton-box" style="width: 35px; height: 35px; border-radius:4px;"></div><div style="flex:1;"><div class="skeleton-box" style="width:60%; height:14px; margin-bottom:4px;"></div><div class="skeleton-box" style="width:40%; height:11px;"></div></div><div class="skeleton-box" style="width:60px; height:18px; border-radius:4px;"></div></div>
+        <div class="skeleton-row"><div class="skeleton-box" style="width: 35px; height: 35px; border-radius:4px;"></div><div style="flex:1;"><div class="skeleton-box" style="width:75%; height:14px; margin-bottom:4px;"></div><div class="skeleton-box" style="width:25%; height:11px;"></div></div><div class="skeleton-box" style="width:60px; height:18px; border-radius:4px;"></div></div>
+      </div>
+    `;
+    openAccessibleDialog(elements.historyModal);
+  }
+
   async function viewHistory(historyId) {
     try {
       utils.setLoading(true);
+      renderHistoryModalSkeleton();
       const normalizedHistoryId = normalizeHistoryId(historyId);
       const response = await fetch(`/api/history/${encodeURIComponent(normalizedHistoryId)}`);
       if (!response.ok) throw new Error('Failed to load history details');
@@ -764,8 +903,8 @@
     if (!elements.modalContent || !elements.historyModal) return;
 
     const urlList = Array.isArray(entry.urls) ? entry.urls : [];
-    const urlsList = urlList.map(url => 
-      `<div class="url-item">${utils.escapeHtml(url)}</div>`
+    const urlsList = urlList.map(url =>
+      `<a class="history-detail-url" href="${utils.escapeHtml(url)}" target="_blank" rel="noopener">${utils.escapeHtml(url)}</a>`
     ).join('');
 
     const items = Array.isArray(entry.items) ? entry.items : [];
@@ -776,15 +915,18 @@
     const itemsCount = Number(entry.items_count) || items.length;
 
     const itemsTable = items.length > 0 ? `
-      <h4 style="color: var(--text); margin: 1.5rem 0 0.75rem 0; font-size: 1rem;">Items (${items.length})</h4>
-      <div style="overflow-x: auto;">
-        <table class="table">
+      <section class="history-detail-section history-detail-items">
+        <div class="history-detail-section__heading">
+          <h4>Products</h4>
+          <span>${items.length.toLocaleString()} items</span>
+        </div>
+        <div class="history-detail-table-wrap">
+        <table class="history-detail-table">
           <thead>
             <tr>
               <th>Image</th>
               <th>Title</th>
               <th>Original</th>
-              <th>Final</th>
               <th>URL</th>
               <th>Source</th>
             </tr>
@@ -792,61 +934,73 @@
           <tbody>
             ${items.map(item => `
               <tr>
-                <td>${item.image_url ? `<img src="${utils.escapeHtml(item.image_url)}" class="table-img" alt="">` : ''}</td>
-                <td style="max-width: 300px; word-wrap: break-word;">${utils.escapeHtml(item.title || '')}</td>
+                <td>${item.image_url ? `<img src="${utils.escapeHtml(item.image_url)}" class="table-img" alt="" loading="lazy">` : '<span class="history-detail-no-image">-</span>'}</td>
+                <td class="history-detail-product-title">${utils.escapeHtml(item.title || '')}</td>
                 <td>${utils.escapeHtml(item.original_formatted || '')}</td>
-                <td>${utils.escapeHtml(item.discounted_formatted || '')}</td>
                 <td><a class="url-link" href="${utils.escapeHtml(item.url)}" target="_blank" rel="noopener">Open</a></td>
-                <td><small>${utils.escapeHtml(item.site || '')}</small></td>
+                <td class="history-detail-source">${utils.escapeHtml(item.site || '')}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
-      </div>
-    ` : '<p style="color: var(--muted); text-align: center; padding: 1.5rem;">No items found in this session</p>';
+        </div>
+      </section>
+    ` : '<div class="history-detail-empty">No products were saved in this session.</div>';
 
     elements.modalContent.innerHTML = `
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; padding-right: 3rem;">
-        <h3 style="color: var(--text); margin: 0; font-size: 1.25rem; flex: 1; min-width: 0;">Fetch Session Details</h3>
-        <button class="btn btn-sm btn-ghost" id="historyModalExport" data-id="${entry.id}" style="white-space: nowrap; flex-shrink: 0;">Export XLSX</button>
-      </div>
-      <div style="color: var(--muted); font-size: 0.875rem; margin-bottom: 1.5rem;">
-        ${utils.formatDate(entry.timestamp)} | ${utils.formatDuration(entry.timestamp)}
-      </div>
-      
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem;">
-        <div style="background: rgba(255,255,255,0.05); padding: 0.875rem; border-radius: 12px;">
-          <div style="color: var(--muted); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.375rem;">Items Found</div>
-          <div style="color: var(--text); font-size: 1.375rem; font-weight: 700;">${itemsCount}</div>
+      <header class="history-detail-header">
+        <div class="history-detail-header__copy">
+          <h3 id="historyModalTitle">Session Details</h3>
+          <div class="history-detail-timestamp">
+            ${utils.formatDate(entry.timestamp)} | ${utils.formatDuration(entry.timestamp)}
+          </div>
         </div>
-        <div style="background: rgba(255,255,255,0.05); padding: 0.875rem; border-radius: 12px;">
-          <div style="color: var(--muted); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.375rem;">Add %</div>
-          <div style="color: var(--text); font-size: 1.375rem; font-weight: 700;">${addPercent}%</div>
-        </div>
-        <div style="background: rgba(255,255,255,0.05); padding: 0.875rem; border-radius: 12px;">
-          <div style="color: var(--muted); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.375rem;">Discount %</div>
-          <div style="color: var(--text); font-size: 1.375rem; font-weight: 700;">${percentOff}%</div>
-        </div>
-        <div style="background: rgba(255,255,255,0.05); padding: 0.875rem; border-radius: 12px;">
-          <div style="color: var(--muted); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.375rem;">Absolute Off</div>
-          <div style="color: var(--text); font-size: 1.375rem; font-weight: 700;">$${absoluteOff}</div>
-        </div>
-      </div>
+        <button class="btn-export history-detail-export" id="historyModalExport" data-id="${entry.id}">Export XLSX</button>
+      </header>
 
-      <h4 style="color: var(--text); margin: 0 0 0.75rem 0; font-size: 1rem;">Target URLs (${urlList.length})</h4>
-      <div class="url-list" style="margin-bottom: 1.5rem;">
-        ${urlsList}
-      </div>
+      <div class="history-detail-body">
+        <div class="history-detail-metrics" aria-label="Session summary">
+          <div class="history-detail-metric">
+            <span>Items Found</span>
+            <strong>${itemsCount.toLocaleString()}</strong>
+          </div>
+          <div class="history-detail-metric">
+            <span>Price Increase</span>
+            <strong>${addPercent}%</strong>
+          </div>
+          <div class="history-detail-metric">
+            <span>Discount</span>
+            <strong>${percentOff}%</strong>
+          </div>
+          <div class="history-detail-metric">
+            <span>Fixed Discount</span>
+            <strong>$${absoluteOff}</strong>
+          </div>
+        </div>
 
-      ${itemsTable}
+        <details class="history-detail-section history-detail-urls">
+          <summary>
+            <span>Target URLs</span>
+            <strong>${urlList.length}</strong>
+          </summary>
+          <div class="history-detail-url-list">
+            ${urlsList || '<span class="history-detail-url-empty">No target URLs saved.</span>'}
+          </div>
+        </details>
+
+        ${itemsTable}
+      </div>
     `;
-    
-    elements.historyModal.style.display = 'flex';
 
     const modalExportBtn = document.getElementById('historyModalExport');
     if (modalExportBtn) {
       modalExportBtn.addEventListener('click', () => exportHistory(entry.id));
     }
+
+    openAccessibleDialog(elements.historyModal, {
+      initialFocus: elements.closeModal,
+      onEscape: closeHistoryModal
+    });
   }
 
   const cleanupModal = {
@@ -929,29 +1083,32 @@
 
     show() {
       if (this.modal) {
-        this.modal.style.display = 'flex';
         this.updatePreview();
+        openAccessibleDialog(this.modal, {
+          initialFocus: this.closeBtn,
+          onEscape: () => this.hide()
+        });
       }
     },
 
     hide() {
       if (this.modal) {
-        this.modal.style.display = 'none';
+        closeAccessibleDialog(this.modal);
       }
     },
 
     updatePreview() {
       if (!this.previewText) return;
-      
+
       const dateValue = this.dateInput ? this.dateInput.value : '';
       if (this.currentDays >= 99999) {
         this.previewText.innerHTML = `<strong style="color: #dc3545;">ALL HISTORY SESSIONS</strong> will be permanently deleted!`;
       } else if (dateValue) {
         const date = new Date(dateValue);
-        const formattedDate = date.toLocaleDateString('en-US', { 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
+        const formattedDate = date.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
         });
         this.previewText.textContent = `All sessions before ${formattedDate} will be permanently deleted`;
       } else {
@@ -978,27 +1135,30 @@
       try {
         utils.setLoading(true);
         this.hide();
-        
+
         const response = await fetch('/api/cleanup', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ days: this.currentDays })
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Confirm-Destructive': 'permanently-delete'
+          },
+          body: JSON.stringify(isDeleteAll ? { delete_all: true } : { days: this.currentDays })
         });
-        
+
         if (!response.ok) throw new Error('Failed to cleanup');
         const result = await response.json();
-        
+
         const message = this.currentDays >= 99999
           ? `All history deleted. Removed ${result.deleted_entries} session(s).`
           : `Successfully deleted ${result.deleted_entries} old session(s).`;
-        
+
         utils.showAlert('success', message);
-        
+
         // Reset data and reload everything
         historyData = [];
         filteredHistory = [];
-        loadHistory();
-        loadStatistics();
+        await loadHistory();
+        await loadStatistics();
         updateSiteFilterOptions();
         updateMinItemsSlider();
       } catch (error) {
@@ -1016,16 +1176,16 @@
 
   // Event Listeners
   function initializeEventListeners() {
+    document.addEventListener('keydown', handleDialogKeydown);
+
     if (elements.closeModal) {
-      elements.closeModal.addEventListener('click', () => {
-        if (elements.historyModal) elements.historyModal.style.display = 'none';
-      });
+      elements.closeModal.addEventListener('click', closeHistoryModal);
     }
 
     if (elements.historyModal) {
       elements.historyModal.addEventListener('click', (e) => {
         if (e.target === elements.historyModal) {
-          elements.historyModal.style.display = 'none';
+          closeHistoryModal();
         }
       });
     }

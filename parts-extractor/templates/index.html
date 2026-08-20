@@ -1,14 +1,44 @@
 <!doctype html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en">
 
 <head>
+  <script>
+    (() => {
+      try {
+        const theme = sessionStorage.getItem('cy_theme') || 'dark';
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        document.documentElement.style.colorScheme = theme;
+      } catch (_) {
+        document.documentElement.setAttribute('data-bs-theme', 'dark');
+        document.documentElement.style.colorScheme = 'dark';
+      }
+    })();
+  </script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Parts Extractor — v8</title>
+  <title>Parts Extractor - v8.1</title>
   <link rel="icon" href="data:," />
   <meta name="description"
     content="Extract and compare pricing data from MobileSentrix, XCellParts, TXParts, and Parts4Cells." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..900&display=swap">
   <style>
+    :root,
+    [data-bs-theme="dark"] {
+      --startup-bg: #0d0f14;
+      --startup-text: #e8eaf5;
+      --startup-card: #13161e;
+      --startup-border: #252a3d
+    }
+
+    [data-bs-theme="light"] {
+      --startup-bg: #f2f4fb;
+      --startup-text: #0e1230;
+      --startup-card: #ffffff;
+      --startup-border: #d0d5ee
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -20,29 +50,21 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0d0f14;
-      color: #e8eaf5;
+      font-family: var(--font-ui, Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+      background: var(--startup-bg);
+      color: var(--startup-text);
       min-height: 100vh
     }
 
     .page-shell {
       max-width: 1420px;
       margin: 0 auto;
-      padding: 1rem;
-      opacity: 0;
-      animation: fadeIn .25s ease forwards
-    }
-
-    @keyframes fadeIn {
-      to {
-        opacity: 1
-      }
+      padding: 1rem
     }
 
     .cy-card {
-      background: #13161e;
-      border: 1px solid #252a3d;
+      background: var(--startup-card);
+      border: 1px solid var(--startup-border);
       border-radius: 16px
     }
 
@@ -116,19 +138,16 @@
     .overlay {
       position: fixed;
       inset: 0;
-      background: #0d0f14;
+      background: var(--startup-bg);
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 9999
     }
   </style>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
   <link rel="stylesheet" href="{{ asset_url('css/common.css') }}">
   <link rel="stylesheet" href="{{ asset_url('css/main.css') }}">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 
 <body>
@@ -141,26 +160,38 @@
       <div class="header-left">
         <div class="app-logo">PE</div>
         <div class="header-brand">
-          <h1 class="app-title">Parts Extractor</h1>
-          <p class="app-sub">MobileSentrix · XCellParts · TXParts · Parts4Cells</p>
+          <div class="header-title-row">
+            <h1 class="app-title">Parts Extractor</h1>
+            <span class="version-badge">v8.1</span>
+          </div>
+          <p class="app-sub">Multi-source product extraction</p>
         </div>
       </div>
-      <nav class="nav-pills">
+      <nav class="nav-pills" aria-label="Primary navigation">
         <a href="/" class="nav-link active">Extractor</a>
         <a href="/history" class="nav-link">History</a>
         <a href="/automation" class="nav-link">Automation</a>
-        <a href="/category-manager" class="nav-link">Categories</a>
-        <a href="/image-converter" class="nav-link">Images</a>
+        <a href="/menu-map" class="nav-link">Menu Map</a>
+          {% if current_user.is_authenticated and current_user.has_role("admin") %}
+          <a href="/users" class="nav-link">Users & Roles</a>
+          {% endif %}
       </nav>
       <div class="header-right">
+        {% if current_user.is_authenticated %}
+        <div class="user-auth-badge">
+          <span>Signed in as <strong>{{ current_user.username }}</strong> <small>({{ current_user.role }})</small></span>
+          <a href="/logout" title="Log Out">Logout</a>
+        </div>
+        {% endif %}
+
         <div class="header-clock">
           <span class="clock-date" id="currentDateValue">--</span>
           <span class="clock-time" id="currentTimeValue">--</span>
         </div>
-        <div class="theme-switch">
+        <div class="theme-switch" aria-label="Color theme">
           <span class="theme-label">Light</span>
           <label class="switch-track">
-            <input type="checkbox" id="darkMode" checked>
+            <input type="checkbox" id="darkMode" aria-label="Toggle dark mode" checked>
             <span class="switch-thumb"></span>
           </label>
           <span class="theme-label">Dark</span>
@@ -172,21 +203,22 @@
     <section class="cy-card fetch-card mb-3">
       <div class="fetch-top">
         <div class="fetch-left">
-          <label class="field-label">Target URLs</label>
-          <p class="field-desc">One URL per line — category or product page from any supported site</p>
+          <label class="field-label" for="urls">Target URLs</label>
+          <p class="field-desc" id="urlsHelp">One URL per line — category or product page from any supported site</p>
         </div>
         <div class="fetch-right">
           <span class="url-count-badge" id="urlCountBadge">0 URLs</span>
         </div>
       </div>
-      <textarea id="urls" class="url-area" rows="4"
-        placeholder="https://www.mobilesentrix.ca/replacement-parts/samsung/...&#10;https://xcellparts.com/product-category/...&#10;https://parts4cells.com/apple/..."></textarea>
+      <textarea id="urls" class="url-area" rows="4" aria-describedby="urlsHelp"
+        placeholder="https://www.mobilesentrix.ca/replacement-parts/samsung/...&#10;https://xcellparts.com/product-category/...&#10;https://parts4cells.com/apple/...&#10;https://www.phonelcdparts.com/apple/best-sellers/qmax&#10;https://gadgetfix.com/category/iphone-1559.html"></textarea>
 
       <div class="fetch-actions">
         <button id="runBtn" class="btn-run">
           <span>Fetch Data</span>
         </button>
-        <button id="advancedToggle" class="btn-secondary">
+        <button id="advancedToggle" class="btn-secondary" type="button" aria-expanded="false"
+          aria-controls="advancedControls">
           <span>Filters</span>
           <span class="toggle-arrow" id="filterArrow">&gt;</span>
         </button>
@@ -198,7 +230,7 @@
     </section>
 
     <!-- ── Advanced Filters (collapsible) ─────────────────── -->
-    <section class="cy-card filters-card mb-3" id="advancedControls" style="display:none">
+    <section class="cy-card filters-card mb-3" id="advancedControls" hidden>
       <div class="filters-header">
         <h2 class="filters-title">Advanced Filters</h2>
         <span class="filter-badge" id="filterCount">0 active</span>
@@ -209,50 +241,50 @@
       <div class="filters-grid">
 
         <!-- Pricing -->
-        <div class="filter-group">
-          <div class="fgroup-label">Pricing</div>
+        <div class="filter-group" role="group" aria-labelledby="pricingGroupLabel">
+          <div class="fgroup-label" id="pricingGroupLabel">Pricing</div>
           <div class="fgroup-fields">
             <div class="field-item">
-              <label class="field-label-sm">Discount %</label>
+              <label class="field-label-sm" for="percent">Discount %</label>
               <input id="percent" type="number" class="field-input" min="0" max="95" step="0.1" value="0"
                 placeholder="0">
             </div>
             <div class="field-item">
-              <label class="field-label-sm">Fixed Off $</label>
+              <label class="field-label-sm" for="absOff">Fixed Off $</label>
               <input id="absOff" type="number" class="field-input" min="0" step="0.01" value="0" placeholder="0.00">
             </div>
             <div class="field-item">
-              <label class="field-label-sm">Add %</label>
+              <label class="field-label-sm" for="addPercent">Add %</label>
               <input id="addPercent" type="number" class="field-input" min="0" max="500" step="0.1" value="0"
                 placeholder="5.0">
             </div>
             <div class="field-item">
-              <label class="field-label-sm">Min Price</label>
+              <label class="field-label-sm" for="priceMin">Min Price</label>
               <input id="priceMin" type="number" class="field-input" min="0" step="0.01" placeholder="0">
             </div>
             <div class="field-item">
-              <label class="field-label-sm">Max Price</label>
+              <label class="field-label-sm" for="priceMax">Max Price</label>
               <input id="priceMax" type="number" class="field-input" min="0" step="0.01" placeholder="∞">
             </div>
             <div class="field-item">
-              <label class="field-label-sm">Alert Drop %</label>
+              <label class="field-label-sm" for="dropPct">Alert Drop %</label>
               <input id="dropPct" type="number" class="field-input" min="1" max="90" step="1" value="10">
             </div>
           </div>
         </div>
 
         <!-- Keywords -->
-        <div class="filter-group">
-          <div class="fgroup-label">Keywords</div>
+        <div class="filter-group" role="group" aria-labelledby="keywordsGroupLabel">
+          <div class="fgroup-label" id="keywordsGroupLabel">Keywords</div>
           <div class="fgroup-fields">
             <div class="field-item full-width">
-              <label class="field-label-sm">Include (hit Enter)</label>
+              <label class="field-label-sm" for="kwInclude">Include (hit Enter)</label>
               <input id="kwInclude" class="field-input" placeholder="e.g. oled, lcd">
               <div class="chip-row" id="includeChips"></div>
               <input type="hidden" id="include">
             </div>
             <div class="field-item full-width">
-              <label class="field-label-sm">Exclude (hit Enter)</label>
+              <label class="field-label-sm" for="kwExclude">Exclude (hit Enter)</label>
               <input id="kwExclude" class="field-input" placeholder="e.g. refurb, frame">
               <div class="chip-row" id="excludeChips"></div>
               <input type="hidden" id="exclude">
@@ -261,11 +293,11 @@
         </div>
 
         <!-- Display -->
-        <div class="filter-group">
-          <div class="fgroup-label">Display</div>
+        <div class="filter-group" role="group" aria-labelledby="displayGroupLabel">
+          <div class="fgroup-label" id="displayGroupLabel">Display</div>
           <div class="fgroup-fields">
             <div class="field-item full-width">
-              <label class="field-label-sm">Sort</label>
+              <label class="field-label-sm" for="sortBy">Sort</label>
               <select id="sortBy" class="field-input">
                 <option value="none">Default</option>
                 <option value="final_asc">Price ↑</option>
@@ -294,9 +326,13 @@
                 <input type="checkbox" id="groupModel" class="toggle-cb">
                 <span class="toggle-label-text">Group by model</span>
               </label>
+              <label class="toggle-field" style="display: none;">
+                <input type="checkbox" id="enrichDetails" class="toggle-cb" checked>
+                <span class="toggle-label-text">Product SKU & Detail Enrichment</span>
+              </label>
               <label class="toggle-field">
-                <input type="checkbox" id="enrichDetails" class="toggle-cb">
-                <span class="toggle-label-text">Deep detail scan (slower)</span>
+                <input type="checkbox" id="useBrowserApi" class="toggle-cb" checked disabled>
+                <span class="toggle-label-text">Headless Botasaurus rendering</span>
               </label>
             </div>
           </div>
@@ -310,7 +346,7 @@
     <div id="alert" class="alert-banner d-none" role="alert"></div>
 
     <div id="confirmModal" class="confirm-modal d-none" aria-hidden="true">
-      <div class="confirm-modal__dialog cy-card" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle"
+      <div id="confirmModalDialog" class="confirm-modal__dialog cy-card" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="confirmModalTitle"
         aria-describedby="confirmModalMessage">
         <div class="confirm-modal__eyebrow">Confirm Action</div>
         <h3 id="confirmModalTitle" class="confirm-modal__title">Please confirm</h3>
@@ -331,6 +367,7 @@
     <div class="toolbar-row mb-3" id="exportActions" style="display:none">
       <div class="toolbar-left">
         <div class="result-count" id="countBadge">0 items</div>
+        <label class="visually-hidden" for="search">Search results</label>
         <input id="search" class="search-input" placeholder="Search title or URL...">
       </div>
       <div class="toolbar-right">
@@ -352,9 +389,19 @@
       <button id="clearWatchlistBtn" class="btn-danger-sm" disabled>Clear watchlist</button>
     </div>
 
+    <!-- ── Comparison File Upload Zone ─────────────────────── -->
+    <div class="upload-zone mb-3" id="uploadZone">
+      <input type="file" id="csvUpload" accept=".csv,.xlsx,.xls,.txt" style="display:none">
+      <div class="upload-zone__content">
+        <span class="upload-zone__icon">📁</span>
+        <span class="upload-zone__text" id="uploadText">Drop CSV/XLSX to compare prices against scraped results, or click to browse</span>
+        <button id="clearFileBtn" class="btn btn-sm btn-outline-danger" type="button" style="display:none; margin-left:12px;">Clear File</button>
+      </div>
+    </div>
+
     <!-- ── Results Table ───────────────────────────────────── -->
     <section class="cy-card results-card">
-      <div class="results-header">
+      <div class="results-header" id="resultsHeader" hidden>
         <div class="results-title-group">
           <h2 class="results-title">Results</h2>
           <nav id="modelChipWrap" class="model-chips" hidden></nav>
@@ -370,7 +417,7 @@
       </div>
 
       <div class="results-body">
-        <div class="table-wrap">
+        <div class="table-wrap" id="resultsTableWrap" hidden>
           <table id="resultsTable">
             <thead>
               <tr>
@@ -391,7 +438,7 @@
         </div>
 
         <!-- Empty state -->
-        <div class="empty-state d-none" id="resultsEmpty">
+        <div class="empty-state" id="resultsEmpty">
           <div class="empty-icon">Data</div>
           <h3>No results yet</h3>
           <p>Paste a category URL above and click <strong>Fetch Data</strong></p>
@@ -416,11 +463,17 @@
       <div class="loader-spinner"></div>
       <div class="loader-text" id="loaderText">Connecting...</div>
       <div class="loader-sub" id="loaderSub">Establishing connection</div>
+      <div class="loader-phases mt-2 mb-2" style="display:flex; justify-content:center; gap:6px; font-size:11px;">
+        <span id="loaderPhase1" class="badge bg-primary" style="padding:4px 8px; border-radius:8px;">Phase 1: Crawl</span>
+        <span id="loaderPhase2" class="badge bg-secondary" style="padding:4px 8px; border-radius:8px;">Phase 2: SKUs</span>
+        <span id="loaderPhase3" class="badge bg-secondary" style="padding:4px 8px; border-radius:8px;">Phase 3: Diff</span>
+      </div>
       <div class="loader-bar-wrap">
         <div class="loader-bar" id="loaderBar"></div>
       </div>
       <div class="loader-pct" id="loaderPct">0%</div>
       <div class="loader-timer" id="loaderTimer">0.0s</div>
+      <button type="button" class="btn btn-outline-danger btn-sm mt-3" id="cancelScrapeBtn" style="border-radius:20px; font-size:12px; font-weight:600; padding:4px 14px;">Cancel Scrape</button>
     </div>
   </div>
 

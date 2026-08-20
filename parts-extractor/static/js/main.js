@@ -1,5 +1,5 @@
 /**
- * Parts Extractor v8 — main.js
+ * Parts Extractor v8.1 - main.js
  * Single source of truth for all UI logic, filtering, scraping, exports.
  */
 
@@ -38,11 +38,13 @@ const showInStockOnly = $('showInStockOnly');
 const showOutOfStockOnly = $('showOutOfStockOnly');
 const groupModel = $('groupModel');
 const enrichDetails = $('enrichDetails');
+const useBrowserApi = $('useBrowserApi');
 
 
 
 const alertBox = $('alert');
 const confirmModal = $('confirmModal');
+const confirmModalDialog = $('confirmModalDialog');
 const confirmModalTitle = $('confirmModalTitle');
 const confirmModalMessage = $('confirmModalMessage');
 const confirmConfirmBtn = $('confirmConfirmBtn');
@@ -70,6 +72,8 @@ const heroWatchCount = $('heroWatchCount');
 const clearWatchlistBtn = $('clearWatchlistBtn');
 
 const resultsEmpty = $('resultsEmpty');
+const resultsHeader = $('resultsHeader');
+const resultsTableWrap = $('resultsTableWrap');
 const resultsFooter = $('resultsFooter');
 const prevPageBtn = $('prevPage');
 const nextPageBtn = $('nextPage');
@@ -108,6 +112,8 @@ let viewingWatchlist = false;
 let compareMap = new Map();
 let activePreviewSrc = '';
 let confirmResolver = null;
+let confirmReturnFocus = null;
+let confirmTrapCleanup = null;
 // keyword chip state
 let incKeywords = [];
 let excKeywords = [];
@@ -133,6 +139,7 @@ const LOAD_MSGS = [
   ['Organizing results...', 'Sorting and filtering data'],
   ['Almost there...', 'Finalizing extraction'],
 ];
+const SCRAPE_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 
 // ── Inline notification bar ───────────────────────────────────────────────────
 const _NOTIF_CLS = {
@@ -168,7 +175,11 @@ function hideComparison() {
 function resolveConfirmDialog(result) {
   if (!confirmModal) return;
   const resolver = confirmResolver;
+  const returnFocus = confirmReturnFocus;
+  if (typeof confirmTrapCleanup === 'function') confirmTrapCleanup();
+  confirmTrapCleanup = null;
   confirmResolver = null;
+  confirmReturnFocus = null;
   confirmModal.classList.add('d-none');
   confirmModal.setAttribute('aria-hidden', 'true');
   document.body.classList.remove('modal-open');
@@ -178,7 +189,27 @@ function resolveConfirmDialog(result) {
     confirmConfirmBtn.disabled = false;
   }
   if (confirmCancelBtn) confirmCancelBtn.disabled = false;
+  if (returnFocus?.isConnected && typeof returnFocus.focus === 'function' && !returnFocus.disabled) {
+    returnFocus.focus();
+  }
   if (typeof resolver === 'function') resolver(Boolean(result));
+}
+
+function getConfirmDialogFocusableElements() {
+  if (!confirmModal) return [];
+  return Array.from(confirmModal.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  ));
+}
+
+function isConfirmDialogOpen() {
+  return Boolean(confirmResolver && confirmModal && !confirmModal.classList.contains('d-none'));
+}
+
+function focusConfirmDialogTarget(preferred = null) {
+  const fallback = getConfirmDialogFocusableElements()[0] || confirmModalDialog || confirmModal;
+  const target = preferred && typeof preferred.focus === 'function' ? preferred : fallback;
+  if (target && typeof target.focus === 'function') target.focus();
 }
 
 function bindConfirmDialog() {
@@ -198,16 +229,34 @@ function bindConfirmDialog() {
   }
 
   document.addEventListener('keydown', event => {
-    if (!confirmResolver || confirmModal?.classList.contains('d-none')) return;
+    if (!isConfirmDialogOpen()) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       resolveConfirmDialog(false);
       return;
     }
-    if (event.key === 'Enter' && event.target !== confirmCancelBtn) {
-      event.preventDefault();
-      resolveConfirmDialog(true);
+
+    if (event.key === 'Tab') {
+      const focusable = getConfirmDialogFocusableElements();
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !confirmModal.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !confirmModal.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
     }
+  });
+
+  document.addEventListener('focusin', event => {
+    if (!isConfirmDialogOpen() || !confirmModal) return;
+    const nextTarget = event.target;
+    if (nextTarget instanceof Node && confirmModal.contains(nextTarget)) return;
+    focusConfirmDialogTarget(confirmCancelBtn);
   });
 }
 
@@ -225,6 +274,7 @@ function showConfirmDialog({
   bindConfirmDialog();
 
   if (confirmResolver) resolveConfirmDialog(false);
+  confirmReturnFocus = document.activeElement !== document.body ? document.activeElement : null;
 
   confirmModalTitle.textContent = title;
   confirmModalMessage.textContent = message;
@@ -235,11 +285,16 @@ function showConfirmDialog({
   confirmModal.classList.remove('d-none');
   confirmModal.setAttribute('aria-hidden', 'false');
   document.body.classList.add('modal-open');
+  confirmTrapCleanup = () => {
+    if (document.activeElement instanceof HTMLElement && confirmModal?.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
+  };
 
   return new Promise(resolve => {
     confirmResolver = resolve;
     requestAnimationFrame(() => {
-      (danger ? confirmConfirmBtn : confirmCancelBtn).focus();
+      focusConfirmDialogTarget(danger ? confirmConfirmBtn : confirmCancelBtn);
     });
   });
 }
@@ -420,6 +475,8 @@ function hostToSource(url) {
     if (host === 'xcellparts.com' || host.endsWith('.xcellparts.com')) return 'XCellParts';
     if (host === 'txparts.com' || host.endsWith('.txparts.com')) return 'TXParts';
     if (host === 'parts4cells.com' || host.endsWith('.parts4cells.com')) return 'Parts4Cells';
+    if (host === 'phonelcdparts.com' || host.endsWith('.phonelcdparts.com')) return 'PhoneLCDParts';
+    if (host === 'gadgetfix.com' || host.endsWith('.gadgetfix.com')) return 'GadgetFix';
   } catch { }
   return 'Store';
 }
@@ -610,6 +667,7 @@ async function clearWatchlistFromServer() {
   try {
     await fetchJson('/api/watchlist/clear', {
       method: 'POST',
+      headers: { 'X-Confirm-Destructive': 'permanently-delete' },
       body: JSON.stringify({}),
     });
     setWatchlistCache([]);
@@ -698,20 +756,25 @@ function setLoading(on, urls = '') {
     // Show overlay
     loadingOverlay.classList.remove('d-none');
 
-    // Set initial message
-    if (loaderText) loaderText.textContent = LOAD_MSGS[0][0];
-    if (loaderSub) loaderSub.textContent = LOAD_MSGS[0][1];
-    if (loaderBar) loaderBar.style.width = '0%';
-    if (loaderPct) loaderPct.textContent = '0%';
-    if (loaderTimer) loaderTimer.textContent = '0.0s';
-
-    // Update status
-    if (statusDot) statusDot.className = 'status-dot active';
-    if (statusText) statusText.textContent = 'Fetching...';
+    const phase1 = $('loaderPhase1');
+    const phase2 = $('loaderPhase2');
+    const phase3 = $('loaderPhase3');
+    if (phase1) phase1.className = 'badge bg-primary';
+    if (phase2) phase2.className = 'badge bg-secondary';
+    if (phase3) phase3.className = 'badge bg-secondary';
 
     _loadInterval = setInterval(() => {
-      const elapsed = ((Date.now() - _loadStart) / 1000).toFixed(1);
-      if (loaderTimer) loaderTimer.textContent = `${elapsed}s`;
+      const elapsedSeconds = (Date.now() - _loadStart) / 1000;
+      if (loaderTimer) loaderTimer.textContent = `${elapsedSeconds.toFixed(1)}s`;
+
+      if (elapsedSeconds >= 45 && useBrowserApi?.checked) {
+        if (loaderText) loaderText.textContent = 'Waiting for browser verification...';
+        if (loaderSub) loaderSub.textContent = 'Headless Botasaurus is completing the page verification';
+        const pct = Math.min(92, 70 + Math.floor(Math.min(elapsedSeconds - 45, 110) / 5));
+        if (loaderBar) loaderBar.style.width = `${pct}%`;
+        if (loaderPct) loaderPct.textContent = `${pct}%`;
+        return;
+      }
 
       // Cycle messages
       _loadMsgIdx = (_loadMsgIdx + 1) % LOAD_MSGS.length;
@@ -723,11 +786,34 @@ function setLoading(on, urls = '') {
       const pct = Math.min(92, Math.floor((_loadMsgIdx / LOAD_MSGS.length) * 100) + Math.floor(Math.random() * 8));
       if (loaderBar) loaderBar.style.width = `${pct}%`;
       if (loaderPct) loaderPct.textContent = `${pct}%`;
+
+      if (phase1 && phase2 && phase3) {
+        if (pct < 45) {
+          phase1.className = 'badge bg-primary';
+          phase2.className = 'badge bg-secondary';
+          phase3.className = 'badge bg-secondary';
+        } else if (pct < 85) {
+          phase1.className = 'badge bg-success';
+          phase2.className = 'badge bg-primary';
+          phase3.className = 'badge bg-secondary';
+        } else {
+          phase1.className = 'badge bg-success';
+          phase2.className = 'badge bg-success';
+          phase3.className = 'badge bg-primary';
+        }
+      }
     }, 1800);
 
   } else {
     clearInterval(_loadInterval);
     // Complete animation
+    const phase1 = $('loaderPhase1');
+    const phase2 = $('loaderPhase2');
+    const phase3 = $('loaderPhase3');
+    if (phase1) phase1.className = 'badge bg-success';
+    if (phase2) phase2.className = 'badge bg-success';
+    if (phase3) phase3.className = 'badge bg-success';
+
     if (loaderBar) loaderBar.style.width = '100%';
     if (loaderPct) loaderPct.textContent = '100%';
     if (loaderText) loaderText.textContent = 'Complete!';
@@ -745,9 +831,7 @@ function updateUrlCounter() {
   if (!urlsTA) return;
   const count = urlsTA.value.split('\n').map(s => s.trim()).filter(s => s.startsWith('http')).length;
   if (urlCountBadge) urlCountBadge.textContent = `${count} URL${count === 1 ? '' : 's'}`;
-  // Filters always accessible — user may want to set them before pasting URLs
-  if (advancedToggle) advancedToggle.disabled = false;
-  if (statusText && !loadingOverlay?.classList.contains('d-none') === false) {
+  if (statusText && (!loadingOverlay || loadingOverlay.classList.contains('d-none'))) {
     statusText.textContent = count ? `${count} URL${count === 1 ? '' : 's'} ready` : 'Ready';
   }
 }
@@ -756,11 +840,22 @@ function updateUrlCounter() {
 // ── Advanced filter toggle ────────────────────────────────────────────────────
 let filtersOpen = false;
 
+function syncFiltersDisclosure() {
+  if (advancedControls) {
+    advancedControls.hidden = !filtersOpen;
+    advancedControls.setAttribute('aria-hidden', String(!filtersOpen));
+  }
+  if (advancedToggle) {
+    advancedToggle.classList.toggle('open', filtersOpen);
+    advancedToggle.setAttribute('aria-expanded', String(filtersOpen));
+    advancedToggle.setAttribute('aria-controls', 'advancedControls');
+  }
+  if (filterArrow) filterArrow.textContent = filtersOpen ? 'v' : '>';
+}
+
 function toggleFilters() {
   filtersOpen = !filtersOpen;
-  if (advancedControls) advancedControls.style.display = filtersOpen ? 'block' : 'none';
-  if (advancedToggle) advancedToggle.classList.toggle('open', filtersOpen);
-  if (filterArrow) filterArrow.textContent = '>';
+  syncFiltersDisclosure();
 }
 
 function updateFilterBadge() {
@@ -826,7 +921,7 @@ function resetFilters() {
   if (showInStockOnly) showInStockOnly.checked = false;
   if (showOutOfStockOnly) showOutOfStockOnly.checked = false;
   if (groupModel) groupModel.checked = false;
-  if (enrichDetails) enrichDetails.checked = false;
+  if (enrichDetails) enrichDetails.checked = true;
   if (showWatchlistOnly) showWatchlistOnly.checked = false;
   incKeywords.length = 0; excKeywords.length = 0;
   if (includeHidden) includeHidden.value = '';
@@ -885,6 +980,8 @@ function buildDisplayRow(item, pricingRules = getRealtimePricingRules()) {
     model: modelKey(safeItem.title || ''),
     stock_status: safeItem.stock_status || safeItem.extra?.stock_status || '',
     stock_tone: getStockTone(safeItem.stock_status || safeItem.extra?.stock_status || ''),
+    sku: safeItem.sku || safeItem.extra?.sku || '',
+    description: safeItem.description || safeItem.extra?.description || '',
     original: origStr,
     final: finalStr,
     original_num: origNum,
@@ -898,29 +995,15 @@ function buildDisplayRow(item, pricingRules = getRealtimePricingRules()) {
 }
 
 function buildResultExportRows(displayRows) {
-  const hasAdjustedPrice = displayRows.some(r => {
-    if (r.original_num != null && r.final_num != null) return Math.abs(r.final_num - r.original_num) > 0.0001;
-    return String(r.original || '') !== String(r.final || '');
-  });
-
-  const exportRows = displayRows.map(r => {
-    const row = { title: r.title, price: r.original, url: r.url };
-    if (hasAdjustedPrice) row.adjusted_price = r.final;
-    return row;
-  });
-  exportRows._hasAdjustedPrice = hasAdjustedPrice;
+  const exportRows = displayRows.map(r => ({ title: r.title, price: r.original, url: r.url }));
+  exportRows._hasAdjustedPrice = false;
   return exportRows;
 }
 
 function buildWatchlistExportRows() {
   const displayRows = watchlistItems.map(item => buildDisplayRow(item, getRealtimePricingRules()));
-  const hasAdjustedPrice = displayRows.some(r => {
-    if (r.original_num != null && r.final_num != null) return Math.abs(r.final_num - r.original_num) > 0.0001;
-    return String(r.original || '') !== String(r.final || '');
-  });
-
   const exportRows = displayRows.map(r => {
-    const row = {
+    return {
       title: r.title,
       price: r.original,
       stock_status: r.stock_status,
@@ -928,13 +1011,9 @@ function buildWatchlistExportRows() {
       saved_at: formatSavedAt(r.raw_item.updated_at || r.raw_item.created_at),
       url: r.url,
     };
-    if (hasAdjustedPrice) row.adjusted_price = r.final;
-    return row;
   });
-  exportRows._headers = hasAdjustedPrice
-    ? ['title', 'price', 'adjusted_price', 'stock_status', 'site', 'saved_at', 'url']
-    : ['title', 'price', 'stock_status', 'site', 'saved_at', 'url'];
-  exportRows._hasAdjustedPrice = hasAdjustedPrice;
+  exportRows._headers = ['title', 'price', 'stock_status', 'site', 'saved_at', 'url'];
+  exportRows._hasAdjustedPrice = false;
   return exportRows;
 }
 
@@ -1053,10 +1132,13 @@ function render() {
     const stockMarkup = stockText
       ? `<div class="stock-meta stock-meta--${stockTone || 'neutral'}"><span class="stock-meta__label">Stock:</span><span class="stock-meta__value">${escapeHtml(stockText)}</span></div>`
       : '';
+    const watchActionLabel = r.watchPending
+      ? `Updating watchlist for ${r.title}`
+      : `${r.watchlisted ? 'Remove' : 'Save'} ${r.title} ${r.watchlisted ? 'from' : 'to'} watchlist`;
 
     tr.innerHTML = `
       <td>${start + idx + 1}</td>
-      <td><span class="star" data-url="${safe_url}" title="Toggle watchlist">${r.watchPending ? '...' : (r.watchlisted ? 'Saved' : 'Save')}</span></td>
+      <td><button type="button" class="star" data-url="${safe_url}" aria-label="${escapeHtml(watchActionLabel)}" aria-pressed="${r.watchlisted ? 'true' : 'false'}"${r.watchPending ? ' disabled' : ''}>${r.watchPending ? '...' : (r.watchlisted ? 'Saved' : 'Save')}</button></td>
       <td>${imageSrc ? `<img src="${safeImageSrc}" class="table-img" alt="${safe_title}" data-preview-src="${safeImageSrc}" loading="lazy" onerror="this.style.display='none'">` : ''}</td>
       <td class="col-title">
         <div class="item-title-cell">
@@ -1072,10 +1154,9 @@ function render() {
       <td>${srcLabel ? `<span class="source-chip" title="${escapeHtml(srcTitle)}">${escapeHtml(srcLabel)}</span>` : ''}</td>
     `;
 
-    // Star click
+    // Watchlist toggle
     const star = tr.querySelector('.star');
     if (star) {
-      if (r.watchPending) star.setAttribute('aria-disabled', 'true');
       star.addEventListener('click', () => {
         if (r.watchPending) return;
         toggleWatchlistForRow(r);
@@ -1089,6 +1170,10 @@ function render() {
   // Update UI state
   const has = total > 0;
   const showingWatchlistOnly = Boolean(showWatchlistOnly?.checked);
+  if (resultsHeader) resultsHeader.hidden = !has;
+  if (resultsTableWrap) resultsTableWrap.hidden = !has;
+  const resultsTable = resultsTableWrap?.querySelector('table');
+  if (resultsTable) resultsTable.hidden = !has;
   if (resultsEmpty) resultsEmpty.classList.toggle('d-none', has);
   const emptyTitle = resultsEmpty?.querySelector('h3');
   const emptyText = resultsEmpty?.querySelector('p');
@@ -1420,10 +1505,7 @@ function renderComparison(comparison) {
 // ── Export helpers ────────────────────────────────────────────────────────────
 function toCSV(rowsArr) {
   const customHeaders = Array.isArray(rowsArr?._headers) ? rowsArr._headers : null;
-  const hasAdjustedPrice = rowsArr?._hasAdjustedPrice;
-  const header = customHeaders || (hasAdjustedPrice
-    ? ['title', 'price', 'adjusted_price', 'url']
-    : ['title', 'price', 'url']);
+  const header = customHeaders || ['title', 'price', 'url'];
   const lines = [header.join(',')];
   for (const r of rowsArr) {
     const cells = header.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`);
@@ -1506,6 +1588,35 @@ function formatFetchErrorMessage(err) {
   return `Cannot reach the scraper API. ${sameOriginHint}`;
 }
 
+function summarizeTargetErrors(targetErrors) {
+  if (!Array.isArray(targetErrors) || !targetErrors.length) return '';
+  const first = targetErrors.find(error => error?.error) || targetErrors[0];
+  const detail = String(first?.error || first || '').replace(/\s+/g, ' ').trim();
+  if (!detail) return '';
+  return detail.length > 240 ? `${detail.slice(0, 237)}...` : detail;
+}
+
+function renderTableSkeleton() {
+  if (!tbody) return;
+  const resultsEmpty = $('resultsEmpty');
+  if (resultsEmpty) resultsEmpty.classList.add('d-none');
+  const resultsWrap = $('resultsTable') || document.querySelector('.results-table-wrap') || (tbody.closest('table') ? tbody.closest('table').parentElement : null);
+  if (resultsWrap) resultsWrap.classList.remove('d-none');
+
+  tbody.innerHTML = Array.from({ length: 8 }).map(() => `
+    <tr class="skeleton-table-tr">
+      <td style="width:50px;"><div class="skeleton-box" style="width:40px; height:40px; border-radius:6px;"></div></td>
+      <td><div class="skeleton-box" style="width:85%; height:14px; margin-bottom:4px;"></div><div class="skeleton-box" style="width:45%; height:11px;"></div></td>
+      <td style="width:120px;"><div class="skeleton-box" style="width:80px; height:18px; border-radius:999px;"></div></td>
+      <td style="width:110px;"><div class="skeleton-box" style="width:70px; height:14px;"></div></td>
+      <td style="width:90px;"><div class="skeleton-box" style="width:55px; height:16px;"></div></td>
+      <td style="width:90px;"><div class="skeleton-box" style="width:55px; height:16px;"></div></td>
+      <td style="width:100px;"><div class="skeleton-box" style="width:75px; height:18px; border-radius:999px;"></div></td>
+      <td style="width:60px;"><div class="skeleton-box" style="width:30px; height:24px; border-radius:4px;"></div></td>
+    </tr>
+  `).join('');
+}
+
 async function doFetch() {
   clearAlert();
   const urls = (urlsTA?.value || '').trim();
@@ -1518,7 +1629,8 @@ async function doFetch() {
     absolute_off: parseFloat(absOffInput?.value || '0') || 0,
     add_percent: parseFloat(addPercentInput?.value || '0') || 0,
     drop_pct: Math.max(1, parseFloat(dropPct?.value || '10') || 10),
-    enrich_details: Boolean(enrichDetails?.checked),
+    enrich_details: true,
+    use_browser: true,
     crawl_pagination: true,
     max_pages: 20,
     delay_ms: 300,
@@ -1526,25 +1638,50 @@ async function doFetch() {
 
   rawItems = []; rows = [];
   viewingWatchlist = false;
-  if (tbody) tbody.innerHTML = '';
   if (exportActions) exportActions.style.display = 'none';
   hideComparison();
   clearResults();
+  renderTableSkeleton();
   setLoading(true, urls);
+
+  const controller = new AbortController();
+  const cancelScrapeBtn = $('cancelScrapeBtn');
+  const onCancelClick = () => {
+    controller.abort();
+    showToast('info', 'Scrape cancelled by user.');
+  };
+  if (cancelScrapeBtn) cancelScrapeBtn.addEventListener('click', onCancelClick);
+
+  let requestTimedOut = false;
+  const requestTimeout = setTimeout(() => {
+    requestTimedOut = true;
+    controller.abort();
+  }, SCRAPE_REQUEST_TIMEOUT_MS);
 
   try {
     const res = await fetch('/api/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
 
+    let data = {};
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Server error ${res.status}`);
+      if (Array.isArray(err.items) && err.items.length > 0) {
+        data = err;
+        showToast('warn', err.error || 'Scraper guard flagged this run.');
+      } else {
+        throw new Error(err.error || `Server error ${res.status}`);
+      }
+    } else {
+      data = await res.json();
+      if (data.error && Array.isArray(data.items) && data.items.length > 0) {
+        showToast('warn', data.error);
+      }
     }
 
-    const data = await res.json();
     setDisplayedResults(data.items || [], {
       models: deriveModelNames(urlList),
       persist: true,
@@ -1565,21 +1702,30 @@ async function doFetch() {
         ? ` Auto detail scan refreshed ${data.details_enriched || 0} item${(data.details_enriched || 0) === 1 ? '' : 's'} to capture stock values.`
         : ` Deep detail scan refreshed ${data.details_enriched || 0} item${(data.details_enriched || 0) === 1 ? '' : 's'}.`
       : '';
+    const browserSummary = data.using_browser ? ' Headless Botasaurus rendering was used.' : '';
 
     if (!rawItems.length) {
-      showToast('warn', 'No products found. Check the URL or try a different page.');
+      const targetError = summarizeTargetErrors(data.target_errors);
+      showToast('warn', targetError
+        ? `No products found. Target fetch error: ${targetError}`
+        : (data.error || 'No products found. Check the URL or try a different page.'));
     } else if (drops.length) {
-      showToast('success', `Detected ${drops.length} price drop${drops.length > 1 ? 's' : ''}. ${filteredSummary}${detailSummary}`);
-    } else {
-      showToast('success', `${filteredSummary}${detailSummary}`);
+      showToast('success', `Detected ${drops.length} price drop${drops.length > 1 ? 's' : ''}. ${filteredSummary}${detailSummary}${browserSummary}`);
+    } else if (!data.error) {
+      showToast('success', `${filteredSummary}${detailSummary}${browserSummary}`);
     }
 
   } catch (err) {
     console.error('[fetch]', err);
-    showToast('error', `Fetch failed: ${formatFetchErrorMessage(err)}`);
+    const message = requestTimedOut
+      ? 'Scrape timed out while waiting for browser verification. Try again after completing Cloudflare in the opened browser, or check the browser/proxy account.'
+      : formatFetchErrorMessage(err);
+    showToast('error', `Fetch failed: ${message}`);
     hideComparison();
     render();
   } finally {
+    clearTimeout(requestTimeout);
+    if (cancelScrapeBtn) cancelScrapeBtn.removeEventListener('click', onCancelClick);
     setLoading(false);
   }
 }
@@ -1765,13 +1911,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (darkMode) {
     const savedTheme = sessionStorage.getItem('cy_theme') || 'dark';
     document.documentElement.setAttribute('data-bs-theme', savedTheme);
+    document.documentElement.style.colorScheme = savedTheme;
     darkMode.checked = savedTheme === 'dark';
     darkMode.addEventListener('change', e => {
       const t = e.target.checked ? 'dark' : 'light';
       document.documentElement.setAttribute('data-bs-theme', t);
+      document.documentElement.style.colorScheme = t;
       sessionStorage.setItem('cy_theme', t);
     });
   }
+
+  syncFiltersDisclosure();
 
   // ── File upload for comparison ──────────────────────────────────────────────
   if (uploadZone && csvUpload) {

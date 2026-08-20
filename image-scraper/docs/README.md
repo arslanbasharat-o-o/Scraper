@@ -4,13 +4,8 @@ Project guides are grouped here for easier navigation and cleaner repository roo
 
 ## Getting Started
 
-- [Quick Start](./QUICK_START.md)
 - [Start Server](./START_SERVER.md)
 - [API Reference](./API_REFERENCE.md)
-
-## Performance and Optimization
-
-- [Optimization Guide](./OPTIMIZATION.md)
 
 ## Python Integration
 
