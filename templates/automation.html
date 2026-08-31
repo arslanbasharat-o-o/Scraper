@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Automation - Parts Extractor v8.1</title>
+  <meta name="description" content="Manage automated scraping jobs, compare product snapshots, and track price changes." />
+  <link rel="icon" href="data:," />
+  <script>
+    (function () {
+      var theme = sessionStorage.getItem('cy_theme') || 'dark';
+      document.documentElement.setAttribute('data-bs-theme', theme);
+      document.documentElement.style.setProperty('--startup-bg', theme === 'light' ? '#f2f4fb' : '#0d0f14');
+      document.documentElement.style.setProperty('--startup-text', theme === 'light' ? '#0e1230' : '#e8eaf5');
+    })();
+  </script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..900&display=swap">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box }
+    body {
+      font-family: var(--font-ui, Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+      background: var(--startup-bg, #0d0f14);
+      color: var(--startup-text, #e8eaf5);
+      min-height: 100vh;
+      font-size: 14px;
+    }
+    .page-shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: .75rem 1rem
+    }
+    .cy-card { background: #13161e; border: 1px solid #252a3d; border-radius: 16px }
+    .app-header { display: flex; align-items: center; justify-content: space-between; padding: .75rem 1.25rem; margin-bottom: 1rem; }
+    .header-left { display: flex; align-items: center; gap: .75rem; }
+    .app-logo { width: 36px; height: 36px; border-radius: 10px; background: #4f8cff; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+    .app-title { font-size: 1.15rem; font-weight: 700; margin: 0; }
+    .app-sub { font-size: .8rem; color: #9198b8; margin: 0; }
+    .section-title { font-size: 1.1rem; font-weight: 700; color: #e8eaf5; }
+    .section-subtitle { font-size: .85rem; color: #9198b8; margin-top: .15rem; }
+    .automation-job-list, .automation-run-list { content-visibility: auto; contain-intrinsic-size: 0 400px; }
+    .d-none { display: none !important }
+  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="{{ asset_url('css/common.css') }}">
+  <link rel="stylesheet" href="{{ asset_url('css/automation.css') }}">
+</head>
+
+<body>
+  <div class="page-shell py-3">
+
+    <!-- ── Header ──────────────────────────────────────────── -->
+    <header class="app-header cy-card mb-3">
+      <div class="header-left">
+        <div class="app-logo">PE</div>
+        <div class="header-brand">
+          <div class="header-title-row">
+            <h1 class="app-title">Parts Extractor</h1>
+            <span class="version-badge">v8.1</span>
+          </div>
+          <p class="app-sub">Scheduled extraction and price monitoring</p>
+        </div>
+      </div>
+      <nav class="nav-pills" aria-label="Primary navigation">
+        <a href="/" class="nav-link">Extractor</a>
+        <a href="/history" class="nav-link">History</a>
+        <a href="/automation" class="nav-link active">Automation</a>
+        <a href="/menu-map" class="nav-link">Menu Map</a>
+          {% if current_user.is_authenticated and current_user.has_role("admin") %}
+          <a href="/users" class="nav-link">Users & Roles</a>
+          {% endif %}
+      </nav>
+      <div class="header-right">
+        {% if current_user.is_authenticated %}
+        <div class="user-auth-badge">
+          <span>Signed in as <strong>{{ current_user.username }}</strong> <small>({{ current_user.role }})</small></span>
+          <a href="/logout" title="Log Out">Logout</a>
+        </div>
+        {% endif %}
+
+        <div class="theme-switch" aria-label="Color theme">
+          <span class="theme-label">Light</span>
+          <label class="switch-track">
+            <input type="checkbox" id="darkMode" aria-label="Toggle dark mode" checked>
+            <span class="switch-thumb"></span>
+          </label>
+          <span class="theme-label">Dark</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="alert" class="alert-banner d-none" role="alert"></div>
+
+    <!-- ── Supplier Tabs ───────────────────────────────────── -->
+    <div class="cy-card automation-supplier-tabs mb-3" role="tablist" aria-label="Automation suppliers">
+      <button class="automation-supplier-tab is-active" type="button" role="tab" data-site-key="xcell">Xcell parts</button>
+      <button class="automation-supplier-tab" type="button" role="tab" data-site-key="parts4cells">Parts 4 cell</button>
+      <button class="automation-supplier-tab" type="button" role="tab" data-site-key="phonelcdparts">Phone Lcd parts</button>
+      <button class="automation-supplier-tab" type="button" role="tab" data-site-key="standard">Mobile sentrix</button>
+      <button class="automation-supplier-tab" type="button" role="tab" data-site-key="mobilesentrix_canada">Mobile sentrix Canada</button>
+      <button class="automation-supplier-tab" type="button" role="tab" data-site-key="txparts">TX Parts</button>
+      <button class="automation-supplier-tab" type="button" role="tab" data-site-key="gadgetfix">GadgetFix</button>
+    </div>
+
+    <!-- ── Dashboard ───────────────────────────────────────── -->
+    <main class="automation-dashboard">
+
+      <!-- ── Sidebar ─────────────────────────────────── -->
+      <aside class="automation-sidebar">
+        <section id="automationActivityPanel" class="cy-card automation-panel automation-activity-panel">
+          <div class="section-heading automation-activity-heading">
+            <div>
+              <h2 class="section-title">Schedules & Runs</h2>
+            </div>
+          </div>
+          <div class="automation-activity-stack">
+            <div id="automationJobsPanel" class="automation-activity-section">
+              <div class="automation-activity-section__head">
+                <h3>Saved Schedules</h3>
+              </div>
+              <div class="automation-job-list automation-list--wide automation-list--compact" id="automationJobs"></div>
+            </div>
+            <div id="automationRunsPanel" class="automation-activity-section">
+              <div class="automation-activity-section__head">
+                <h3>Run History</h3>
+              </div>
+              <div class="automation-run-list automation-list--wide automation-list--compact" id="automationRuns"></div>
+            </div>
+          </div>
+          <p class="automation-activity-hint">Schedules control future scrapes. Run history preserves each result.</p>
+        </section>
+      </aside>
+
+      <!-- ── Main Content ────────────────────────────── -->
+      <div class="automation-main-content">
+
+        <!-- Job Editor (hidden by default) -->
+        <section id="automationJobEditor" class="automation-job-editor d-none">
+          <input type="hidden" id="automationJobId">
+          <div class="automation-editor-grid">
+            <label class="field-item field-item--wide">
+              <span class="field-label-sm">Job Name</span>
+              <input id="automationName" class="field-input" placeholder="Job name">
+            </label>
+            <label class="field-item">
+              <span class="field-label-sm">Website</span>
+              <select id="automationSite" class="field-input">
+                <option value="xcell">XCellParts</option>
+                <option value="parts4cells">Parts4Cells</option>
+                <option value="phonelcdparts">PhoneLCDParts</option>
+                <option value="gadgetfix">GadgetFix</option>
+                <option value="standard">MobileSentrix</option>
+                <option value="mobilesentrix_canada">MobileSentrix Canada</option>
+                <option value="txparts">TXParts</option>
+              </select>
+            </label>
+            <label class="field-item">
+              <span class="field-label-sm">Every</span>
+              <input id="automationIntervalValue" class="field-input" type="number" value="1" min="1">
+            </label>
+            <label class="field-item">
+              <span class="field-label-sm">Interval</span>
+              <select id="automationIntervalUnit" class="field-input">
+                <option value="days">Days</option>
+                <option value="weeks">Weeks</option>
+                <option value="hours">Hours</option>
+              </select>
+            </label>
+            <label class="field-item field-item--wide">
+              <span class="field-label-sm">Category</span>
+              <input id="automationCategoryQuery" class="field-input" placeholder="Menu Map Selection">
+            </label>
+            <label class="field-item field-item--wide">
+              <span class="field-label-sm">Root URL</span>
+              <input id="automationRootUrl" class="field-input" placeholder="https://...">
+            </label>
+            <label class="field-item">
+              <span class="field-label-sm">Max Pages</span>
+              <input id="automationMaxPages" class="field-input" type="number" value="10" min="1">
+            </label>
+            <label class="field-item">
+              <span class="field-label-sm">Delay MS</span>
+              <input id="automationDelayMs" class="field-input" type="number" value="50" min="0">
+            </label>
+          </div>
+          <div class="automation-editor-toggles">
+            <label><input type="checkbox" id="automationEnabled" checked> Enabled</label>
+            <label><input type="checkbox" id="automationParallel" checked> Parallel</label>
+            <label style="display: none;"><input type="checkbox" id="automationEnrich" checked> Enrich Details & SKUs</label>
+            <input type="checkbox" id="automationAutoDiscover" class="d-none">
+          </div>
+          <div class="automation-editor-actions">
+            <button id="automationSaveBtn" class="btn-run" type="button"><span>Save Job</span></button>
+            <button id="automationResetBtn" class="btn-export" type="button">Close</button>
+          </div>
+          <div class="automation-editor-discovery d-none">
+            <div id="automationDiscoverySummary"></div>
+            <div id="automationDiscoveryMeta"></div>
+            <div id="automationDiscoverySelection"></div>
+            <button id="automationIncludeAllBtn" type="button">Include All</button>
+            <button id="automationSkipAllBtn" type="button">Skip All</button>
+            <div id="automationDiscoveredTargets"></div>
+          </div>
+        </section>
+
+        <!-- Run Inspector -->
+        <section class="cy-card automation-panel">
+
+          <!-- Inspector Header -->
+          <div class="section-heading mb-3">
+            <div>
+              <h2 class="section-title">Run Inspector</h2>
+              <p class="section-subtitle">Compare snapshots and review product changes.</p>
+            </div>
+            <div class="automation-detail-filter">
+              <label class="field-label-sm" for="automationModelFilter">Model scope</label>
+              <select id="automationModelFilter" class="field-input" disabled>
+                <option value="">All models</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Review Filters -->
+          <div id="automationReviewFilters" class="automation-review-slot mb-3"></div>
+
+          <!-- Tabs -->
+          <div class="inspector-tabs mb-3" role="tablist">
+            <button id="diffs-tab" class="inspector-tab is-active" data-target="diffs-view" type="button" role="tab" aria-controls="diffs-view" aria-selected="true">Differences</button>
+            <button id="table-tab" class="inspector-tab" data-target="table-view" type="button" role="tab" aria-controls="table-view" aria-selected="false">Products Table</button>
+          </div>
+
+          <!-- Tab: Diffs -->
+          <div id="diffs-view" class="inspector-view-pane" role="tabpanel" aria-labelledby="diffs-tab">
+            <div id="automationRunDetail" class="automation-run-detail automation-run-detail--empty">
+              Select a run to load its differences.
+            </div>
+          </div>
+
+          <!-- Tab: Products -->
+          <div id="table-view" class="inspector-view-pane d-none" role="tabpanel" aria-labelledby="table-tab">
+            <div class="section-heading mb-3">
+              <div>
+                <h2 class="section-title">Product Explorer</h2>
+                <p class="section-subtitle">Current run products and change results.</p>
+              </div>
+              <div class="automation-product-actions">
+                <button id="automationProductsCsvBtn" class="btn-export" type="button" disabled>CSV</button>
+                <button id="automationProductsXlsxBtn" class="btn-export" type="button" disabled>XLSX</button>
+              </div>
+            </div>
+            <div id="automationScrapedProducts" class="automation-products automation-products--empty">
+              Select a run to see scraped products.
+            </div>
+          </div>
+
+        </section>
+      </div>
+    </main>
+  </div>
+
+
+
+  <script defer src="{{ asset_url('js/automation.js') }}"></script>
+  <script>
+    // Tabs
+    document.addEventListener('DOMContentLoaded', function () {
+      var tabs = document.querySelectorAll('.inspector-tab');
+      var dashboard = document.querySelector('.automation-dashboard');
+      var pageShell = document.querySelector('.page-shell');
+      function activateTab(tab, moveFocus) {
+        tabs.forEach(function (t) {
+          var selected = t === tab;
+          t.classList.toggle('is-active', selected);
+          t.setAttribute('aria-selected', selected ? 'true' : 'false');
+          t.tabIndex = selected ? 0 : -1;
+        });
+        var id = tab.getAttribute('data-target');
+        document.querySelectorAll('.inspector-view-pane').forEach(function (p) {
+          p.classList.toggle('d-none', p.id !== id);
+        });
+        if (dashboard) {
+          dashboard.classList.toggle('automation-dashboard--table-mode', id === 'table-view');
+        }
+        if (pageShell) {
+          pageShell.classList.toggle('page-shell--table-mode', id === 'table-view');
+        }
+        if (moveFocus) tab.focus();
+      }
+      tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          activateTab(tab, false);
+        });
+        tab.addEventListener('keydown', function (event) {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+          event.preventDefault();
+          var currentIndex = Array.prototype.indexOf.call(tabs, tab);
+          var direction = event.key === 'ArrowRight' ? 1 : -1;
+          var nextTab = tabs[(currentIndex + direction + tabs.length) % tabs.length];
+          activateTab(nextTab, true);
+        });
+      });
+      var activeTab = document.querySelector('.inspector-tab.is-active') || tabs[0];
+      if (activeTab) activateTab(activeTab, false);
+      // Global helper: automation.js can call this to switch to Products Table or Differences tab
+      window.switchToTab = function (targetId) {
+        var tab = document.querySelector('.inspector-tab[data-target="' + targetId + '"]');
+        if (tab) activateTab(tab, false);
+      };
+    });
+  </script>
+</body>
+
+</html>

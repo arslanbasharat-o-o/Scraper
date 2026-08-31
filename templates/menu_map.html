@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Menu Map - Parts Extractor v8.1</title>
+  <link rel="icon" href="data:," />
+  <script>
+    (function () {
+      var theme = sessionStorage.getItem('cy_theme') || 'dark';
+      document.documentElement.setAttribute('data-bs-theme', theme);
+      document.documentElement.style.setProperty('--startup-bg', theme === 'light' ? '#f2f4fb' : '#0d0f14');
+      document.documentElement.style.setProperty('--startup-text', theme === 'light' ? '#0e1230' : '#e8eaf5');
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..900&display=swap">
+  <style>
+    :root,
+    [data-bs-theme="dark"] {
+      --startup-bg: #0d0f14;
+      --startup-text: #e8eaf5;
+      --startup-card: #13161e;
+      --startup-border: #252a3d;
+    }
+
+    [data-bs-theme="light"] {
+      --startup-bg: #f2f4fb;
+      --startup-text: #0e1230;
+      --startup-card: #ffffff;
+      --startup-border: #d0d5ee;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box }
+    body {
+      font-family: var(--font-ui, Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+      background: var(--startup-bg);
+      color: var(--startup-text);
+      min-height: 100vh;
+    }
+    .page-shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: .75rem 1rem;
+    }
+    .cy-card { background: var(--startup-card); border: 1px solid var(--startup-border); border-radius: 16px; }
+    .d-none { display: none !important; }
+  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="{{ asset_url('css/common.css') }}">
+  <link rel="stylesheet" href="{{ asset_url('css/menu-map.css') }}">
+</head>
+
+<body>
+  <div class="page-shell py-3">
+    <header class="app-header cy-card mb-3">
+      <div class="header-left">
+        <div class="app-logo">PE</div>
+        <div class="header-brand">
+          <div class="header-title-row">
+            <h1 class="app-title">Parts Extractor</h1>
+            <span class="version-badge">v8.1</span>
+          </div>
+          <p class="app-sub">Supplier catalog navigation</p>
+        </div>
+      </div>
+      <nav class="nav-pills" aria-label="Primary navigation">
+        <a href="/" class="nav-link">Extractor</a>
+        <a href="/history" class="nav-link">History</a>
+        <a href="/automation" class="nav-link">Automation</a>
+        <a href="/menu-map" class="nav-link active">Menu Map</a>
+          {% if current_user.is_authenticated and current_user.has_role("admin") %}
+          <a href="/users" class="nav-link">Users & Roles</a>
+          {% endif %}
+      </nav>
+      <div class="header-right">
+        {% if current_user.is_authenticated %}
+        <div class="user-auth-badge">
+          <span>Signed in as <strong>{{ current_user.username }}</strong> <small>({{ current_user.role }})</small></span>
+          <a href="/logout" title="Log Out">Logout</a>
+        </div>
+        {% endif %}
+
+        <div class="theme-switch" aria-label="Color theme">
+          <span class="theme-label">Light</span>
+          <label class="switch-track">
+            <input type="checkbox" id="darkMode" aria-label="Toggle dark mode" checked>
+            <span class="switch-thumb"></span>
+          </label>
+          <span class="theme-label">Dark</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="alert" class="alert-banner d-none" role="alert"></div>
+
+    <section class="cy-card menu-map-hero mb-3">
+      <div class="section-heading">
+        <div>
+          <h2 class="section-title">Category Menu Map</h2>
+          <p class="section-subtitle">Inspect what each headless Botasaurus menu scraper discovers: parent categories, sub-child groups, model links, duplicates, errors, and output files.</p>
+        </div>
+        <div class="menu-map-actions">
+          <button id="refreshBtn" class="btn-export" type="button">Refresh Outputs</button>
+          <button id="clearRunSelectedBtn" class="btn-export btn-danger-soft" type="button" disabled>Clear &amp; Run Selected</button>
+          <button id="runSelectedBtn" class="btn-export" type="button" disabled>Run Selected</button>
+          <button id="runAllBtn" class="btn-run" type="button" disabled><span>Run All</span></button>
+        </div>
+      </div>
+
+      <div class="menu-map-options">
+        <label class="toggle-field">
+          <input type="checkbox" id="visibleMode" class="toggle-cb" disabled>
+          <span class="toggle-label-text">Headless Botasaurus (locked)</span>
+        </label>
+        <label class="toggle-field">
+          <input type="checkbox" id="validateUrls" class="toggle-cb">
+          <span class="toggle-label-text">Validate URLs after scrape</span>
+        </label>
+        <label class="toggle-field">
+          <input type="checkbox" id="inspectOnly" class="toggle-cb">
+          <span class="toggle-label-text">Inspection only</span>
+        </label>
+      </div>
+
+      <div class="menu-map-stats" id="overallStats">
+        <button class="menu-stat" type="button" data-summary-action="sites"><span id="statSites">0</span><small>Sites</small></button>
+        <button class="menu-stat" type="button" data-summary-action="parents"><span id="statParents">0</span><small>Parents</small></button>
+        <button class="menu-stat" type="button" data-summary-action="subs"><span id="statSubs">0</span><small>Sub-Children</small></button>
+        <button class="menu-stat" type="button" data-summary-action="children"><span id="statChildren">0</span><small>Children</small></button>
+        <button class="menu-stat" type="button" data-summary-action="issues"><span id="statIssues">0</span><small>Issues</small></button>
+      </div>
+    </section>
+
+    <section class="menu-map-layout">
+      <aside class="menu-map-sidebar cy-card">
+        <div class="section-heading mb-3">
+          <div>
+            <h2 class="section-title">Websites</h2>
+            <p class="section-subtitle">Select a site to inspect its hierarchy.</p>
+          </div>
+        </div>
+        <div id="siteCards" class="site-card-list" aria-busy="true"><div class="site-list-state">Loading websites...</div></div>
+      </aside>
+
+      <main class="menu-map-workspace">
+        <section class="cy-card menu-map-panel mb-3">
+          <div class="menu-map-detail-head">
+            <div>
+              <h2 id="siteTitle" class="section-title">Select a website</h2>
+              <p id="siteSubtitle" class="section-subtitle">Run a scraper or open an existing output.</p>
+            </div>
+            <div id="siteBadges" class="menu-map-badges"></div>
+          </div>
+
+          <div id="siteBehavior" class="behavior-note"></div>
+
+          <div class="detail-grid">
+            <button class="detail-stat" type="button" data-detail-action="parents"><span id="detailParents">0</span><small>Parent Categories</small></button>
+            <button class="detail-stat" type="button" data-detail-action="subs"><span id="detailSubs">0</span><small>Sub-Child Categories</small></button>
+            <button class="detail-stat" type="button" data-detail-action="children"><span id="detailChildren">0</span><small>Child Categories</small></button>
+            <button class="detail-stat" type="button" data-detail-action="missing"><span id="detailMissing">0</span><small>Missing URLs</small></button>
+            <button class="detail-stat" type="button" data-detail-action="duplicates"><span id="detailDuplicates">0</span><small>Duplicate Rows</small></button>
+            <button class="detail-stat" type="button" data-detail-action="errors"><span id="detailErrors">0</span><small>Errors</small></button>
+          </div>
+
+          <div class="file-strip" id="fileStrip"></div>
+
+          <div class="menu-export-strip">
+            <div>
+              <div class="menu-export-strip__title">Export Menu Links</div>
+              <div id="exportTargetSummary" class="menu-export-strip__meta">Download links from the selected website.</div>
+            </div>
+            <div class="menu-export-strip__actions">
+              <button id="exportVisibleCsvBtn" class="btn-export" type="button" disabled>Visible CSV</button>
+              <button id="exportVisibleXlsxBtn" class="btn-export" type="button" disabled>Visible Excel</button>
+              <button id="exportFullCsvBtn" class="btn-export" type="button" disabled>Full CSV</button>
+              <button id="exportFullXlsxBtn" class="btn-export" type="button" disabled>Full Excel</button>
+            </div>
+          </div>
+
+          <div class="automation-launch-strip">
+            <div>
+              <div class="automation-launch-strip__title">Automation From Visible Categories</div>
+              <div id="automationTargetSummary" class="automation-launch-strip__meta">Hide anything you do not want, then run automation for this website.</div>
+            </div>
+            <button id="runAutomationForSiteBtn" class="btn-run" type="button" disabled><span>Run Automation</span></button>
+          </div>
+        </section>
+
+        <section class="cy-card menu-map-panel mb-3">
+          <div class="menu-map-toolbar">
+            <div>
+              <h2 class="section-title">Hierarchy Viewer</h2>
+              <p class="section-subtitle" id="treeSummary">No hierarchy loaded yet.</p>
+            </div>
+            <div class="toolbar-right">
+              <input id="treeSearch" class="search-input" placeholder="Search category or URL">
+              <button id="resetHiddenBtn" class="btn-export" type="button">Reset Hidden</button>
+              <button id="expandAllBtn" class="btn-export" type="button">Expand All</button>
+              <button id="collapseAllBtn" class="btn-export" type="button">Collapse All</button>
+            </div>
+          </div>
+          <div id="hiddenSummary" class="hidden-summary"></div>
+          <div id="treeContainer" class="menu-tree-empty">Select a site with output to see the category tree.</div>
+        </section>
+
+        <section class="cy-card menu-map-panel">
+          <div class="section-heading mb-3">
+            <div>
+              <h2 class="section-title">Run Status</h2>
+              <p class="section-subtitle">Background scraper progress and recent command output.</p>
+            </div>
+          </div>
+          <div id="jobPanel" class="job-panel-empty" role="status" aria-live="polite">No menu scraper is running.</div>
+        </section>
+      </main>
+    </section>
+
+    <button id="scrollTopBtn" class="scroll-top-btn" title="Scroll to top" aria-label="Scroll to top">&#8679;</button>
+  </div>
+
+  <script defer src="{{ asset_url('js/menu-map.js') }}"></script>
+</body>
+
+</html>

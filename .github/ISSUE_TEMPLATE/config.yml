@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: README
+    url: https://github.com/arslanbasharat-o-o/Scraper/blob/main/README.md
+    about: Start here for setup, development, and production instructions.
+  - name: Deployment Guide
+    url: https://github.com/arslanbasharat-o-o/Scraper/blob/main/DEPLOYMENT.md
+    about: Review production process, worker, and storage guidance.

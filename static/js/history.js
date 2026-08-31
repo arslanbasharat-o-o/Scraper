@@ -1,0 +1,1277 @@
+// History Page JavaScript - Optimized
+// No jQuery dependency, pure vanilla JS
+
+(function() {
+  'use strict';
+
+  // DOM element cache
+  const $ = id => document.getElementById(id);
+  const elements = {
+    historyContainer: $('historyContainer'),
+    emptyState: $('emptyState'),
+    historyModal: $('historyModal'),
+    modalContent: $('modalContent'),
+    closeModal: $('closeModal'),
+    darkMode: $('darkMode'),
+    alertBox: $('alert'),
+    overlay: $('overlay'),
+    refreshBtn: $('refreshBtn'),
+    cleanupBtn: $('cleanupBtn'),
+    historyDateValue: $('historyDateValue'),
+    historyTimeValue: $('historyTimeValue'),
+    historyDateChip: $('historyDateChip'),
+    historyTimeChip: $('historyTimeChip'),
+    historySearch: $('historySearch'),
+    historyStartDate: $('historyStartDate'),
+    historyEndDate: $('historyEndDate'),
+    historyMinItems: $('historyMinItems'),
+    historyMinItemsValue: $('historyMinItemsValue'),
+    historySiteSelect: $('historySiteSelect'),
+    historyClearFilters: $('historyClearFilters'),
+    historyResultSummary: $('historyResultSummary'),
+    confirmModal: $('confirmModal'),
+    confirmModalTitle: $('confirmModalTitle'),
+    confirmModalMessage: $('confirmModalMessage'),
+    confirmCancelBtn: $('confirmCancelBtn'),
+    confirmConfirmBtn: $('confirmConfirmBtn')
+  };
+
+  let historyData = [];
+  let filteredHistory = [];
+  let confirmResolver = null;
+  const dialogStack = [];
+  const focusableSelector = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+    '[contenteditable="true"]'
+  ].join(',');
+  const defaultFilterState = {
+    search: '',
+    startDate: null,
+    endDate: null,
+    minItems: 0,
+    site: ''
+  };
+  const filterState = { ...defaultFilterState };
+
+  // Utility Functions
+  const utils = {
+    setLoading(on) {
+      if (elements.overlay) {
+        elements.overlay.classList.toggle('d-none', !on);
+      }
+    },
+
+    renderHistorySkeleton() {
+      if (!elements.historyContainer) return;
+      if (elements.emptyState) elements.emptyState.classList.add('d-none');
+      elements.historyContainer.innerHTML = Array.from({ length: 5 }).map(() => `
+        <div class="history-card history-card--skeleton" aria-hidden="true">
+          <div class="history-card__main">
+            <div class="history-card__identity">
+              <div class="skeleton-box" style="width: 180px; height: 18px;"></div>
+              <div class="skeleton-box" style="width: 240px; height: 13px;"></div>
+              <div class="skeleton-box" style="width: 320px; max-width: 100%; height: 13px;"></div>
+            </div>
+            <div class="history-meta">
+              <div class="skeleton-box" style="width: 64px; height: 34px; border-radius: 8px;"></div>
+              <div class="skeleton-box" style="width: 64px; height: 34px; border-radius: 8px;"></div>
+              <div class="skeleton-box" style="width: 86px; height: 34px; border-radius: 8px;"></div>
+            </div>
+            <div class="history-actions">
+              <div class="skeleton-box" style="width: 78px; height: 32px; border-radius: 8px;"></div>
+              <div class="skeleton-box" style="width: 92px; height: 32px; border-radius: 8px;"></div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    },
+
+    showAlert(type, msg) {
+      if (!elements.alertBox) return;
+      elements.alertBox.className = `alert cy-card p-3 alert-${type}`;
+      elements.alertBox.textContent = msg;
+      elements.alertBox.classList.remove('d-none');
+      setTimeout(() => elements.alertBox.classList.add('d-none'), 5000);
+    },
+
+    formatDate(isoString) {
+      if (!isoString) return 'Unknown';
+      const tz = 'Asia/Karachi';
+      try {
+        // Parse the ISO string and ensure it's treated correctly
+        let date;
+        if (typeof isoString === 'string') {
+          // If the string doesn't have timezone info, assume it's already in Pakistan time
+          if (!isoString.includes('+') && !isoString.includes('Z')) {
+            // Add Pakistan timezone offset manually
+            date = new Date(isoString + '+05:00');
+          } else {
+            date = new Date(isoString);
+          }
+        } else {
+          date = new Date(isoString);
+        }
+
+        return new Intl.DateTimeFormat('en-PK', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: tz
+        }).format(date);
+      } catch (err) {
+        console.warn('Failed to format date', isoString, err);
+        return new Date(isoString).toLocaleString();
+      }
+    },
+
+    formatDuration(timestamp) {
+      const now = new Date();
+      let then;
+
+      try {
+        if (typeof timestamp === 'string') {
+          // If the string doesn't have timezone info, assume it's already in Pakistan time
+          if (!timestamp.includes('+') && !timestamp.includes('Z')) {
+            // Add Pakistan timezone offset manually
+            then = new Date(timestamp + '+05:00');
+          } else {
+            then = new Date(timestamp);
+          }
+        } else {
+          then = new Date(timestamp);
+        }
+
+        const diffMs = now - then;
+        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMinutes / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+        if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+        if (diffMinutes > 0) return `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
+        return 'Just now';
+      } catch (err) {
+        console.warn('Failed to format duration', timestamp, err);
+        return 'Unknown time';
+      }
+    },
+
+    escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  };
+
+  function getTopDialog() {
+    return dialogStack[dialogStack.length - 1] || null;
+  }
+
+  function getFocusableElements(dialog) {
+    if (!dialog) return [];
+    return Array.from(dialog.querySelectorAll(focusableSelector)).filter(element => {
+      return !element.hidden && element.getAttribute('aria-hidden') !== 'true';
+    });
+  }
+
+  function syncBodyScrollLock() {
+    document.body.classList.toggle('modal-open', dialogStack.length > 0);
+  }
+
+  function handleDialogKeydown(event) {
+    const activeDialog = getTopDialog();
+    if (!activeDialog) return;
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      activeDialog.onEscape();
+      return;
+    }
+
+    if (event.key !== 'Tab') return;
+
+    const focusableElements = getFocusableElements(activeDialog.dialog);
+    if (!focusableElements.length) {
+      event.preventDefault();
+      activeDialog.dialog.focus();
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    const focusIsInside = activeDialog.dialog.contains(document.activeElement);
+
+    if (event.shiftKey && (!focusIsInside || document.activeElement === firstElement)) {
+      event.preventDefault();
+      lastElement.focus();
+    } else if (!event.shiftKey && (!focusIsInside || document.activeElement === lastElement)) {
+      event.preventDefault();
+      firstElement.focus();
+    }
+  }
+
+  function openAccessibleDialog(overlay, { initialFocus = null, onEscape } = {}) {
+    if (!overlay) return;
+
+    const existingIndex = dialogStack.findIndex(state => state.overlay === overlay);
+    if (existingIndex !== -1) dialogStack.splice(existingIndex, 1);
+
+    const dialog = overlay.querySelector('[role="dialog"]') || overlay;
+    const returnFocus = document.activeElement;
+    dialogStack.push({
+      overlay,
+      dialog,
+      returnFocus,
+      onEscape: typeof onEscape === 'function' ? onEscape : () => closeAccessibleDialog(overlay)
+    });
+
+    overlay.classList.remove('d-none');
+    overlay.setAttribute('aria-hidden', 'false');
+    syncBodyScrollLock();
+
+    requestAnimationFrame(() => {
+      const focusTarget = initialFocus || getFocusableElements(dialog)[0] || dialog;
+      focusTarget.focus();
+    });
+  }
+
+  function closeAccessibleDialog(overlay, { restoreFocus = true } = {}) {
+    if (!overlay) return;
+
+    const dialogIndex = dialogStack.findIndex(state => state.overlay === overlay);
+    const dialogState = dialogIndex === -1 ? null : dialogStack.splice(dialogIndex, 1)[0];
+    overlay.classList.add('d-none');
+    overlay.setAttribute('aria-hidden', 'true');
+    syncBodyScrollLock();
+
+    const returnFocus = dialogState && dialogState.returnFocus;
+    if (restoreFocus && returnFocus && typeof returnFocus.focus === 'function' && document.contains(returnFocus)) {
+      returnFocus.focus();
+    }
+  }
+
+  function closeHistoryModal() {
+    closeAccessibleDialog(elements.historyModal);
+  }
+
+  function resolveConfirmDialog(result) {
+    const resolver = confirmResolver;
+    confirmResolver = null;
+    closeAccessibleDialog(elements.confirmModal);
+    if (typeof resolver === 'function') resolver(Boolean(result));
+  }
+
+  function bindConfirmDialog() {
+    if (!elements.confirmModal || elements.confirmModal.dataset.bound === '1') return;
+    elements.confirmModal.dataset.bound = '1';
+
+    elements.confirmModal.addEventListener('click', event => {
+      if (event.target === elements.confirmModal) resolveConfirmDialog(false);
+    });
+
+    if (elements.confirmCancelBtn) {
+      elements.confirmCancelBtn.addEventListener('click', () => resolveConfirmDialog(false));
+    }
+
+    if (elements.confirmConfirmBtn) {
+      elements.confirmConfirmBtn.addEventListener('click', () => resolveConfirmDialog(true));
+    }
+
+    document.addEventListener('keydown', event => {
+      if (!confirmResolver || elements.confirmModal?.classList.contains('d-none')) return;
+      if (event.key === 'Enter' && event.target !== elements.confirmCancelBtn) {
+        event.preventDefault();
+        resolveConfirmDialog(true);
+      }
+    });
+  }
+
+  function showConfirmDialog({
+    title = 'Please confirm',
+    message = 'Are you sure you want to continue?',
+    confirmLabel = 'Continue',
+    cancelLabel = 'Cancel',
+    danger = false
+  } = {}) {
+    if (!elements.confirmModal || !elements.confirmModalTitle || !elements.confirmModalMessage || !elements.confirmConfirmBtn || !elements.confirmCancelBtn) {
+      return Promise.resolve(window.confirm(message));
+    }
+
+    bindConfirmDialog();
+
+    if (confirmResolver) resolveConfirmDialog(false);
+
+    elements.confirmModalTitle.textContent = title;
+    elements.confirmModalMessage.textContent = message;
+    elements.confirmConfirmBtn.textContent = confirmLabel;
+    elements.confirmCancelBtn.textContent = cancelLabel;
+    elements.confirmConfirmBtn.classList.toggle('btn-danger', danger);
+    elements.confirmConfirmBtn.classList.toggle('btn-export', !danger);
+    return new Promise(resolve => {
+      confirmResolver = resolve;
+      openAccessibleDialog(elements.confirmModal, {
+        initialFocus: danger ? elements.confirmConfirmBtn : elements.confirmCancelBtn,
+        onEscape: () => resolveConfirmDialog(false)
+      });
+    });
+  }
+
+  function startHistoryClock() {
+    const dateEl = elements.historyDateValue;
+    const timeEl = elements.historyTimeValue;
+    if (!dateEl && !timeEl) return;
+
+    const tz = 'Asia/Karachi';
+    const tzLabel = 'Pakistan Standard Time (UTC+05:00)';
+    const dateFormatter = new Intl.DateTimeFormat('en-PK', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: tz
+    });
+    const timeFormatter = new Intl.DateTimeFormat('en-PK', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: tz
+    });
+
+    const apply = () => {
+      const now = new Date();
+      const dateText = dateFormatter.format(now);
+      const timeText = timeFormatter.format(now);
+      if (dateEl) dateEl.textContent = dateText;
+      if (timeEl) timeEl.textContent = timeText;
+      if (elements.historyDateChip) elements.historyDateChip.title = `${dateText} | ${tzLabel}`;
+      if (elements.historyTimeChip) elements.historyTimeChip.title = `${timeText} | ${tzLabel}`;
+    };
+
+    const schedule = () => {
+      apply();
+      const now = new Date();
+      const msUntilNextMinute = 60000 - (now.getSeconds() * 1000 + now.getMilliseconds());
+      setTimeout(schedule, Math.max(1000, msUntilNextMinute));
+    };
+
+    schedule();
+  }
+
+  function normalizeHistoryEntry(entry) {
+    const safeEntry = entry && typeof entry === 'object' ? entry : {};
+    const urls = Array.isArray(safeEntry.urls) ? safeEntry.urls.filter(Boolean) : [];
+    const items = Array.isArray(safeEntry.items) ? safeEntry.items : [];
+
+    let timestampObj = null;
+    if (safeEntry.timestamp) {
+      try {
+        let timestamp = safeEntry.timestamp;
+        if (typeof timestamp === 'string') {
+          // If the string doesn't have timezone info, assume it's already in Pakistan time
+          if (!timestamp.includes('+') && !timestamp.includes('Z')) {
+            // Add Pakistan timezone offset manually for proper parsing
+            timestamp = timestamp + '+05:00';
+          }
+        }
+        timestampObj = new Date(timestamp);
+        // Validate the date
+        if (isNaN(timestampObj.getTime())) {
+          timestampObj = null;
+        }
+      } catch (e) {
+        console.warn('Failed to parse timestamp:', safeEntry.timestamp, e);
+        timestampObj = null;
+      }
+    }
+
+    const hostSet = new Set();
+    urls.forEach(url => {
+      try {
+        const host = new URL(url).hostname.replace(/^www\./, '');
+        if (host) hostSet.add(host);
+      } catch {
+        if (url) hostSet.add(url);
+      }
+    });
+
+    const hostList = Array.from(hostSet);
+    const rawRules = safeEntry.rules || {};
+    const rules = {
+      add_percent: Number(rawRules.add_percent) || 0,
+      percent_off: Number(rawRules.percent_off) || 0,
+      absolute_off: Number(rawRules.absolute_off) || 0
+    };
+    const itemsCount = Number.isFinite(Number(safeEntry.items_count))
+      ? Number(safeEntry.items_count)
+      : items.length;
+
+    const searchParts = [
+      safeEntry.id || '',
+      itemsCount,
+      urls.join(' '),
+      hostList.join(' '),
+      rules.add_percent,
+      rules.percent_off,
+      rules.absolute_off
+    ];
+
+    items.slice(0, 25).forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      if (item.title) searchParts.push(item.title);
+      if (item.site) searchParts.push(item.site);
+    });
+
+    const searchIndex = searchParts
+      .map(part => String(part).toLowerCase())
+      .join(' | ');
+
+    return {
+      ...safeEntry,
+      urls,
+      items,
+      items_count: itemsCount,
+      rules,
+      host_list: hostList,
+      timestamp_obj: timestampObj instanceof Date && !Number.isNaN(timestampObj.valueOf()) ? timestampObj : null,
+      timestamp_ms: timestampObj instanceof Date && !Number.isNaN(timestampObj.valueOf()) ? timestampObj.getTime() : 0,
+      search_index: searchIndex
+    };
+  }
+
+  function parseDateInput(value, endOfDay = false) {
+    if (!value) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    if (!year || !month || !day) return null;
+
+    // Create date in Pakistan timezone
+    const date = new Date(year, month - 1, day, 0, 0, 0, 0);
+    if (Number.isNaN(date.valueOf())) return null;
+
+    if (endOfDay) {
+      date.setHours(23, 59, 59, 999);
+    }
+
+    // Convert to Pakistan timezone by adjusting for the timezone offset
+    // Pakistan is UTC+5, so we need to account for this when filtering
+    const pakistanOffset = 5 * 60; // 5 hours in minutes
+    const localOffset = date.getTimezoneOffset(); // Local timezone offset from UTC in minutes
+    const adjustmentMinutes = pakistanOffset + localOffset;
+
+    // Adjust the date to account for Pakistan timezone
+    date.setMinutes(date.getMinutes() - adjustmentMinutes);
+
+    return date;
+  }
+
+  function updateSiteFilterOptions() {
+    if (!elements.historySiteSelect) return;
+    const select = elements.historySiteSelect;
+    const previousValue = filterState.site;
+    const siteSet = new Set();
+    historyData.forEach(entry => {
+      (entry.host_list || []).forEach(host => siteSet.add(host));
+    });
+    const sites = Array.from(siteSet).sort((a, b) => a.localeCompare(b));
+    const baseOption = '<option value="">All sites</option>';
+    const optionsHtml = sites.map(site => `<option value="${utils.escapeHtml(site)}">${utils.escapeHtml(site)}</option>`).join('');
+    select.innerHTML = baseOption + optionsHtml;
+    if (previousValue && sites.includes(previousValue)) {
+      select.value = previousValue;
+    } else {
+      select.value = '';
+      filterState.site = '';
+    }
+  }
+
+  function updateMinItemsSlider() {
+    if (!elements.historyMinItems) return;
+    const maxItems = historyData.reduce((max, entry) => {
+      const count = Number(entry.items_count) || 0;
+      return count > max ? count : max;
+    }, 0);
+    const computedMax = Math.max(50, Math.ceil((maxItems || 0) / 10) * 10);
+    elements.historyMinItems.max = String(computedMax);
+    if (filterState.minItems > computedMax) {
+      filterState.minItems = computedMax;
+      elements.historyMinItems.value = String(computedMax);
+      if (elements.historyMinItemsValue) {
+        elements.historyMinItemsValue.textContent = computedMax.toString();
+      }
+    }
+  }
+
+  function updateResultSummary(visible, total) {
+    if (!elements.historyResultSummary) return;
+    if (!total) {
+      if (!visible) {
+        elements.historyResultSummary.textContent = 'No sessions';
+      } else {
+        const label = visible === 1 ? 'session' : 'sessions';
+        elements.historyResultSummary.textContent = `${visible} ${label}`;
+      }
+      return;
+    }
+
+    const sessionLabel = total === 1 ? 'session' : 'sessions';
+    if (visible === total) {
+      elements.historyResultSummary.textContent = `${total} ${sessionLabel}`;
+      return;
+    }
+
+    elements.historyResultSummary.textContent = `${visible} of ${total} ${sessionLabel}`;
+  }
+
+  function applyFilters() {
+    const { search, startDate, endDate, minItems, site } = filterState;
+    const effectiveSearch = search.trim();
+
+    filteredHistory = historyData.filter(entry => {
+      if (effectiveSearch && !(entry.search_index || '').includes(effectiveSearch)) {
+        return false;
+      }
+
+      if (startDate) {
+        if (!entry.timestamp_obj) {
+          return false;
+        }
+        // Convert entry timestamp to comparable format
+        let entryTime = entry.timestamp_obj.getTime();
+        let startTime = startDate.getTime();
+
+        if (entryTime < startTime) {
+          return false;
+        }
+      }
+
+      if (endDate) {
+        if (!entry.timestamp_obj) {
+          return false;
+        }
+        // Convert entry timestamp to comparable format
+        let entryTime = entry.timestamp_obj.getTime();
+        let endTime = endDate.getTime();
+
+        if (entryTime > endTime) {
+          return false;
+        }
+      }
+
+      if (minItems && (entry.items_count || 0) < minItems) {
+        return false;
+      }
+
+      if (site && !(entry.host_list || []).includes(site)) {
+        return false;
+      }
+
+      return true;
+    });
+
+    updateResultSummary(filteredHistory.length, historyData.length);
+    renderHistory(filteredHistory);
+  }
+
+  function resetFilters(options = {}) {
+    Object.assign(filterState, defaultFilterState);
+    if (elements.historySearch) elements.historySearch.value = '';
+    if (elements.historyStartDate) elements.historyStartDate.value = '';
+    if (elements.historyEndDate) elements.historyEndDate.value = '';
+    if (elements.historyMinItems) elements.historyMinItems.value = '0';
+    if (elements.historyMinItemsValue) elements.historyMinItemsValue.textContent = '0';
+    if (elements.historySiteSelect) elements.historySiteSelect.value = '';
+    if (!options.skipApply) applyFilters();
+  }
+
+  // History Rendering
+  function renderHistory(list) {
+    if (!elements.historyContainer) return;
+
+    const entries = Array.isArray(list) ? list : historyData;
+    const emptyTitle = elements.emptyState ? elements.emptyState.querySelector('h3') : null;
+    const emptyText = elements.emptyState ? elements.emptyState.querySelector('p') : null;
+
+    elements.historyContainer.innerHTML = '';
+
+    if (entries.length === 0) {
+      if (emptyTitle && emptyText) {
+        const hasAnyHistory = historyData.length > 0;
+        if (hasAnyHistory) {
+          emptyTitle.textContent = 'No matching sessions';
+          emptyText.textContent = 'Try adjusting your search, date range, item count, or site filters.';
+        } else {
+          emptyTitle.textContent = 'No history yet';
+          emptyText.innerHTML = 'Start by <a href="/" style="color:var(--primary)">running a fetch</a> to see your sessions here.';
+        }
+      }
+      if (elements.emptyState) elements.emptyState.classList.remove('d-none');
+      return;
+    }
+
+    if (elements.emptyState) elements.emptyState.classList.add('d-none');
+
+    const sortedHistory = [...entries].sort((a, b) => (b.timestamp_ms || 0) - (a.timestamp_ms || 0));
+
+    const fragment = document.createDocumentFragment();
+
+    sortedHistory.forEach(entry => {
+      const card = createHistoryCard(entry);
+      fragment.appendChild(card);
+    });
+
+    elements.historyContainer.appendChild(fragment);
+  }
+
+  function createHistoryCard(entry) {
+    const card = document.createElement('div');
+    card.className = 'history-card';
+
+    const urlList = Array.isArray(entry.urls) ? entry.urls : [];
+    const rules = entry.rules || { add_percent: 0, percent_off: 0, absolute_off: 0 };
+    const addPercent = Number(rules.add_percent) || 0;
+    const percentOff = Number(rules.percent_off) || 0;
+    const absoluteOff = Number(rules.absolute_off) || 0;
+    const itemsCount = Number(entry.items_count) || 0;
+    const sourceHosts = [...new Set(urlList.map(url => {
+      try {
+        return new URL(url).hostname.replace('www.', '');
+      } catch {
+        return '';
+      }
+    }).filter(Boolean))];
+    const urlsPreview = sourceHosts.slice(0, 2).join(', ');
+    const remainingUrls = urlList.length > 2 ? ` +${urlList.length - 2} more` : '';
+    const sourceLabel = sourceHosts.length === 1
+      ? sourceHosts[0]
+      : sourceHosts.length > 1
+        ? `${sourceHosts.length} sources`
+        : 'Saved extraction';
+    const pricingLabel = addPercent || percentOff || absoluteOff
+      ? `+${addPercent}% / -${percentOff}% / -$${absoluteOff}`
+      : 'No adjustment';
+
+    card.innerHTML = `
+      <div class="history-card__main">
+        <div class="history-card__identity">
+          <h3 class="history-title">${utils.escapeHtml(sourceLabel)}</h3>
+          <div class="history-timestamp">${utils.formatDate(entry.timestamp)} | ${utils.formatDuration(entry.timestamp)}</div>
+          <div class="history-source-preview">${utils.escapeHtml(urlsPreview)}${utils.escapeHtml(remainingUrls)}</div>
+        </div>
+        <div class="history-meta" aria-label="Run summary">
+          <div class="meta-item">
+            <span class="meta-value">${itemsCount.toLocaleString()}</span>
+            <span class="meta-label">Items</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-value">${urlList.length.toLocaleString()}</span>
+            <span class="meta-label">URLs</span>
+          </div>
+          <div class="meta-item meta-item--pricing">
+            <span class="meta-value">${pricingLabel}</span>
+            <span class="meta-label">Pricing</span>
+          </div>
+        </div>
+        <div class="history-actions">
+          <button class="btn btn-sm btn-ghost" data-action="view" data-id="${entry.id}">Open</button>
+          <button class="btn btn-sm btn-ghost" data-action="export" data-id="${entry.id}">XLSX</button>
+          <button class="btn btn-sm btn-ghost danger" data-action="delete" data-id="${entry.id}">Delete</button>
+        </div>
+      </div>
+    `;
+
+    // Event delegation for buttons
+    card.querySelector('[data-action="export"]').addEventListener('click', () => exportHistory(entry.id));
+    card.querySelector('[data-action="view"]').addEventListener('click', () => viewHistory(entry.id));
+    card.querySelector('[data-action="delete"]').addEventListener('click', () => deleteHistory(entry.id));
+
+    return card;
+  }
+
+  // API Functions
+  async function loadHistory() {
+    try {
+      utils.setLoading(true);
+      utils.renderHistorySkeleton();
+      const response = await fetch('/api/history?limit=50');
+      if (!response.ok) throw new Error('Failed to load history');
+      const data = await response.json();
+      const rawHistory = data.histories || data || [];
+      historyData = rawHistory.map(normalizeHistoryEntry);
+      updateSiteFilterOptions();
+      updateMinItemsSlider();
+      applyFilters();
+      loadStatistics();
+    } catch (error) {
+      console.error('Error loading history:', error);
+      utils.showAlert('danger', 'Failed to load history');
+      historyData = [];
+      filteredHistory = [];
+      updateSiteFilterOptions();
+      updateMinItemsSlider();
+      updateResultSummary(0, 0);
+      renderHistory([]);
+    } finally {
+      utils.setLoading(false);
+    }
+  }
+
+  async function loadStatistics() {
+    try {
+      const response = await fetch('/api/statistics');
+      if (!response.ok) throw new Error('Failed to load statistics');
+      const stats = await response.json();
+
+      updateStatCard('totalHistories', stats.total_histories || 0);
+      updateStatCard('totalItems', (stats.total_items || 0).toLocaleString());
+      updateStatCard('uniqueModels', stats.unique_models || 0);
+      updateStatCard('recentSessions', stats.recent_histories || 0);
+      updateStatCard('uniqueSites', stats.unique_sites || 0);
+      updateStatCard('avgPrice', stats.avg_price ? `$${stats.avg_price}` : '$0');
+      updateStatCard('successRate', stats.success_rate ? `${stats.success_rate}%` : '0%');
+      updateStatCard('topSite', stats.top_site || 'N/A');
+      updateStatCard('latestSession', stats.latest_session || 'Never');
+
+      const sizeInMB = (stats.database_size || 0) / 1024 / 1024;
+      updateStatCard('dbSize', sizeInMB < 1
+        ? `${(sizeInMB * 1024).toFixed(0)} KB`
+        : `${sizeInMB.toFixed(1)} MB`
+      );
+
+      // Update new stats
+      updateStatCard('avgItemsPerSession', stats.avg_items_per_session || 0);
+      updateStatCard('totalValue', stats.total_value ? `$${stats.total_value.toLocaleString()}` : '$0');
+      updateStatCard('highestPrice', stats.highest_price ? `$${stats.highest_price}` : '$0');
+      updateStatCard('lowestPrice', stats.lowest_price ? `$${stats.lowest_price}` : '$0');
+    } catch (error) {
+      console.error('Error loading statistics:', error);
+      setDefaultStats();
+    }
+  }
+
+  function updateStatCard(id, value) {
+    const element = $(id);
+    if (element) element.textContent = value;
+  }
+
+  function setDefaultStats() {
+    ['totalHistories', 'totalItems', 'uniqueModels', 'recentSessions', 'uniqueSites'].forEach(id => updateStatCard(id, '0'));
+    updateStatCard('dbSize', '0 KB');
+    updateStatCard('avgPrice', '$0');
+    updateStatCard('successRate', '0%');
+    updateStatCard('topSite', 'N/A');
+    updateStatCard('latestSession', 'Never');
+    updateStatCard('avgItemsPerSession', '0');
+    updateStatCard('totalValue', '$0');
+    updateStatCard('highestPrice', '$0');
+    updateStatCard('lowestPrice', '$0');
+  }
+
+  function normalizeHistoryId(historyId) {
+    if (historyId === null || historyId === undefined) return '';
+    return String(historyId).trim();
+  }
+
+  async function requestDeleteHistory(normalizedHistoryId) {
+    const encodedId = encodeURIComponent(normalizedHistoryId);
+    const destructiveHeaders = { 'X-Confirm-Destructive': 'permanently-delete' };
+    let response = await fetch(`/api/history/${encodedId}`, {
+      method: 'DELETE',
+      headers: destructiveHeaders
+    });
+
+    // Some deployments/proxies block DELETE; fallback route keeps behavior consistent.
+    if (response.status === 405 || response.status === 501) {
+      response = await fetch(`/api/history/${encodedId}/delete`, {
+        method: 'POST',
+        headers: destructiveHeaders
+      });
+    }
+
+    return response;
+  }
+
+  async function deleteHistory(historyId) {
+    const normalizedHistoryId = normalizeHistoryId(historyId);
+    if (!normalizedHistoryId) {
+      utils.showAlert('danger', 'Invalid history entry ID');
+      return;
+    }
+
+    const confirmed = await showConfirmDialog({
+      title: 'Delete this history entry?',
+      message: 'This permanently removes the selected scraping session from history.',
+      confirmLabel: 'Delete Entry',
+      cancelLabel: 'Keep Entry',
+      danger: true
+    });
+    if (!confirmed) return;
+
+    try {
+      utils.setLoading(true);
+      const response = await requestDeleteHistory(normalizedHistoryId);
+      let payload = null;
+
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok || !payload || payload.success !== true) {
+        const message = payload && payload.error ? payload.error : 'Failed to delete history';
+        throw new Error(message);
+      }
+
+      historyData = historyData.filter(entry => normalizeHistoryId(entry.id) !== normalizedHistoryId);
+      filteredHistory = filteredHistory.filter(entry => normalizeHistoryId(entry.id) !== normalizedHistoryId);
+      updateSiteFilterOptions();
+      updateMinItemsSlider();
+      applyFilters();
+      loadStatistics();
+      utils.showAlert('success', 'History entry deleted');
+    } catch (error) {
+      console.error('Error deleting history:', error);
+      utils.showAlert('danger', 'Failed to delete history entry');
+    } finally {
+      utils.setLoading(false);
+    }
+  }
+
+  function renderHistoryModalSkeleton() {
+    if (!elements.modalContent || !elements.historyModal) return;
+    elements.modalContent.innerHTML = `
+      <div class="skeleton-container" style="padding: 1rem;">
+        <div class="skeleton-box" style="width: 50%; height: 22px; margin-bottom: 12px;"></div>
+        <div class="skeleton-box" style="width: 80%; height: 14px; margin-bottom: 20px;"></div>
+        <div class="skeleton-row"><div class="skeleton-box" style="width: 35px; height: 35px; border-radius:4px;"></div><div style="flex:1;"><div class="skeleton-box" style="width:70%; height:14px; margin-bottom:4px;"></div><div class="skeleton-box" style="width:30%; height:11px;"></div></div><div class="skeleton-box" style="width:60px; height:18px; border-radius:4px;"></div></div>
+        <div class="skeleton-row"><div class="skeleton-box" style="width: 35px; height: 35px; border-radius:4px;"></div><div style="flex:1;"><div class="skeleton-box" style="width:60%; height:14px; margin-bottom:4px;"></div><div class="skeleton-box" style="width:40%; height:11px;"></div></div><div class="skeleton-box" style="width:60px; height:18px; border-radius:4px;"></div></div>
+        <div class="skeleton-row"><div class="skeleton-box" style="width: 35px; height: 35px; border-radius:4px;"></div><div style="flex:1;"><div class="skeleton-box" style="width:75%; height:14px; margin-bottom:4px;"></div><div class="skeleton-box" style="width:25%; height:11px;"></div></div><div class="skeleton-box" style="width:60px; height:18px; border-radius:4px;"></div></div>
+      </div>
+    `;
+    openAccessibleDialog(elements.historyModal);
+  }
+
+  async function viewHistory(historyId) {
+    try {
+      utils.setLoading(true);
+      renderHistoryModalSkeleton();
+      const normalizedHistoryId = normalizeHistoryId(historyId);
+      const response = await fetch(`/api/history/${encodeURIComponent(normalizedHistoryId)}`);
+      if (!response.ok) throw new Error('Failed to load history details');
+      const entry = await response.json();
+      showHistoryDetail(entry);
+    } catch (error) {
+      console.error('Error loading history details:', error);
+      utils.showAlert('danger', 'Failed to load history details');
+    } finally {
+      utils.setLoading(false);
+    }
+  }
+
+  async function exportHistory(historyId) {
+    try {
+      utils.setLoading(true);
+      const normalizedHistoryId = normalizeHistoryId(historyId);
+      const response = await fetch(`/api/history/${encodeURIComponent(normalizedHistoryId)}/export/xlsx`, { method: 'POST' });
+      if (!response.ok) throw new Error('Failed to export session');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `history_${normalizedHistoryId}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      utils.showAlert('success', 'Download started');
+    } catch (error) {
+      console.error('Error exporting history:', error);
+      utils.showAlert('danger', 'Failed to export session');
+    } finally {
+      utils.setLoading(false);
+    }
+  }
+
+  function showHistoryDetail(entry) {
+    if (!elements.modalContent || !elements.historyModal) return;
+
+    const urlList = Array.isArray(entry.urls) ? entry.urls : [];
+    const urlsList = urlList.map(url =>
+      `<a class="history-detail-url" href="${utils.escapeHtml(url)}" target="_blank" rel="noopener">${utils.escapeHtml(url)}</a>`
+    ).join('');
+
+    const items = Array.isArray(entry.items) ? entry.items : [];
+    const rules = entry.rules || { add_percent: 0, percent_off: 0, absolute_off: 0 };
+    const addPercent = Number(rules.add_percent) || 0;
+    const percentOff = Number(rules.percent_off) || 0;
+    const absoluteOff = Number(rules.absolute_off) || 0;
+    const itemsCount = Number(entry.items_count) || items.length;
+
+    const itemsTable = items.length > 0 ? `
+      <section class="history-detail-section history-detail-items">
+        <div class="history-detail-section__heading">
+          <h4>Products</h4>
+          <span>${items.length.toLocaleString()} items</span>
+        </div>
+        <div class="history-detail-table-wrap">
+        <table class="history-detail-table">
+          <thead>
+            <tr>
+              <th>Image</th>
+              <th>Title</th>
+              <th>Original</th>
+              <th>URL</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item => `
+              <tr>
+                <td>${item.image_url ? `<img src="${utils.escapeHtml(item.image_url)}" class="table-img" alt="" loading="lazy">` : '<span class="history-detail-no-image">-</span>'}</td>
+                <td class="history-detail-product-title">${utils.escapeHtml(item.title || '')}</td>
+                <td>${utils.escapeHtml(item.original_formatted || '')}</td>
+                <td><a class="url-link" href="${utils.escapeHtml(item.url)}" target="_blank" rel="noopener">Open</a></td>
+                <td class="history-detail-source">${utils.escapeHtml(item.site || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        </div>
+      </section>
+    ` : '<div class="history-detail-empty">No products were saved in this session.</div>';
+
+    elements.modalContent.innerHTML = `
+      <header class="history-detail-header">
+        <div class="history-detail-header__copy">
+          <h3 id="historyModalTitle">Session Details</h3>
+          <div class="history-detail-timestamp">
+            ${utils.formatDate(entry.timestamp)} | ${utils.formatDuration(entry.timestamp)}
+          </div>
+        </div>
+        <button class="btn-export history-detail-export" id="historyModalExport" data-id="${entry.id}">Export XLSX</button>
+      </header>
+
+      <div class="history-detail-body">
+        <div class="history-detail-metrics" aria-label="Session summary">
+          <div class="history-detail-metric">
+            <span>Items Found</span>
+            <strong>${itemsCount.toLocaleString()}</strong>
+          </div>
+          <div class="history-detail-metric">
+            <span>Price Increase</span>
+            <strong>${addPercent}%</strong>
+          </div>
+          <div class="history-detail-metric">
+            <span>Discount</span>
+            <strong>${percentOff}%</strong>
+          </div>
+          <div class="history-detail-metric">
+            <span>Fixed Discount</span>
+            <strong>$${absoluteOff}</strong>
+          </div>
+        </div>
+
+        <details class="history-detail-section history-detail-urls">
+          <summary>
+            <span>Target URLs</span>
+            <strong>${urlList.length}</strong>
+          </summary>
+          <div class="history-detail-url-list">
+            ${urlsList || '<span class="history-detail-url-empty">No target URLs saved.</span>'}
+          </div>
+        </details>
+
+        ${itemsTable}
+      </div>
+    `;
+
+    const modalExportBtn = document.getElementById('historyModalExport');
+    if (modalExportBtn) {
+      modalExportBtn.addEventListener('click', () => exportHistory(entry.id));
+    }
+
+    openAccessibleDialog(elements.historyModal, {
+      initialFocus: elements.closeModal,
+      onEscape: closeHistoryModal
+    });
+  }
+
+  const cleanupModal = {
+    modal: null,
+    closeBtn: null,
+    cancelBtn: null,
+    confirmBtn: null,
+    daysInput: null,
+    dateInput: null,
+    previewText: null,
+    quickBtns: null,
+    currentDays: 90,
+
+    init() {
+      this.modal = $('cleanupModal');
+      this.closeBtn = $('closeCleanupModal');
+      this.cancelBtn = $('cancelCleanup');
+      this.confirmBtn = $('confirmCleanup');
+      this.daysInput = $('cleanupDays');
+      this.dateInput = $('cleanupDate');
+      this.previewText = $('cleanupPreviewText');
+      this.quickBtns = document.querySelectorAll('.cleanup-quick-btn');
+
+      if (!this.modal) return;
+
+      // Close handlers
+      if (this.closeBtn) {
+        this.closeBtn.addEventListener('click', () => this.hide());
+      }
+      if (this.cancelBtn) {
+        this.cancelBtn.addEventListener('click', () => this.hide());
+      }
+      this.modal.addEventListener('click', (e) => {
+        if (e.target === this.modal) this.hide();
+      });
+
+      // Quick button handlers
+      this.quickBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          this.quickBtns.forEach(b => b.classList.remove('active'));
+          e.target.classList.add('active');
+          this.currentDays = parseInt(e.target.dataset.days);
+          if (this.daysInput) this.daysInput.value = this.currentDays;
+          if (this.dateInput) this.dateInput.value = '';
+          this.updatePreview();
+        });
+      });
+
+      // Days input handler
+      if (this.daysInput) {
+        this.daysInput.addEventListener('input', (e) => {
+          this.quickBtns.forEach(b => b.classList.remove('active'));
+          this.currentDays = parseInt(e.target.value) || 90;
+          if (this.dateInput) this.dateInput.value = '';
+          this.updatePreview();
+        });
+      }
+
+      // Date input handler
+      if (this.dateInput) {
+        this.dateInput.addEventListener('change', (e) => {
+          if (e.target.value) {
+            this.quickBtns.forEach(b => b.classList.remove('active'));
+            const selectedDate = new Date(e.target.value);
+            const today = new Date();
+            const diffTime = today - selectedDate;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            this.currentDays = diffDays;
+            if (this.daysInput) this.daysInput.value = diffDays;
+            this.updatePreview();
+          }
+        });
+      }
+
+      // Confirm handler
+      if (this.confirmBtn) {
+        this.confirmBtn.addEventListener('click', () => this.executeCleanup());
+      }
+    },
+
+    show() {
+      if (this.modal) {
+        this.updatePreview();
+        openAccessibleDialog(this.modal, {
+          initialFocus: this.closeBtn,
+          onEscape: () => this.hide()
+        });
+      }
+    },
+
+    hide() {
+      if (this.modal) {
+        closeAccessibleDialog(this.modal);
+      }
+    },
+
+    updatePreview() {
+      if (!this.previewText) return;
+
+      const dateValue = this.dateInput ? this.dateInput.value : '';
+      if (this.currentDays >= 99999) {
+        this.previewText.innerHTML = `<strong style="color: #dc3545;">ALL HISTORY SESSIONS</strong> will be permanently deleted!`;
+      } else if (dateValue) {
+        const date = new Date(dateValue);
+        const formattedDate = date.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+        this.previewText.textContent = `All sessions before ${formattedDate} will be permanently deleted`;
+      } else {
+        this.previewText.textContent = `Sessions older than ${this.currentDays} days will be permanently deleted`;
+      }
+    },
+
+    async executeCleanup() {
+      const isDeleteAll = this.currentDays >= 99999;
+      const confirmed = await showConfirmDialog({
+        title: isDeleteAll ? 'Delete all history?' : 'Delete old history sessions?',
+        message: isDeleteAll
+          ? 'This permanently deletes every scraping session in your database. This action cannot be undone.'
+          : `This permanently deletes all sessions older than ${this.currentDays} days. This action cannot be undone.`,
+        confirmLabel: isDeleteAll ? 'Delete All History' : 'Delete Old Sessions',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        utils.setLoading(true);
+        this.hide();
+
+        const response = await fetch('/api/cleanup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Confirm-Destructive': 'permanently-delete'
+          },
+          body: JSON.stringify(isDeleteAll ? { delete_all: true } : { days: this.currentDays })
+        });
+
+        if (!response.ok) throw new Error('Failed to cleanup');
+        const result = await response.json();
+
+        const message = this.currentDays >= 99999
+          ? `All history deleted. Removed ${result.deleted_entries} session(s).`
+          : `Successfully deleted ${result.deleted_entries} old session(s).`;
+
+        utils.showAlert('success', message);
+
+        // Reset data and reload everything
+        historyData = [];
+        filteredHistory = [];
+        await loadHistory();
+        await loadStatistics();
+        updateSiteFilterOptions();
+        updateMinItemsSlider();
+      } catch (error) {
+        console.error('Error cleaning up:', error);
+        utils.showAlert('danger', 'Failed to cleanup old entries');
+      } finally {
+        utils.setLoading(false);
+      }
+    }
+  };
+
+  function showCleanupModal() {
+    cleanupModal.show();
+  }
+
+  // Event Listeners
+  function initializeEventListeners() {
+    document.addEventListener('keydown', handleDialogKeydown);
+
+    if (elements.closeModal) {
+      elements.closeModal.addEventListener('click', closeHistoryModal);
+    }
+
+    if (elements.historyModal) {
+      elements.historyModal.addEventListener('click', (e) => {
+        if (e.target === elements.historyModal) {
+          closeHistoryModal();
+        }
+      });
+    }
+
+    if (elements.refreshBtn) {
+      elements.refreshBtn.addEventListener('click', () => {
+        loadHistory();
+        loadStatistics();
+      });
+    }
+
+    if (elements.cleanupBtn) {
+      elements.cleanupBtn.addEventListener('click', showCleanupModal);
+    }
+
+    if (elements.historySearch) {
+      elements.historySearch.addEventListener('input', (e) => {
+        filterState.search = e.target.value.trim().toLowerCase();
+        applyFilters();
+      });
+    }
+
+    if (elements.historyStartDate) {
+      elements.historyStartDate.addEventListener('change', (e) => {
+        filterState.startDate = parseDateInput(e.target.value, false);
+        applyFilters();
+      });
+    }
+
+    if (elements.historyEndDate) {
+      elements.historyEndDate.addEventListener('change', (e) => {
+        filterState.endDate = parseDateInput(e.target.value, true);
+        applyFilters();
+      });
+    }
+
+    if (elements.historyMinItems) {
+      elements.historyMinItems.addEventListener('input', (e) => {
+        const value = Math.max(0, Number(e.target.value) || 0);
+        filterState.minItems = value;
+        if (elements.historyMinItemsValue) {
+          elements.historyMinItemsValue.textContent = value.toString();
+        }
+        applyFilters();
+      });
+    }
+
+    if (elements.historySiteSelect) {
+      elements.historySiteSelect.addEventListener('change', (e) => {
+        filterState.site = e.target.value;
+        applyFilters();
+      });
+    }
+
+    if (elements.historyClearFilters) {
+      elements.historyClearFilters.addEventListener('click', () => resetFilters());
+    }
+
+    // Theme handling
+    if (elements.darkMode) {
+      const savedTheme = sessionStorage.getItem('cy_theme');
+      if (savedTheme) {
+        document.documentElement.setAttribute('data-bs-theme', savedTheme);
+      }
+      elements.darkMode.checked = (savedTheme || 'dark') === 'dark';
+      elements.darkMode.addEventListener('change', (e) => {
+        const theme = e.target.checked ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        sessionStorage.setItem('cy_theme', theme);
+      });
+    }
+  }
+
+  // Initialize
+  function init() {
+    initializeEventListeners();
+    cleanupModal.init();
+    resetFilters({ skipApply: true });
+    startHistoryClock();
+    loadHistory();
+  }
+
+  // Start when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();

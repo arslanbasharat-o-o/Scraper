@@ -1,0 +1,54 @@
+name: Feature request
+description: Propose a new capability or improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Target area
+      options:
+        - Extractor
+        - Automation
+        - History
+        - Menu Map
+        - Authentication
+        - Deployment
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: problem
+    attributes:
+      label: Problem statement
+      placeholder: Operators need a clearer way to resume interrupted detail scans
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      placeholder: Describe the workflow, API, or UI behavior you want.
+    validations:
+      required: true
+  - type: textarea
+    id: success
+    attributes:
+      label: Success criteria
+      placeholder: |
+        - Behavior is clear
+        - Tests cover the new path
+        - Deployment notes are updated when needed
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Expected impact
+      options:
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true

@@ -1,0 +1,39 @@
+name: Support question
+description: Ask setup or usage questions
+title: "[Question]: "
+labels:
+  - question
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Question area
+      options:
+        - Installation
+        - Configuration
+        - Automation
+        - Scrapers
+        - Deployment
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      placeholder: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Include relevant config, logs, and environment details.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I checked the README and deployment guide first.
+          required: true
