@@ -422,7 +422,7 @@
     const harvested = Math.max(0, Number(summary.current_items || run?.items_count || 0));
     return {
       completed,
-      total: Math.max(rawTotal, completed, harvested),
+      total: Math.max(rawTotal || harvested, completed),
     };
   }
 

@@ -8,6 +8,7 @@ Author: Arslan
 Created for: TXParts
 """
 
+import html as html_lib
 import os
 import requests
 import time
@@ -219,11 +220,102 @@ def extract_xcell_sku(soup: Optional[BeautifulSoup] = None, html: str = "") -> s
     return ""
 
 
+def parse_xcell_product_detail_fast(html: str, url: str, rules: dict | None = None) -> Optional[Item]:
+    """Extract XCell detail fields without building a full DOM for multi-megabyte pages."""
+    if not html:
+        return None
+
+    def text_from_fragment(fragment: str) -> str:
+        return clean_text(html_lib.unescape(re.sub(r'<[^>]+>', ' ', fragment or '')))
+
+    def first_match(patterns, *, flags=re.I | re.S) -> str:
+        for pattern in patterns:
+            match = re.search(pattern, html, flags)
+            if match and match.group(1):
+                return clean_text(html_lib.unescape(match.group(1)))
+        return ''
+
+    title_fragment = first_match([
+        r'<h1[^>]*class=["\'][^"\']*(?:product_title|entry-title)[^"\']*["\'][^>]*>(.*?)</h1>',
+        r'<h1[^>]*>(.*?)</h1>',
+    ])
+    title = text_from_fragment(title_fragment)
+    if not title:
+        title = first_match([r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']'])
+
+    sku = extract_xcell_sku(None, html)
+    if not title or not sku:
+        return None
+
+    canonical = first_match([
+        r'<link[^>]+rel=["\'][^"\']*canonical[^"\']*["\'][^>]+href=["\']([^"\']+)["\']',
+        r'<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\'][^"\']*canonical[^"\']*["\']',
+        r'<meta[^>]+property=["\']og:url["\'][^>]+content=["\']([^"\']+)["\']',
+    ]) or url
+
+    item = Item(site='xcellparts.com', url=canonical, title=title, sku=sku)
+    price_fragment = first_match([
+        r'<bdi[^>]*>(.*?)</bdi>',
+        r'class=["\'][^"\']*woocommerce-Price-amount[^"\']*["\'][^>]*>(.*?)</span>',
+    ])
+    price_value = parse_price_number(text_from_fragment(price_fragment)) if price_fragment else 0.0
+    if price_value > 0:
+        item.original = price_value
+        item.discounted = price_value
+        item.original_formatted = fmt_price(price_value)
+        item.discounted_formatted = fmt_price(price_value)
+
+    item.image_url = first_match([
+        r'class=["\'][^"\']*woocommerce-product-gallery__image[^"\']*["\'][^>]*>\s*<a[^>]+href=["\']([^"\']+)["\']',
+        r'<img[^>]+class=["\'][^"\']*wp-post-image[^"\']*["\'][^>]+(?:src|data-src)=["\']([^"\']+)["\']',
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+    ])
+    if item.image_url:
+        item.image_url = urljoin(url, item.image_url)
+
+    stock_fragment = first_match([
+        r'class=["\'][^"\']*stock[^"\']*["\'][^>]*>(.*?)</(?:p|div|span)>',
+    ])
+    stock_text = text_from_fragment(stock_fragment)
+    if stock_text:
+        item.stock_status = stock_text
+    elif 'outofstock' in html.lower() or 'out of stock' in html.lower():
+        item.stock_status = 'Out of Stock'
+
+    description_fragment = first_match([
+        r'class=["\'][^"\']*woocommerce-product-details__short-description[^"\']*["\'][^>]*>(.*?)</div>',
+        r'id=["\']tab-description["\'][^>]*>(.*?)</(?:div|section)>',
+    ])
+    item.description = text_from_fragment(description_fragment)
+    if not item.description:
+        item.description = first_match([
+            r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']',
+        ])
+
+    adjusted_price = apply_price_rules(item.original, rules or {})
+    if adjusted_price != round(float(item.original or 0.0), 2):
+        item.discounted = adjusted_price
+        item.discounted_formatted = fmt_price(adjusted_price)
+    item.extra.update({
+        'sku': item.sku,
+        'stock_status': item.stock_status,
+        'description': item.description,
+    })
+    return item
+
+
 def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional[Item]:
     """Scrape a single WooCommerce product detail page for richer metadata."""
     html = get_html(session, url)
     if not html:
         return None
+
+    fast_item = parse_xcell_product_detail_fast(html, url, rules)
+    if fast_item:
+        if logger:
+            logger.debug(f"[xcell] Enriched detail page: {fast_item.url}")
+        return fast_item
 
     soup = parse_html_document(html)
     if not soup:
@@ -307,7 +399,7 @@ def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional
     })
 
     if logger and item.title:
-        logger.info(f"[xcell] Enriched detail page: {item.url}")
+        logger.debug(f"[xcell] Enriched detail page: {item.url}")
     return item if item.url else None
 
 

@@ -20,7 +20,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from dataclasses import asdict
-from typing import List, Dict, Tuple
+from typing import Callable, List, Dict, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import copy
 from functools import wraps
@@ -39,6 +39,7 @@ from flask_login import current_user, login_user, logout_user
 
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
+AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -94,6 +95,42 @@ SCRAPER_MODULES = {
     'phonelcdparts': phonelcdparts_scraper_engine,
     'gadgetfix': gadgetfix_scraper_engine,
 }
+
+SCRAPER_PHASE1_WORKER_DEFAULTS = {
+    'xcell': 24,
+    'txparts': 24,
+    'parts4cells': 24,
+    'phonelcdparts': 24,
+    'gadgetfix': 20,
+    'standard': 24,
+}
+SCRAPER_DETAIL_WORKER_DEFAULTS = {
+    'xcell': 64,
+    'txparts': 16,
+    'parts4cells': 32,
+    'phonelcdparts': 40,
+    'gadgetfix': 24,
+    'mobilesentrix_canada': 4,
+    'standard': 8,
+}
+SCRAPER_WORKER_HARD_CAP = 96
+
+
+def resolve_scraper_worker_limit(engine_type: str, phase: str) -> int:
+    """Resolve a bounded supplier-specific worker count with legacy XCell support."""
+    normalized_engine = str(engine_type or 'standard').strip().lower() or 'standard'
+    normalized_phase = 'detail' if str(phase or '').strip().lower() == 'detail' else 'phase1'
+    defaults = SCRAPER_DETAIL_WORKER_DEFAULTS if normalized_phase == 'detail' else SCRAPER_PHASE1_WORKER_DEFAULTS
+    default = int(defaults.get(normalized_engine, defaults['standard']))
+    engine_token = re.sub(r'[^A-Z0-9]+', '_', normalized_engine.upper()).strip('_') or 'STANDARD'
+    names = [f'SCRAPER_{engine_token}_{normalized_phase.upper()}_WORKERS']
+    if normalized_engine == 'xcell' and normalized_phase == 'phase1':
+        names.extend(['XCELL_MAX_WORKERS', 'SCRAPER_XCELL_MAX_WORKERS'])
+    raw_value = next((os.getenv(name) for name in names if os.getenv(name) not in (None, '')), default)
+    try:
+        return max(1, min(SCRAPER_WORKER_HARD_CAP, int(raw_value)))
+    except (TypeError, ValueError):
+        return default
 
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
@@ -169,6 +206,8 @@ AUTOMATION_SCHEDULER_THREAD: threading.Thread | None = None
 AUTOMATION_STOP_EVENT = threading.Event()
 AUTOMATION_ACTIVE_JOBS = set()
 AUTOMATION_ACTIVE_JOBS_LOCK = threading.Lock()
+AUTOMATION_RESUME_PROCESSES: Dict[int, subprocess.Popen] = {}
+AUTOMATION_RESUME_PROCESSES_LOCK = threading.Lock()
 MENU_MAP_JOBS: Dict[str, Dict[str, object]] = {}
 MENU_MAP_JOBS_LOCK = threading.Lock()
 SHUTDOWN_HOOKS_REGISTERED = False
@@ -176,6 +215,53 @@ SHUTDOWN_HOOKS_REGISTERED = False
 
 class AutomationRunPaused(RuntimeError):
     """Raised by progress callbacks when a running automation run is paused."""
+
+
+def make_automation_run_stop_checker(run_id: int, *, min_interval_seconds: float = 0.35) -> Callable[[], None]:
+    """Return a throttled pause checker that can be shared by scraper workers."""
+    normalized_run_id = int(run_id)
+    state = {
+        'last_checked_at': 0.0,
+        'paused': False,
+    }
+    state_lock = threading.Lock()
+
+    def check_stop() -> None:
+        if state['paused']:
+            raise AutomationRunPaused('Automation run paused by user.')
+        now = time.time()
+        with state_lock:
+            if state['paused']:
+                raise AutomationRunPaused('Automation run paused by user.')
+            if now - float(state['last_checked_at'] or 0.0) < min_interval_seconds:
+                return
+            state['last_checked_at'] = now
+            latest_run = db_manager.get_automation_run(normalized_run_id)
+            if str((latest_run or {}).get('status') or '').strip().lower() == 'paused':
+                state['paused'] = True
+                raise AutomationRunPaused('Automation run paused by user.')
+
+    return check_stop
+
+
+def automation_progress_write_due(
+    state: Dict[str, object],
+    *,
+    now: float,
+    phase: int,
+    completed: int,
+    total: int,
+) -> bool:
+    """Throttle SQLite progress writes while forcing phase and completion boundaries."""
+    last_phase = int(state.get('last_phase') or 0)
+    last_written_at = float(state.get('last_written_at') or 0.0)
+    phase_changed = int(phase) != last_phase
+    phase_complete = int(total) > 0 and int(completed) >= int(total)
+    due = phase_changed or phase_complete or int(phase) >= 3 or now - last_written_at >= AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS
+    if due:
+        state['last_phase'] = int(phase)
+        state['last_written_at'] = float(now)
+    return due
 
 MENU_MAP_SITES = {
     'xcellparts': {
@@ -584,7 +670,7 @@ def hydrate_items_from_previous_history(items, previous_history: Dict | None) ->
     return hydrated
 
 
-def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use_curl: bool, enrich_details: bool = True, logger=None, use_browser: bool = False, progress_callback=None):
+def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use_curl: bool, enrich_details: bool = True, logger=None, use_browser: bool = False, progress_callback=None, stop_check=None, session_cookies_by_engine=None):
     """Open each unique product detail page and merge richer metadata into scrape results."""
     if not enrich_details or not items:
         return items, 0
@@ -616,6 +702,10 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
     created_sessions = []
     created_sessions_lock = threading.Lock()
 
+    def _check_stop():
+        if callable(stop_check):
+            stop_check()
+
     def get_thread_session(engine_type: str):
         if engine_type == 'parts4cells':
             return None
@@ -625,27 +715,34 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             sessions = {}
             thread_state.sessions = sessions
 
+        if engine_type in sessions:
+            return sessions[engine_type]
+
+        if engine_type == 'xcell':
+            session, _ = xcell_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
+        elif engine_type == 'txparts':
+            session, _ = txparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
+        elif engine_type == 'phonelcdparts':
+            session, _ = phonelcdparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
+        elif engine_type == 'gadgetfix':
+            session, _ = gadgetfix_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
+        else:
+            session, _ = build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
+
+        sessions[engine_type] = session
+        bootstrap_cookies = (session_cookies_by_engine or {}).get(engine_type) or {}
+        if bootstrap_cookies and session is not None and hasattr(session, 'cookies'):
+            try:
+                session.cookies.update(bootstrap_cookies)
+            except Exception:
+                pass
         with created_sessions_lock:
-            if engine_type in sessions:
-                return sessions[engine_type]
-
-            if engine_type == 'xcell':
-                session, _ = xcell_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
-            elif engine_type == 'txparts':
-                session, _ = txparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
-            elif engine_type == 'phonelcdparts':
-                session, _ = phonelcdparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
-            elif engine_type == 'gadgetfix':
-                session, _ = gadgetfix_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
-            else:
-                session, _ = build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
-
-            sessions[engine_type] = session
             created_sessions.append(session)
-            return session
+        return session
 
     def enrich_one(item_url: str, item):
         def _do_enrich(use_browser_mode: bool):
+            _check_stop()
             with browser_fetch_mode(use_browser_mode):
                 engine_type, _ = get_scraper_for_url(item_url)
                 if engine_type == 'xcell':
@@ -665,6 +762,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         enriched = item
         engine_type, _ = get_scraper_for_url(item_url)
         try:
+            _check_stop()
             candidate = _do_enrich(False)
             if candidate:
                 enriched = candidate
@@ -678,6 +776,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             result_dict = asdict(enriched) if hasattr(enriched, '__dataclass_fields__') else {}
             if not result_dict.get('sku') and not result_dict.get('description'):
                 try:
+                    _check_stop()
                     browser_enriched = _do_enrich(True)
                     if browser_enriched:
                         enriched = browser_enriched
@@ -689,7 +788,26 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
 
     enriched_count = 0
     total_to_enrich = len(url_to_indexes)
-    max_workers = min(16, max(1, len(url_to_indexes)))
+    engine_counts: Dict[str, int] = {}
+    for item_url in url_to_indexes:
+        engine_type, _ = get_scraper_for_url(item_url)
+        engine_counts[engine_type] = engine_counts.get(engine_type, 0) + 1
+    engine_worker_limits = {
+        engine_type: min(count, resolve_scraper_worker_limit(engine_type, 'detail'))
+        for engine_type, count in engine_counts.items()
+    }
+    max_workers = min(
+        total_to_enrich,
+        SCRAPER_WORKER_HARD_CAP,
+        max(1, sum(engine_worker_limits.values())),
+    )
+    engine_semaphores = {
+        engine_type: threading.BoundedSemaphore(max(1, worker_count))
+        for engine_type, worker_count in engine_worker_limits.items()
+    }
+    if logger:
+        profile = ', '.join(f'{engine}={workers}' for engine, workers in sorted(engine_worker_limits.items()))
+        logger.info(f'[detail] Starting {total_to_enrich} product detail request(s) with {max_workers} workers ({profile})')
 
     if progress_callback:
         try:
@@ -707,10 +825,16 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
 
     try:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(enrich_one, item_url, items[indexes[0]]): item_url
-                for item_url, indexes in url_to_indexes.items()
-            }
+            futures = {}
+            for item_url, indexes in url_to_indexes.items():
+                _check_stop()
+                engine_type, _ = get_scraper_for_url(item_url)
+
+                def run_with_supplier_limit(url=item_url, item=items[indexes[0]], engine=engine_type):
+                    with engine_semaphores[engine]:
+                        return enrich_one(url, item)
+
+                futures[executor.submit(run_with_supplier_limit)] = item_url
             for future in as_completed(futures):
                 item_url = futures[future]
                 try:
@@ -723,10 +847,9 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 except Exception as exc:
                     if logger:
                         logger.warning(f"[detail] Failed to enrich {item_url}: {exc}")
-                    continue
-
-                for idx in url_to_indexes[item_url]:
-                    apply_enriched_item_data(items[idx], enriched_data)
+                else:
+                    for idx in url_to_indexes[item_url]:
+                        apply_enriched_item_data(items[idx], enriched_data)
                 enriched_count += 1
 
                 if progress_callback:
@@ -1081,6 +1204,36 @@ def serialize_scraped_item(item) -> Dict[str, object]:
     if not isinstance(item_dict.get('extra'), dict):
         item_dict['extra'] = {}
     return item_dict
+
+
+def deserialize_scraped_item(snapshot) -> Item | None:
+    """Restore a persisted item checkpoint into the scraper's Item model."""
+    if isinstance(snapshot, Item):
+        return snapshot
+    if not isinstance(snapshot, dict):
+        return None
+    url = normalize_compare_text(snapshot.get('url'))
+    title = normalize_compare_text(snapshot.get('title'))
+    if not url or not title:
+        return None
+    extra = snapshot.get('extra') if isinstance(snapshot.get('extra'), dict) else {}
+    return Item(
+        url=url,
+        site=str(snapshot.get('site') or urlparse(url).hostname or ''),
+        title=title,
+        price_value=snapshot.get('price_value', snapshot.get('original')),
+        price_currency=snapshot.get('price_currency'),
+        price_text=str(snapshot.get('price_text') or snapshot.get('original_formatted') or ''),
+        discounted_value=snapshot.get('discounted_value', snapshot.get('discounted')),
+        discounted_formatted=str(snapshot.get('discounted_formatted') or ''),
+        original_formatted=str(snapshot.get('original_formatted') or ''),
+        source=str(snapshot.get('source') or 'checkpoint'),
+        image_url=str(snapshot.get('image_url') or ''),
+        sku=str(snapshot.get('sku') or extra.get('sku') or ''),
+        stock_status=str(snapshot.get('stock_status') or extra.get('stock_status') or ''),
+        description=str(snapshot.get('description') or extra.get('description') or ''),
+        extra=dict(extra),
+    )
 
 def build_session_comparison(
     previous_history: Dict | None,
@@ -1827,14 +1980,19 @@ def execute_scrape_workflow(
     automation_job: Dict | None = None,
     previous_history_override: Dict | None = None,
     progress_callback = None,
+    stop_check = None,
+    initial_items = None,
+    skip_target_urls = None,
 ):
     rules = dict(rules or {})
     target_labels = {str(key).strip(): str(value or '').strip() for key, value in (target_labels or {}).items() if str(key).strip()}
     urls = [u.strip() for u in (urls_input.splitlines() if isinstance(urls_input, str) else urls_input or []) if str(u).strip()]
     seen_urls = set()
     urls = [u for u in urls if not (u in seen_urls or seen_urls.add(u))]
+    restored_items = [deserialize_scraped_item(item) for item in (initial_items or [])]
+    restored_items = [item for item in restored_items if item is not None]
 
-    if not urls:
+    if not urls and not restored_items:
         return {
             "error": "At least one URL is required.",
             "rules": rules,
@@ -1861,20 +2019,28 @@ def execute_scrape_workflow(
     effective_browser_mode = bool(use_browser) if use_browser is not None else False
 
     previous_history = previous_history_override if previous_history_override is not None else db_manager.get_latest_history_for_urls(urls)
-    items: List[Item] = []
+    items: List[Item] = list(restored_items)
     engine_used: Dict[str, str] = {}
     target_fetch_errors: List[Dict[str, str]] = []
     using_curl = False
     effective_enrich_details = bool(enrich_details)
     runtime_metadata_cache: Dict[str, dict] = {}
     runtime_metadata_cache_lock = threading.Lock()
+    session_cookies_by_engine: Dict[str, dict] = {}
+    session_cookies_lock = threading.Lock()
     progress_lock = threading.Lock()
     progress_state = {
         'completed_targets': 0,
-        'items_found': 0,
-        'preview_items': [],
-        'checkpoint_items': 0,
+        'items_found': len(items),
+        'preview_items': [serialize_scraped_item(item) for item in items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT]],
+        'checkpoint_items': len(items),
     }
+    skip_target_url_set = {
+        normalize_compare_url(url)
+        for url in (skip_target_urls or [])
+        if normalize_compare_url(url)
+    }
+    scrape_urls = [url for url in urls if normalize_compare_url(url) not in skip_target_url_set]
     total_targets = len(urls)
     active_run_id_for_progress = int((automation_job or {}).get('_active_run_id') or 0)
     if active_run_id_for_progress > 0:
@@ -1892,6 +2058,10 @@ def execute_scrape_workflow(
             progress_state['checkpoint_items'] = max(0, int(active_summary.get('checkpoint_items') or 0))
         except Exception as exc:
             app.logger.debug(f"[automation] Could not seed live progress from existing run: {exc}")
+
+    def _check_stop() -> None:
+        if callable(stop_check):
+            stop_check()
 
     def _target_label_for(url: str) -> str:
         return target_labels.get(url, '')
@@ -2019,13 +2189,30 @@ def execute_scrape_workflow(
         app.logger.info(f"[engine] Using {engine_name} for {len(batch_urls)} URL(s)")
 
         def _scrape_single(url: str):
+            _check_stop()
             with browser_fetch_mode(effective_browser_mode):
                 if uses_curl:
                     sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl, use_curl=True)
                 else:
                     sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl)
                 scraped_items = scrape_url_fn(sess, url, rules, crawl_pagination, max_pages, effective_delay_ms if effective_delay_ms is not None else delay_ms, app.logger)
+                cookie_jar = getattr(sess, 'cookies', None)
+                if cookie_jar is not None:
+                    try:
+                        if hasattr(cookie_jar, 'get_dict'):
+                            cookie_snapshot = dict(cookie_jar.get_dict() or {})
+                        elif hasattr(cookie_jar, 'items'):
+                            cookie_snapshot = dict(cookie_jar.items())
+                        else:
+                            cookie_snapshot = {}
+                        if cookie_snapshot:
+                            scraper_key, _ = get_scraper_for_url(url)
+                            with session_cookies_lock:
+                                session_cookies_by_engine[scraper_key] = cookie_snapshot
+                    except Exception:
+                        pass
             annotate_items_with_target(scraped_items, url, _target_label_for(url), automation_job)
+            _check_stop()
             _enrich_target_items_if_needed(scraped_items, sess)
             blocked = bool(getattr(sess, 'xcell_blocked', False) or getattr(sess, 'gadgetfix_blocked', False))
             last_error = str(
@@ -2070,6 +2257,11 @@ def execute_scrape_workflow(
                                 'error': 'No usable products were returned for this target.',
                             })
                         app.logger.info(f"[engine] Completed scraping {source_url}: {_count_valid_items(scraped_items)} items")
+                    except AutomationRunPaused:
+                        for pending_future in future_to_url:
+                            pending_future.cancel()
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        raise
                     except Exception as exc:
                         app.logger.error(f"[engine] Error scraping {url}: {exc}")
                         target_fetch_errors.append({
@@ -2120,6 +2312,8 @@ def execute_scrape_workflow(
                             f"[engine] Stopping {engine_name} batch after site block: {last_error or source_url}"
                         )
                         break
+                except AutomationRunPaused:
+                    raise
                 except Exception as exc:
                     app.logger.error(f"[engine] Error scraping {url}: {exc}")
                     target_fetch_errors.append({
@@ -2139,7 +2333,7 @@ def execute_scrape_workflow(
     gadgetfix_urls = []
     standard_urls = []
 
-    for url in urls:
+    for url in scrape_urls:
         engine_type, _ = get_scraper_for_url(url)
         if engine_type == 'xcell':
             xcell_urls.append(url)
@@ -2160,18 +2354,13 @@ def execute_scrape_workflow(
             standard_urls.append(url)
             engine_used[url] = 'scraper_engine'
 
-    try:
-        xcell_max_workers = max(1, min(24, int(os.getenv('XCELL_MAX_WORKERS') or os.getenv('SCRAPER_XCELL_MAX_WORKERS') or '16')))
-    except (TypeError, ValueError):
-        xcell_max_workers = 16
-
     _scrape_url_batch(
         xcell_urls,
         engine_name='XCellParts scraper',
         build_session_fn=xcell_scraper_engine.build_session,
         scrape_url_fn=xcell_scraper_engine.scrape_url,
         uses_curl=True,
-        max_workers=xcell_max_workers,
+        max_workers=resolve_scraper_worker_limit('xcell', 'phase1'),
         effective_delay_ms=delay_ms,
         force_sequential=False,
         stop_on_block=False,
@@ -2182,7 +2371,7 @@ def execute_scrape_workflow(
         build_session_fn=txparts_scraper_engine.build_session,
         scrape_url_fn=txparts_scraper_engine.scrape_url,
         uses_curl=True,
-        max_workers=16,
+        max_workers=resolve_scraper_worker_limit('txparts', 'phase1'),
     )
     _scrape_url_batch(
         parts4cells_urls,
@@ -2190,7 +2379,7 @@ def execute_scrape_workflow(
         build_session_fn=parts4cells_scraper_engine.build_session,
         scrape_url_fn=parts4cells_scraper_engine.scrape_url,
         uses_curl=True,
-        max_workers=16,
+        max_workers=resolve_scraper_worker_limit('parts4cells', 'phase1'),
     )
     _scrape_url_batch(
         phonelcdparts_urls,
@@ -2198,7 +2387,7 @@ def execute_scrape_workflow(
         build_session_fn=phonelcdparts_scraper_engine.build_session,
         scrape_url_fn=phonelcdparts_scraper_engine.scrape_url,
         uses_curl=True,
-        max_workers=16,
+        max_workers=resolve_scraper_worker_limit('phonelcdparts', 'phase1'),
     )
     _scrape_url_batch(
         gadgetfix_urls,
@@ -2206,7 +2395,7 @@ def execute_scrape_workflow(
         build_session_fn=gadgetfix_scraper_engine.build_session,
         scrape_url_fn=gadgetfix_scraper_engine.scrape_url,
         uses_curl=True,
-        max_workers=16,
+        max_workers=resolve_scraper_worker_limit('gadgetfix', 'phase1'),
         force_sequential=False,
         stop_on_block=False,
     )
@@ -2216,7 +2405,7 @@ def execute_scrape_workflow(
         build_session_fn=build_session,
         scrape_url_fn=scrape_url,
         uses_curl=True,
-        max_workers=16,
+        max_workers=resolve_scraper_worker_limit('standard', 'phase1'),
     )
 
     items = [item for item in items if is_usable_scraped_item(item)]
@@ -2338,7 +2527,7 @@ def execute_scrape_workflow(
     if auto_enrich_details:
         app.logger.info(f"[detail] Auto-enabling detail scan for {len(items)} item(s) to capture stock detail")
     items, enriched_count = enrich_scraped_items(
-        items, rules, retries, verify_ssl, use_curl, enrich_details=effective_enrich_details, logger=app.logger, use_browser=use_browser, progress_callback=progress_callback
+        items, rules, retries, verify_ssl, use_curl, enrich_details=effective_enrich_details, logger=app.logger, use_browser=use_browser, progress_callback=progress_callback, stop_check=stop_check, session_cookies_by_engine=session_cookies_by_engine
     )
     if progress_callback:
         progress_callback({
@@ -2564,12 +2753,20 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
 
             recent_progress = []
             recent_enrich_progress = []
+            automation_stop_check = make_automation_run_stop_checker(run_record['id'])
+            progress_write_state: Dict[str, object] = {}
+            progress_summary_cache: Dict[str, object] = {
+                'completed_targets': 0,
+                'total_targets': total_target_count,
+                'current_items': 0,
+                'checkpoint_items': 0,
+                'recent_targets_per_min': 0.0,
+                'recent_items_per_min': 0.0,
+            }
 
             def automation_progress_callback(progress: Dict[str, object]):
-                latest_run = db_manager.get_automation_run(run_record['id'])
-                if str((latest_run or {}).get('status') or '').strip().lower() == 'paused':
-                    raise AutomationRunPaused('Automation run paused by user.')
-                latest_summary = (latest_run or {}).get('summary') if isinstance((latest_run or {}).get('summary'), dict) else {}
+                automation_stop_check()
+                latest_summary = dict(progress_summary_cache)
                 now = time.time()
                 current_phase = int(progress.get('phase') or (2 if progress.get('phase2_total') else 1))
                 phase_name = str(progress.get('phase_name') or ('Phase 2: Product SKU & Detail Scan' if current_phase == 2 else 'Phase 1: Category Crawling'))
@@ -2589,7 +2786,7 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
                 phase2_completed = int(progress.get('phase2_completed') if progress.get('phase2_completed') is not None else latest_summary.get('phase2_completed') or 0)
                 phase2_total = int(progress.get('phase2_total') if progress.get('phase2_total') is not None else latest_summary.get('phase2_total') or 0)
                 if current_phase == 2 and phase2_completed > 0:
-                    phase2_total = max(phase2_total, phase2_completed, current_items)
+                    phase2_total = max(phase2_total, phase2_completed)
 
                 cutoff = now - 10 * 60
                 if current_phase == 2:
@@ -2630,35 +2827,48 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
                 if current_phase == 2 and phase2_total > 0:
                     progress_percent = max(progress_percent, round((phase2_completed / phase2_total) * 100, 1))
 
+                progress_summary = {
+                    'phase': current_phase,
+                    'phase_name': phase_name,
+                    'target_count': total_target_count,
+                    'completed_targets': completed_targets,
+                    'total_targets': total_targets_local,
+                    'current_items': current_items,
+                    'progress_percent': progress_percent,
+                    'last_target_url': str(progress.get('last_target_url') or ''),
+                    'last_target_items': last_target_items,
+                    'preview_items': preview_items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT],
+                    'checkpoint_items': checkpoint_items,
+                    'recent_targets_per_min': round(recent_targets_per_min, 2),
+                    'recent_items_per_min': round(recent_items_per_min, 2),
+                    'recent_rate_window_seconds': 600,
+                    'phase1_completed': completed_targets,
+                    'phase1_total': total_targets_local,
+                    'phase1_speed': f"{recent_targets_per_min:.1f} cats/min" if recent_targets_per_min > 0 else "~45 cats/min",
+                    'phase1_eta': f"{phase1_eta_min:.1f}m" if phase1_eta_min > 0 else "0m",
+                    'phase2_completed': phase2_completed,
+                    'phase2_total': phase2_total,
+                    'phase2_speed': f"{recent_items_per_min:.0f} items/min" if recent_items_per_min > 0 else "Starting...",
+                    'phase2_eta': f"{phase2_eta_min:.1f}m" if phase2_eta_min > 0 else "0m",
+                    'status_message': str(progress.get('status_message') or ''),
+                    'activity_label': str(progress.get('activity_label') or phase_name),
+                }
+                progress_summary_cache.update(progress_summary)
+                progress_completed = phase2_completed if current_phase == 2 else completed_targets
+                progress_total = phase2_total if current_phase == 2 else total_targets_local
+                if not automation_progress_write_due(
+                    progress_write_state,
+                    now=now,
+                    phase=current_phase,
+                    completed=progress_completed,
+                    total=progress_total,
+                ):
+                    return
+
                 db_manager.update_automation_run_progress(
                     run_record['id'],
                     items_count=current_items,
-                    summary={
-                        'phase': current_phase,
-                        'phase_name': phase_name,
-                        'target_count': total_target_count,
-                        'completed_targets': completed_targets,
-                        'total_targets': total_targets_local,
-                        'current_items': current_items,
-                        'progress_percent': progress_percent,
-                        'last_target_url': str(progress.get('last_target_url') or ''),
-                        'last_target_items': last_target_items,
-                        'preview_items': preview_items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT],
-                        'checkpoint_items': checkpoint_items,
-                        'recent_targets_per_min': round(recent_targets_per_min, 2),
-                        'recent_items_per_min': round(recent_items_per_min, 2),
-                        'recent_rate_window_seconds': 600,
-                        'phase1_completed': completed_targets,
-                        'phase1_total': total_targets_local,
-                        'phase1_speed': f"{recent_targets_per_min:.1f} cats/min" if recent_targets_per_min > 0 else "~45 cats/min",
-                        'phase1_eta': f"{phase1_eta_min:.1f}m" if phase1_eta_min > 0 else "0m",
-                        'phase2_completed': phase2_completed,
-                        'phase2_total': phase2_total,
-                        'phase2_speed': f"{recent_items_per_min:.0f} items/min" if recent_items_per_min > 0 else "~440 items/min",
-                        'phase2_eta': f"{phase2_eta_min:.1f}m" if phase2_eta_min > 0 else "0m",
-                        'status_message': str(progress.get('status_message') or ''),
-                        'activity_label': str(progress.get('activity_label') or phase_name),
-                    },
+                    summary=progress_summary,
                 )
 
             target_labels = {str(target.get('url') or '').strip(): str(target.get('label') or '').strip() for target in active_targets}
@@ -2681,6 +2891,7 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
                 automation_job=workflow_job,
                 previous_history_override=previous_history,
                 progress_callback=automation_progress_callback,
+                stop_check=automation_stop_check,
             )
             summary = build_automation_run_summary(target_urls, result.get('comparison') or {}, result.get('price_drops') or [])
             latest_run_for_summary = db_manager.get_automation_run(run_record['id']) or {}
@@ -2767,6 +2978,103 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
     return True, ''
 
 
+def _resume_worker_lock_path(run_id: int) -> Path:
+    return APP_ROOT / '.tmp' / f'resume-run-{int(run_id)}.lock'
+
+
+def _resume_worker_pid_is_alive(pid: int) -> bool:
+    try:
+        normalized_pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if normalized_pid <= 0:
+        return False
+
+    if os.name == 'nt':
+        try:
+            result = subprocess.run(
+                ['tasklist', '/FI', f'PID eq {normalized_pid}', '/NH'],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+            return str(normalized_pid) in (result.stdout or '')
+        except Exception:
+            return False
+
+    try:
+        os.kill(normalized_pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _read_resume_worker_lock(run_id: int) -> Dict[str, object]:
+    lock_path = _resume_worker_lock_path(run_id)
+    if not lock_path.exists():
+        return {}
+    try:
+        data = json.loads(lock_path.read_text(encoding='utf-8') or '{}')
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _resume_worker_is_locked(run_id: int) -> bool:
+    with AUTOMATION_RESUME_PROCESSES_LOCK:
+        proc = AUTOMATION_RESUME_PROCESSES.get(int(run_id))
+        if proc and proc.poll() is None:
+            return True
+        AUTOMATION_RESUME_PROCESSES.pop(int(run_id), None)
+
+    lock_path = _resume_worker_lock_path(run_id)
+    lock_data = _read_resume_worker_lock(run_id)
+    pid = int(lock_data.get('pid') or 0)
+    if pid and _resume_worker_pid_is_alive(pid):
+        return True
+    try:
+        lock_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+    return False
+
+
+def _write_resume_worker_lock(run_id: int, pid: int) -> None:
+    lock_path = _resume_worker_lock_path(run_id)
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path.write_text(
+            json.dumps(
+                {
+                    'run_id': int(run_id),
+                    'pid': int(pid),
+                    'started_at': datetime.datetime.now(pytz.timezone('Asia/Karachi')).isoformat(),
+                },
+                ensure_ascii=True,
+                separators=(',', ':'),
+            ),
+            encoding='utf-8',
+        )
+    except Exception as exc:
+        app.logger.warning(f"[automation] Could not write resume worker lock for run {run_id}: {exc}")
+
+
+def _watch_resume_worker(run_id: int, proc: subprocess.Popen) -> None:
+    try:
+        proc.wait()
+    finally:
+        with AUTOMATION_RESUME_PROCESSES_LOCK:
+            if AUTOMATION_RESUME_PROCESSES.get(int(run_id)) is proc:
+                AUTOMATION_RESUME_PROCESSES.pop(int(run_id), None)
+        try:
+            lock_data = _read_resume_worker_lock(run_id)
+            if int(lock_data.get('pid') or 0) == int(proc.pid):
+                _resume_worker_lock_path(run_id).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
     try:
         normalized_run_id = int(run_id)
@@ -2782,6 +3090,8 @@ def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
         return False, 'This automation run is already running.'
     if status == 'completed':
         return False, 'Completed runs already have a saved snapshot. Start a new run only when you want a fresh comparison.'
+    if _resume_worker_is_locked(normalized_run_id):
+        return False, 'This automation run already has a resume worker still shutting down. Wait a moment and refresh.'
 
     script_path = APP_ROOT / 'scripts' / 'resume_automation_run.py'
     if not script_path.exists():
@@ -2797,7 +3107,8 @@ def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
     env.setdefault('AUTOMATION_RECOVER_RUNNING', '0')
 
     if str(run.get('scraper_key') or '').strip().lower() == 'xcell':
-        env.setdefault('XCELL_MAX_WORKERS', '16')
+        env.setdefault('XCELL_MAX_WORKERS', '24')
+        env.setdefault('SCRAPER_XCELL_DETAIL_WORKERS', '64')
         env.setdefault('SCRAPER_USE_BROWSER', '0')
 
     try:
@@ -2805,7 +3116,7 @@ def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
         if not claimed_run:
             return False, 'This automation run is already running or is no longer resumable.'
         with open(stdout_path, 'ab') as stdout_handle, open(stderr_path, 'ab') as stderr_handle:
-            subprocess.Popen(
+            proc = subprocess.Popen(
                 [sys.executable, '-u', str(script_path), str(normalized_run_id)],
                 cwd=str(APP_ROOT),
                 env=env,
@@ -2813,6 +3124,15 @@ def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
                 stderr=stderr_handle,
                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
             )
+        with AUTOMATION_RESUME_PROCESSES_LOCK:
+            AUTOMATION_RESUME_PROCESSES[normalized_run_id] = proc
+        _write_resume_worker_lock(normalized_run_id, proc.pid)
+        threading.Thread(
+            target=_watch_resume_worker,
+            args=(normalized_run_id, proc),
+            name=f'automation-resume-watch-{normalized_run_id}',
+            daemon=True,
+        ).start()
         return True, ''
     except Exception as exc:
         db_manager.fail_automation_run_resume_launch(normalized_run_id, str(exc))

@@ -12,7 +12,10 @@ from scrapers.phonelcdparts_scraper_engine import is_category_page as is_phonelc
 from scrapers.phonelcdparts_scraper_engine import is_product_page as is_phonelcd_product_page
 from scrapers.phonelcdparts_scraper_engine import scrape_product_page as scrape_phonelcd_product_page
 from scrapers.txparts_scraper_engine import _looks_like_block_page as txparts_looks_blocked
-from scrapers.xcell_scraper_engine import extract_items_from_category_soup as extract_xcell_items
+from scrapers.xcell_scraper_engine import (
+    extract_items_from_category_soup as extract_xcell_items,
+    parse_xcell_product_detail_fast,
+)
 from scrapers.registry import detect_scraper_key
 
 
@@ -195,6 +198,32 @@ def test_xcellparts_extracts_new_rendered_link_grid_without_product_classes():
     assert items[1].original == 95.0
 
 
+def test_xcellparts_fast_detail_parser_extracts_required_metadata_without_dom():
+    html = """
+    <html><head>
+      <link rel="canonical" href="https://xcellparts.com/product/iphone-15-screen/">
+      <meta name="description" content="Premium replacement display for repair shops.">
+      <meta property="og:image" content="https://xcellparts.com/uploads/iphone-15.jpg">
+    </head><body>
+      <h1 class="product_title entry-title">iPhone 15 Premium OLED Assembly</h1>
+      <span class="woocommerce-Price-amount amount"><bdi><span>$</span>89.50</bdi></span>
+      <span class="xcell-pdp-copy" data-xcell-copy="IP15-OLED-PREM">SKU</span>
+      <p class="stock in-stock">12 in stock</p>
+      <div class="woocommerce-product-details__short-description"><p>Bright OLED panel with frame.</p></div>
+    </body></html>
+    """
+
+    item = parse_xcell_product_detail_fast(html, "https://xcellparts.com/product/iphone-15-screen/", {})
+
+    assert item is not None
+    assert item.title == "iPhone 15 Premium OLED Assembly"
+    assert item.sku == "IP15-OLED-PREM"
+    assert item.original == 89.5
+    assert item.stock_status == "12 in stock"
+    assert item.description == "Bright OLED panel with frame."
+    assert item.image_url.endswith("/uploads/iphone-15.jpg")
+
+
 def test_phonelcdparts_hyva_listing_card_extracts_product_fields():
     html = """
     <ol>
@@ -226,6 +255,46 @@ def test_phonelcdparts_hyva_listing_card_extracts_product_fields():
     assert items[0].image_url.endswith("/phone.jpg")
     assert items[0].original == 14.5
     assert items[0].sku == "11-QV7-INC"
+
+
+def test_phonelcdparts_parent_category_expands_direct_child_categories():
+    parent_url = "https://www.phonelcdparts.com/apple/best-sellers/qmax"
+    child_url = f"{parent_url}/apple-batteries"
+    parent_html = f"""
+    <html><body class="catalog-category-view"><main>
+      <a href="{child_url}"><button>View Products</button></a>
+    </main></body></html>
+    """
+    child_html = """
+    <html><body class="catalog-category-view">
+      <ol><li class="item product product-item">
+        <a class="product-item-link" href="/qmax-iphone-battery" title="QMAX iPhone Battery">QMAX iPhone Battery</a>
+        <span data-price-amount="19.5">$19.50</span>
+        <span data-product-sku="QMAX-IP-BAT"></span>
+      </li></ol>
+    </body></html>
+    """
+
+    class MappingSession(FakeSession):
+        def __init__(self):
+            super().__init__("")
+            self.responses = {parent_url: parent_html, child_url: child_html}
+
+        def get(self, url, **_kwargs):
+            return FakeResponse(url, self.responses[url])
+
+    items = phonelcdparts_scraper_engine.scrape_url(
+        MappingSession(),
+        parent_url,
+        {},
+        crawl_pagination=True,
+        max_pages=1,
+        delay_ms=0,
+    )
+
+    assert len(items) == 1
+    assert items[0].title == "QMAX iPhone Battery"
+    assert items[0].sku == "QMAX-IP-BAT"
 
 
 def test_phonelcdparts_product_page_ignores_related_product_cards():

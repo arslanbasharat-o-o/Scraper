@@ -923,7 +923,7 @@ def scrape_category_page(sess, final_url: str, html: str, rules: Dict, logger=No
 
 
 def scrape_category_all_pages(sess, start_url: str, rules: Dict, max_pages: int = 10,  # Reduced default from 20 to 10
-                              delay_ms: int = 50, logger=None):
+                              delay_ms: int = 50, logger=None, initial_pair: Optional[Tuple[str, str]] = None):
     """
     Scrape a category with pagination support.
     Automatically follows 'Next' links up to max_pages.
@@ -942,7 +942,8 @@ def scrape_category_all_pages(sess, start_url: str, rules: Dict, max_pages: int 
         if logger:
             logger.info(f"[mobilesentrix] Scraping category page {pages}: {url}")
 
-        pair = get_html_safe(sess, url, delay_ms)
+        pair = initial_pair if pages == 1 and initial_pair is not None else get_html_safe(sess, url, delay_ms)
+        initial_pair = None
         if pair[0] is None:
             if logger:
                 logger.error(
@@ -1075,7 +1076,8 @@ def scrape_url(sess, url: str, rules: Dict, crawl_pagination: bool,
     if page_is_category:
         if crawl_pagination:
             items = scrape_category_all_pages(sess, final_url, rules,
-                                             max_pages=max_pages, delay_ms=delay_ms, logger=logger)
+                                             max_pages=max_pages, delay_ms=delay_ms, logger=logger,
+                                             initial_pair=(final_url, html))
         else:
             items = scrape_category_page(sess, final_url, html, rules, logger=logger)
         if logger:

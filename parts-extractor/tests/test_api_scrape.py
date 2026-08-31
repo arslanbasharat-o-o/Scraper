@@ -1,6 +1,8 @@
 import importlib
 import sys
 
+import pytest
+
 
 def _fresh_app(tmp_path, monkeypatch):
     site_dbs = tmp_path / "site_dbs"
@@ -240,6 +242,234 @@ def test_phase_two_pause_aborts_detail_enrichment(tmp_path, monkeypatch):
         assert "Paused during detail enrichment" in str(exc)
     else:
         raise AssertionError("Phase 2 enrichment swallowed AutomationRunPaused")
+
+
+def test_parallel_phase_one_pause_is_not_swallowed_as_target_error(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(app_module, "build_session", lambda **_kwargs: (object(), False))
+    monkeypatch.setattr(
+        app_module,
+        "scrape_url",
+        lambda _sess, url, *_args, **_kwargs: [app_module.Item(
+            url=f"{url}/product",
+            site="example.com",
+            title="Paused Product",
+            price_value=1.0,
+            price_currency="USD",
+            price_text="$1.00",
+            discounted_value=1.0,
+            discounted_formatted="$1.00",
+            original_formatted="$1.00",
+            source="test",
+            image_url="",
+        )],
+    )
+
+    def pause_on_progress(_progress):
+        raise app_module.AutomationRunPaused("Paused during category crawl.")
+
+    with pytest.raises(app_module.AutomationRunPaused):
+        app_module.execute_scrape_workflow(
+            ["https://example.com/category-a", "https://example.com/category-b"],
+            use_parallel=True,
+            enrich_details=False,
+            progress_callback=pause_on_progress,
+        )
+
+
+def test_detail_stop_check_aborts_enrichment_before_next_request(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    items = [
+        app_module.Item(
+            url=f"https://example.com/product-{idx}",
+            site="example.com",
+            title=f"Product {idx}",
+            price_value=1.0,
+            price_currency="USD",
+            price_text="$1.00",
+            discounted_value=1.0,
+            discounted_formatted="$1.00",
+            original_formatted="$1.00",
+            source="test",
+            image_url="",
+        )
+        for idx in range(2)
+    ]
+
+    monkeypatch.setattr(app_module, "build_session", lambda **_kwargs: (object(), False))
+    monkeypatch.setattr(app_module, "enrich_standard_item_details", lambda _session, item, *_args, **_kwargs: item)
+
+    def stop_immediately():
+        raise app_module.AutomationRunPaused("Paused before detail request.")
+
+    with pytest.raises(app_module.AutomationRunPaused):
+        app_module.enrich_scraped_items(
+            items,
+            rules={},
+            retries=1,
+            verify_ssl=True,
+            use_curl=True,
+            enrich_details=True,
+            stop_check=stop_immediately,
+        )
+
+
+def test_supplier_worker_profiles_restore_fast_http_concurrency(tmp_path, monkeypatch):
+    monkeypatch.delenv("SCRAPER_XCELL_DETAIL_WORKERS", raising=False)
+    monkeypatch.delenv("XCELL_MAX_WORKERS", raising=False)
+    monkeypatch.delenv("SCRAPER_XCELL_MAX_WORKERS", raising=False)
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    assert app_module.resolve_scraper_worker_limit("xcell", "detail") == 64
+    assert app_module.resolve_scraper_worker_limit("phonelcdparts", "detail") == 40
+    assert app_module.resolve_scraper_worker_limit("parts4cells", "detail") == 32
+    assert app_module.resolve_scraper_worker_limit("gadgetfix", "detail") == 24
+    assert app_module.resolve_scraper_worker_limit("standard", "detail") == 8
+    assert app_module.resolve_scraper_worker_limit("mobilesentrix_canada", "detail") == 4
+    assert app_module.resolve_scraper_worker_limit("standard", "phase1") == 24
+
+    monkeypatch.setenv("SCRAPER_XCELL_DETAIL_WORKERS", "999")
+    assert app_module.resolve_scraper_worker_limit("xcell", "detail") == app_module.SCRAPER_WORKER_HARD_CAP
+
+
+def test_phase_two_reuses_phase_one_supplier_cookies(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    observed_cookies = []
+
+    class Cookies:
+        def __init__(self):
+            self.values = {}
+
+        def update(self, values):
+            self.values.update(values)
+
+    class Session:
+        def __init__(self):
+            self.cookies = Cookies()
+
+        def close(self):
+            return None
+
+    def fake_enrich(session, item, *_args, **_kwargs):
+        observed_cookies.append(dict(session.cookies.values))
+        return item
+
+    monkeypatch.setattr(app_module, "build_session", lambda **_kwargs: (Session(), False))
+    monkeypatch.setattr(app_module, "enrich_standard_item_details", fake_enrich)
+    item = app_module.Item(
+        url="https://example.com/product",
+        site="example.com",
+        title="Cookie Product",
+        price_value=1.0,
+        price_currency="USD",
+        price_text="$1.00",
+        discounted_value=1.0,
+        discounted_formatted="$1.00",
+        original_formatted="$1.00",
+        source="test",
+        image_url="",
+    )
+
+    app_module.enrich_scraped_items(
+        [item],
+        rules={},
+        retries=1,
+        verify_ssl=True,
+        use_curl=True,
+        session_cookies_by_engine={"standard": {"supplier_session": "ready"}},
+    )
+
+    assert observed_cookies == [{"supplier_session": "ready"}]
+
+
+def test_resume_checkpoint_items_skip_completed_targets_and_still_enrich(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    scraped_urls = []
+    enriched_urls = []
+
+    class Session:
+        def close(self):
+            return None
+
+    def fake_scrape(_session, url, *_args, **_kwargs):
+        scraped_urls.append(url)
+        return [app_module.Item(
+            url=f"{url}/product-b",
+            site="example.com",
+            title="Product B",
+            price_value=2.0,
+            price_currency="USD",
+            price_text="$2.00",
+            discounted_value=2.0,
+            discounted_formatted="$2.00",
+            original_formatted="$2.00",
+            source="test",
+            image_url="",
+        )]
+
+    def fake_enrich(_session, item, *_args, **_kwargs):
+        enriched_urls.append(item.url)
+        item.sku = f"SKU-{len(enriched_urls)}"
+        return item
+
+    monkeypatch.setattr(app_module, "build_session", lambda **_kwargs: (Session(), False))
+    monkeypatch.setattr(app_module, "scrape_url", fake_scrape)
+    monkeypatch.setattr(app_module, "enrich_standard_item_details", fake_enrich)
+
+    completed_url = "https://example.com/category-a"
+    pending_url = "https://example.com/category-b"
+    checkpoint_item = {
+        "url": f"{completed_url}/product-a",
+        "site": "example.com",
+        "title": "Product A",
+        "price_value": 1.0,
+        "price_currency": "USD",
+        "price_text": "$1.00",
+        "discounted_value": 1.0,
+        "discounted_formatted": "$1.00",
+        "original_formatted": "$1.00",
+        "source": "checkpoint",
+        "image_url": "",
+    }
+
+    result = app_module.execute_scrape_workflow(
+        [completed_url, pending_url],
+        use_parallel=False,
+        enrich_details=True,
+        initial_items=[checkpoint_item],
+        skip_target_urls=[completed_url],
+    )
+
+    assert scraped_urls == [pending_url]
+    assert set(enriched_urls) == {checkpoint_item["url"], f"{pending_url}/product-b"}
+    assert result["count"] == 2
+    assert all(item["sku"] for item in result["items"])
+
+
+def test_progress_writes_are_throttled_but_phase_boundaries_are_forced(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    state = {}
+
+    assert app_module.automation_progress_write_due(state, now=1.0, phase=2, completed=0, total=100)
+    assert not app_module.automation_progress_write_due(state, now=1.1, phase=2, completed=1, total=100)
+    assert app_module.automation_progress_write_due(state, now=1.3, phase=2, completed=2, total=100)
+    assert app_module.automation_progress_write_due(state, now=1.31, phase=2, completed=100, total=100)
+    assert app_module.automation_progress_write_due(state, now=1.32, phase=3, completed=100, total=100)
+
+
+def test_resume_worker_lock_blocks_duplicate_resume(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_module, "APP_ROOT", tmp_path)
+
+    app_module._write_resume_worker_lock(52, 12345)
+    monkeypatch.setattr(app_module, "_resume_worker_pid_is_alive", lambda pid: int(pid) == 12345)
+
+    assert app_module._resume_worker_is_locked(52) is True
+
+    monkeypatch.setattr(app_module, "_resume_worker_pid_is_alive", lambda _pid: False)
+    assert app_module._resume_worker_is_locked(52) is False
+    assert not app_module._resume_worker_lock_path(52).exists()
 
 
 def test_sparse_target_guard_blocks_bad_history_save(tmp_path, monkeypatch):

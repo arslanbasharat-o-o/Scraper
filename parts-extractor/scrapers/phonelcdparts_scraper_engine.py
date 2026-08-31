@@ -274,7 +274,10 @@ def extract_product_from_listing(card, base_url: str) -> Optional[Item]:
 
 
 def extract_items_from_soup(soup: BeautifulSoup, url: str, rules: dict, logger=None) -> List[Item]:
-    cards = soup.select('li.item.product.product-item, li.product-item, form.item.product.product-item, .product_addtocart_form')
+    cards = soup.select(
+        'li.item.product.product-item, li.product-item, '
+        'div.item.product.product-item, form.item.product.product-item, .product_addtocart_form'
+    )
     if logger:
         logger.info(f"[phonelcdparts] Found {len(cards)} product card(s) at {url}")
 
@@ -288,6 +291,30 @@ def extract_items_from_soup(soup: BeautifulSoup, url: str, rules: dict, logger=N
         item.discounted_formatted = fmt_price(adjusted)
         items_by_url[item.url] = item
     return list(items_by_url.values())
+
+
+def extract_subcategory_urls(soup: BeautifulSoup, current_url: str) -> List[str]:
+    """Return direct child category links from parent category landing pages."""
+    current = urlparse(current_url)
+    current_path = current.path.rstrip('/') + '/'
+    discovered = []
+    seen = set()
+    for anchor in soup.select('main a[href], #maincontent a[href], .columns a[href]'):
+        href = str(anchor.get('href') or '').strip()
+        if not href or href.startswith(('#', 'javascript:', 'mailto:', 'tel:')):
+            continue
+        child_url = urljoin(current_url, href)
+        parsed = urlparse(child_url)
+        if parsed.netloc.lower() != current.netloc.lower():
+            continue
+        child_path = parsed.path.rstrip('/') + '/'
+        if child_path == current_path or not child_path.startswith(current_path):
+            continue
+        normalized = urlunparse(parsed._replace(fragment=''))
+        if normalized not in seen:
+            seen.add(normalized)
+            discovered.append(normalized)
+    return discovered
 
 
 def find_next_page_url(soup: BeautifulSoup, current_url: str) -> Optional[str]:
@@ -315,7 +342,7 @@ def scrape_category_page(session, url: str, rules: dict, logger=None) -> List[It
     return extract_items_from_soup(soup, url, rules, logger)
 
 
-def scrape_category_all_pages(session, url: str, rules: dict, max_pages: int = 20, delay_ms: int = 200, logger=None) -> List[Item]:
+def scrape_category_all_pages(session, url: str, rules: dict, max_pages: int = 20, delay_ms: int = 200, logger=None, initial_html: str | None = None, expand_subcategories: bool = True) -> List[Item]:
     items_by_url = {}
     current_url = url
     seen_pages = set()
@@ -323,7 +350,8 @@ def scrape_category_all_pages(session, url: str, rules: dict, max_pages: int = 2
 
     while current_url and page_num <= max_pages and current_url not in seen_pages:
         seen_pages.add(current_url)
-        html = get_html(session, current_url, logger)
+        html = initial_html if page_num == 1 and initial_html is not None else get_html(session, current_url, logger)
+        initial_html = None
         if not html:
             break
         soup = BeautifulSoup(html, 'html.parser')
@@ -331,6 +359,21 @@ def scrape_category_all_pages(session, url: str, rules: dict, max_pages: int = 2
         for item in page_items:
             items_by_url[item.url] = item
         if not page_items:
+            child_urls = extract_subcategory_urls(soup, current_url) if expand_subcategories else []
+            if child_urls and logger:
+                logger.info(f"[phonelcdparts] Expanding {len(child_urls)} child category link(s) from {current_url}")
+            for child_url in child_urls:
+                child_items = scrape_category_all_pages(
+                    session,
+                    child_url,
+                    rules,
+                    max_pages=max_pages,
+                    delay_ms=delay_ms,
+                    logger=logger,
+                    expand_subcategories=False,
+                )
+                for item in child_items:
+                    items_by_url[item.url] = item
             break
 
         next_url = find_next_page_url(soup, current_url)
@@ -459,5 +502,13 @@ def scrape_url(session, url: str, rules: dict, crawl_pagination: bool = True,
         return [item] if item else []
 
     if crawl_pagination:
-        return scrape_category_all_pages(session, url, rules, max_pages=max_pages, delay_ms=delay_ms, logger=logger)
+        return scrape_category_all_pages(
+            session,
+            url,
+            rules,
+            max_pages=max_pages,
+            delay_ms=delay_ms,
+            logger=logger,
+            initial_html=html,
+        )
     return extract_items_from_soup(soup, url, rules, logger)

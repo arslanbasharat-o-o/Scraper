@@ -13,12 +13,12 @@ if str(ROOT) not in sys.path:
 from app import (  # noqa: E402
     AUTOMATION_CHECKPOINT_ITEM_LIMIT,
     AutomationRunPaused,
+    automation_progress_write_due,
     app,
     build_automation_run_summary,
-    build_public_history_id,
-    build_session_comparison,
     db_manager,
     execute_scrape_workflow,
+    make_automation_run_stop_checker,
     save_automation_partial_history,
     validate_supplier_remote_urls,
 )
@@ -90,6 +90,10 @@ def resume_run(run_id: int) -> int:
             history_items = checkpoint_history.get("items") if isinstance((checkpoint_history or {}).get("items"), list) else []
             if len(history_items) >= base_items_count:
                 base_preview_items = history_items[:base_items_count]
+        checkpoint_items = db_manager.get_automation_run_items(run_id)
+        if checkpoint_items:
+            base_preview_items = checkpoint_items
+            base_items_count = len(checkpoint_items)
     remaining_target_urls = target_urls[base_completed_targets:]
     checkpoint_only_phase1 = base_items_count > 0 and base_completed_targets <= 0
     phase_name = "Restoring Product Checkpoint" if checkpoint_only_phase1 else "Phase 1: Category Crawling"
@@ -110,7 +114,7 @@ def resume_run(run_id: int) -> int:
             "resumed_run": True,
             "resumed_from_status": run.get("status") or "",
             "resumed_from_checkpoint": resume_from_checkpoint,
-            "preview_items": base_preview_items[:base_items_count],
+            "preview_items": base_preview_items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT],
             "phase1_completed": base_completed_targets,
             "phase1_total": total_target_count,
             "status_message": "Restoring saved products while category completion catches up." if checkpoint_only_phase1 else "Resuming category crawling.",
@@ -119,76 +123,135 @@ def resume_run(run_id: int) -> int:
     )
 
     recent_progress = []
+    recent_enrich_progress = []
+    automation_stop_check = make_automation_run_stop_checker(run_id)
+    progress_write_state: Dict[str, object] = {}
+    progress_summary_cache: Dict[str, object] = dict(original_summary)
 
     def progress_callback(progress: Dict[str, object]):
-        latest_run = db_manager.get_automation_run(run_id)
-        if str((latest_run or {}).get("status") or "").strip().lower() == "paused":
-            raise AutomationRunPaused("Automation run paused by user.")
+        automation_stop_check()
         now = time.time()
-        completed_targets = base_completed_targets + int(progress.get("completed_targets") or 0)
+        current_phase = int(progress.get("phase") or (2 if progress.get("phase2_total") else 1))
         total_targets_local = max(1, total_target_count)
-        current_items = base_items_count + int(progress.get("current_items") or 0)
-        checkpoint_only_phase1 = current_items > 0 and completed_targets <= 0
-        phase_name = "Restoring Product Checkpoint" if checkpoint_only_phase1 else "Phase 1: Category Crawling"
+        completed_targets = total_target_count if current_phase == 2 else int(
+            progress.get("completed_targets") if progress.get("completed_targets") is not None else base_completed_targets
+        )
+        current_items = int(progress.get("current_items") if progress.get("current_items") is not None else base_items_count)
+        checkpoint_only_phase1 = current_phase == 1 and current_items > 0 and completed_targets <= 0
+        phase_name = str(
+            progress.get("phase_name")
+            or ("Phase 2: Product SKU & Detail Scan" if current_phase == 2 else "Phase 1: Category Crawling")
+        )
+        if checkpoint_only_phase1:
+            phase_name = "Restoring Product Checkpoint"
         last_target_items = int(progress.get("last_target_items") or 0)
         preview_items = progress.get("preview_items") if isinstance(progress.get("preview_items"), list) else []
-        checkpoint_preview_items = base_preview_items[:base_items_count]
-        checkpoint_preview_items.extend(preview_items)
-        recent_progress.append((now, completed_targets, current_items))
+        checkpoint_preview_items = preview_items or base_preview_items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT]
         cutoff = now - 10 * 60
-        while len(recent_progress) > 1 and recent_progress[0][0] < cutoff:
-            recent_progress.pop(0)
-        recent_targets_per_min = 0.0
-        recent_items_per_min = 0.0
+        phase2_completed = int(progress.get("phase2_completed") or 0)
+        phase2_total = int(progress.get("phase2_total") or 0)
+        if current_phase == 2 and phase2_completed > 0:
+            phase2_total = max(phase2_total, phase2_completed)
+
+        if current_phase == 2:
+            recent_enrich_progress.append((now, phase2_completed))
+            while len(recent_enrich_progress) > 1 and recent_enrich_progress[0][0] < cutoff:
+                recent_enrich_progress.pop(0)
+        else:
+            recent_progress.append((now, completed_targets, current_items))
+            while len(recent_progress) > 1 and recent_progress[0][0] < cutoff:
+                recent_progress.pop(0)
+
+        recent_targets_per_min = float(progress_summary_cache.get("recent_targets_per_min") or 0.0)
+        recent_items_per_min = float(progress_summary_cache.get("recent_items_per_min") or 0.0)
         if len(recent_progress) >= 2:
             first_time, first_targets, first_items = recent_progress[0]
             elapsed_minutes = max((now - first_time) / 60.0, 0.001)
             recent_targets_per_min = max(0.0, (completed_targets - first_targets) / elapsed_minutes)
             recent_items_per_min = max(0.0, (current_items - first_items) / elapsed_minutes)
+        if len(recent_enrich_progress) >= 2:
+            first_time, first_enriched = recent_enrich_progress[0]
+            elapsed_minutes = max((now - first_time) / 60.0, 0.001)
+            recent_items_per_min = max(0.0, (phase2_completed - first_enriched) / elapsed_minutes)
+
+        if progress.get("progress_percent") is not None:
+            try:
+                progress_percent = max(0.0, min(100.0, round(float(progress.get("progress_percent")), 1)))
+            except (TypeError, ValueError):
+                progress_percent = 0.0
+        elif current_phase == 2:
+            progress_percent = round((phase2_completed / max(1, phase2_total)) * 100, 1) if phase2_total else 0.0
+        else:
+            progress_percent = 1.0 if checkpoint_only_phase1 else round((completed_targets / total_targets_local) * 100, 1)
+
+        progress_summary = {
+            "phase": current_phase,
+            "phase_name": phase_name,
+            "target_count": total_target_count,
+            "completed_targets": completed_targets,
+            "total_targets": total_targets_local,
+            "current_items": current_items,
+            "progress_percent": progress_percent,
+            "last_target_url": str(progress.get("last_target_url") or ""),
+            "last_target_items": last_target_items,
+            "preview_items": checkpoint_preview_items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT],
+            "resumed_run": True,
+            "resumed_from_checkpoint": resume_from_checkpoint,
+            "recent_targets_per_min": round(recent_targets_per_min, 2),
+            "recent_items_per_min": round(recent_items_per_min, 2),
+            "recent_rate_window_seconds": 600,
+            "phase1_completed": completed_targets,
+            "phase1_total": total_targets_local,
+            "phase2_completed": phase2_completed,
+            "phase2_total": phase2_total,
+            "phase2_speed": f"{recent_items_per_min:.0f} items/min" if current_phase == 2 and recent_items_per_min > 0 else "Starting...",
+            "status_message": str(
+                progress.get("status_message")
+                or ("Restoring saved products while category completion catches up." if checkpoint_only_phase1 else ("Enriching product details." if current_phase == 2 else "Resuming category crawling."))
+            ),
+            "activity_label": str(progress.get("activity_label") or phase_name),
+        }
+        progress_summary_cache.update(progress_summary)
+        progress_completed = phase2_completed if current_phase == 2 else completed_targets
+        progress_total = phase2_total if current_phase == 2 else total_targets_local
+        if not automation_progress_write_due(
+            progress_write_state,
+            now=now,
+            phase=current_phase,
+            completed=progress_completed,
+            total=progress_total,
+        ):
+            return
+
         db_manager.update_automation_run_progress(
             run_id,
             items_count=current_items,
-            summary={
-                "phase": 1,
-                "phase_name": phase_name,
-                "target_count": total_target_count,
-                "completed_targets": completed_targets,
-                "total_targets": total_targets_local,
-                "current_items": current_items,
-                "progress_percent": 1.0 if checkpoint_only_phase1 else round((completed_targets / total_targets_local) * 100, 1),
-                "last_target_url": str(progress.get("last_target_url") or ""),
-                "last_target_items": last_target_items,
-                "preview_items": checkpoint_preview_items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT],
-                "resumed_run": True,
-                "resumed_from_checkpoint": resume_from_checkpoint,
-                "recent_targets_per_min": round(recent_targets_per_min, 2),
-                "recent_items_per_min": round(recent_items_per_min, 2),
-                "recent_rate_window_seconds": 600,
-                "phase1_completed": completed_targets,
-                "phase1_total": total_targets_local,
-                "status_message": "Restoring saved products while category completion catches up." if checkpoint_only_phase1 else "Resuming category crawling.",
-                "activity_label": phase_name,
-            },
+            summary=progress_summary,
         )
 
     try:
+        workflow_job = dict(job)
+        workflow_job["_active_run_id"] = run_id
         result = execute_scrape_workflow(
-            remaining_target_urls,
+            target_urls,
             crawl_pagination=job.get("crawl_pagination", True),
             max_pages=job.get("max_pages", 10),
             delay_ms=job.get("delay_ms", 50),
             retries=job.get("retries", 1),
             verify_ssl=job.get("verify_ssl", True),
             use_curl=True,
-            use_browser=bool(job.get("use_browser", False)),
+            use_browser=_truthy_value(job.get("use_browser", False)),
             use_parallel=job.get("use_parallel", True),
             enrich_details=job.get("enrich_details", True),
             rules=job.get("rules", {}),
             drop_pct=job.get("drop_pct", 10.0),
             target_labels=_target_labels(targets),
-            automation_job=job,
+            automation_job=workflow_job,
             previous_history_override=previous_history,
             progress_callback=progress_callback,
+            stop_check=automation_stop_check,
+            initial_items=base_preview_items if resume_from_checkpoint else None,
+            skip_target_urls=target_urls[:base_completed_targets] if resume_from_checkpoint else None,
         )
     except AutomationRunPaused as exc:
         db_manager.pause_automation_run(run_id, reason=str(exc) or "Automation run paused.")
@@ -223,46 +286,15 @@ def resume_run(run_id: int) -> int:
     )
     summary["resumed_run"] = True
     summary["resumed_from_checkpoint"] = resume_from_checkpoint
-    summary["completed_targets"] = base_completed_targets + len(remaining_target_urls)
+    summary["completed_targets"] = total_target_count
     summary["total_targets"] = total_target_count
-    result_count = base_items_count + int(result.get("count") or 0)
+    result_count = int(result.get("count") or 0)
     summary["current_items"] = result_count
     summary["progress_percent"] = round((summary["completed_targets"] / max(1, total_target_count)) * 100, 1)
     workflow_error = str(result.get("error") or "").strip()
     no_items_error = ""
     if remaining_target_urls and int(result.get("count") or 0) == 0:
         no_items_error = "No products were scraped from the selected category targets."
-
-    if resume_from_checkpoint and not workflow_error and not no_items_error:
-        combined_items = [dict(item) for item in base_preview_items if isinstance(item, dict)]
-        combined_items.extend(dict(item) for item in (result.get("items") or []) if isinstance(item, dict))
-        combined_history_id = str(int(time.time() * 1000))
-        history_rules = dict(job.get("rules", {}) or {})
-        history_rules["_automation_job_id"] = job.get("id")
-        history_rules["_automation_job_name"] = job.get("name")
-        history_rules["_automation_category_query"] = job.get("category_query")
-        if db_manager.save_fetch_history(combined_history_id, target_urls, combined_items, history_rules):
-            scraper_key = str(job.get("scraper_key") or run.get("scraper_key") or "").strip()
-            result["history_public_id"] = build_public_history_id(scraper_key, combined_history_id)
-            result["comparison"] = build_session_comparison(
-                previous_history,
-                combined_items,
-                current_target_urls=target_urls,
-            )
-            result_count = len(combined_items)
-            summary = build_automation_run_summary(
-                target_urls,
-                result.get("comparison") or {},
-                result.get("price_drops") or [],
-            )
-            summary["resumed_run"] = True
-            summary["resumed_from_checkpoint"] = resume_from_checkpoint
-            summary["completed_targets"] = base_completed_targets + len(remaining_target_urls)
-            summary["total_targets"] = total_target_count
-            summary["current_items"] = result_count
-            summary["progress_percent"] = round((summary["completed_targets"] / max(1, total_target_count)) * 100, 1)
-        else:
-            workflow_error = "Failed to save combined resumed history."
 
     final_error_text = workflow_error or no_items_error
     if final_error_text and not result.get("history_public_id") and result_count > 0:
@@ -294,6 +326,14 @@ def resume_run(run_id: int) -> int:
 
 def _truthy_env(name: str) -> bool:
     return str(os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _truthy_value(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def main() -> int:
