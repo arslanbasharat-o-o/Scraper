@@ -1,6 +1,6 @@
 Flask>=3.0.0,<4
 Flask-Login>=0.6.3
-requests>=2.31.0
+requests>=2.34.2
 pytz>=2024.1
 gunicorn>=21.2.0
 waitress>=3.0.0
