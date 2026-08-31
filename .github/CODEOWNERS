@@ -1,10 +1,5 @@
-# Default code owners
+# Default code owner
 * @arslanbasharat-o-o
 
 # GitHub workflows and templates
 /.github/ @arslanbasharat-o-o
-
-# Subprojects
-/image-scraper/ @arslanbasharat-o-o
-/image-scraper/docs/ @arslanbasharat-o-o
-/parts-extractor/ @arslanbasharat-o-o

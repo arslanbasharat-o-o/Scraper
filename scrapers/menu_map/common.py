@@ -257,7 +257,7 @@ class BotasaurusPage:
                 source = f"return ({source})()"
             else:
                 arg_literal = json.dumps(arg, ensure_ascii=False)
-                source = f"const __codex_arg = {arg_literal}; return ({source})(__codex_arg)"
+                source = f"const __scraper_arg = {arg_literal}; return ({source})(__scraper_arg)"
                 arg = None
         return self.driver.run_js(source, args=arg)
 

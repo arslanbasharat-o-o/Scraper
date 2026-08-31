@@ -1,58 +1,97 @@
-# Scraper Workspace
+# Parts Extractor
 
-This repository contains two separate applications:
+Parts Extractor is a Flask dashboard for supplier catalog scraping, scheduled product extraction, price-change history, and menu-map discovery.
 
-- [`image-scraper/`](image-scraper) - the Node.js image scraping service with Selenium, ZIP export, and Railway deployment files
-- [`parts-extractor/`](parts-extractor) - the Flask-based product and category scraping workspace with automation, history, watchlist, and image tools
+Version: `8.1.0`
 
-## Quick Start
+## Features
 
-### Image Scraper
+- Supplier-specific scrapers for MobileSentrix, XCell Parts, Parts4Cells, Phone LCD Parts, TX Parts, and GadgetFix.
+- Scheduled automation with durable checkpoints and resumable runs.
+- Product detail enrichment for SKUs, stock status, descriptions, images, and pricing.
+- History comparison for changed, added, and removed products.
+- Admin authentication with user and role management.
+- Menu-map discovery tools for supplier category navigation.
 
-```bash
-cd image-scraper
-npm install
-python3 -m pip install -r requirements.txt
-npm start
+## Requirements
+
+- Python `3.10`, `3.11`, or `3.12`
+- Chrome or Chromium for browser fallback
+- SQLite, bundled with Python on standard installations
+
+Python `3.13` is not recommended because some HTTP/TLS dependencies may not support it yet.
+
+## Installation
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-Default URL: `http://localhost:3001`
+Edit `.env` before running in production. At minimum, set a strong `SECRET_KEY` and admin credentials.
 
-### Parts Extractor
+## Development
 
-```bash
-cd parts-extractor
-start.bat
+```powershell
+.\.venv\Scripts\python.exe -m flask --app app run --host=0.0.0.0 --port=5000 --debug
 ```
 
-Default URL: `http://127.0.0.1:5000`
+Open `http://127.0.0.1:5000`.
 
-## Repository Structure
+## Production
+
+Run exactly one application process. The automation scheduler runs inside the Flask process, so multiple worker processes can create duplicate scheduled jobs.
+
+Windows:
+
+```powershell
+waitress-serve --listen=0.0.0.0:5000 app:app
+```
+
+Linux:
+
+```bash
+gunicorn -w 1 --threads 4 -b 0.0.0.0:5000 app:app
+```
+
+## Project Layout
 
 ```text
 .
-├── .github/
-├── image-scraper/
-│   ├── docs/
-│   ├── frontend/
-│   ├── server.js
-│   ├── start.bat
-│   └── README.md
-├── parts-extractor/
-│   ├── scrapers/
-│   ├── static/
-│   ├── templates/
-│   ├── app.py
-│   ├── start.bat
-│   └── README.md
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── SECURITY.md
-└── LICENSE
+├── app.py
+├── database.py
+├── automation_service.py
+├── scrapers/
+├── scripts/
+├── static/
+├── templates/
+├── tests/
+├── docs/
+├── requirements.txt
+├── Dockerfile
+└── start.bat
 ```
 
-## Notes
+## Data
 
-- GitHub repository metadata, policies, and workflows stay at the root.
-- Railway deployment is currently configured for [`image-scraper/`](image-scraper).
-- Each subproject keeps its own runtime files, docs, and startup commands inside its folder.
+Runtime data is intentionally excluded from Git.
+
+- Supplier databases: `data/site_dbs/`
+- Browser profiles: `data/browser_profiles/`
+- Logs and temporary files: `logs/`, `.tmp/`, `storage/temp/`
+- Exports: `storage/exports/`
+
+Keep persistent database directories on durable storage when deploying to a server.
+
+## Checks
+
+```powershell
+.\.venv\Scripts\python.exe -m py_compile app.py database.py automation_service.py scripts\resume_automation_run.py
+.\.venv\Scripts\python.exe -m pytest tests
+```
+
+## License
+
+See [LICENSE](LICENSE).

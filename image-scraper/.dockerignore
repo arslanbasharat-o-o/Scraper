@@ -1,7 +1,0 @@
-node_modules
-.tmp
-downloads
-*.log
-.DS_Store
-.git
-.gitignore

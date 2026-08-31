@@ -2,12 +2,6 @@
 
 Describe what changed and why.
 
-## Touched Areas
-
-- [ ] `image-scraper`
-- [ ] `parts-extractor`
-- [ ] `.github` / CI / repo metadata
-
 ## Scope
 
 - [ ] Bug fix
@@ -17,40 +11,19 @@ Describe what changed and why.
 - [ ] Documentation
 - [ ] CI/CD
 
-## Linked Issues
-
-Closes #
-
 ## Validation
 
-List exact commands and results. Delete anything that does not apply.
+List exact commands and results.
 
 ```bash
-# image-scraper
-cd image-scraper
-node -c server.js
-python3 -m py_compile convert_image.py create_zip.py
-
-# parts-extractor
-cd ../parts-extractor
-python3 -m py_compile app.py automation_service.py database.py scrapers/*.py
+python -m py_compile app.py automation_service.py database.py scripts/resume_automation_run.py scrapers/*.py
 pytest tests -q
-
-# repo metadata / workflows
-git diff -- .github
 ```
-
-## Notes
-
-- Include screenshots for UI changes.
-- Call out any path moves or startup command changes.
-- Mention deployment impact if Railway, Docker, or GitHub Actions behavior changed.
 
 ## Checklist
 
-- [ ] I ran local validation for touched areas.
-- [ ] I updated docs for behavior/config/API changes.
-- [ ] I reviewed for breaking changes.
+- [ ] I reviewed the deployment impact.
+- [ ] I updated docs for behavior, config, or API changes.
 - [ ] I added or updated tests where applicable.
 - [ ] CI passes.
 
@@ -58,6 +31,7 @@ git diff -- .github
 
 - [ ] No deployment impact
 - [ ] Requires environment variable changes
-- [ ] Requires migration or manual follow-up
+- [ ] Requires database or runtime data maintenance
+- [ ] Requires service restart
 
-Details (if any):
+Details:

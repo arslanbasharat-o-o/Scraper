@@ -1,11 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Workspace README
+  - name: README
     url: https://github.com/arslanbasharat-o-o/Scraper/blob/main/README.md
-    about: Start here to choose the right app and find its current run instructions.
-  - name: Image Scraper Docs
-    url: https://github.com/arslanbasharat-o-o/Scraper/tree/main/image-scraper/docs
-    about: Read setup, optimization, and deployment guides for the Node image scraper.
-  - name: Discussions
-    url: https://github.com/arslanbasharat-o-o/Scraper/discussions
-    about: Ask open-ended questions or request implementation advice.
+    about: Start here for setup, development, and production instructions.
+  - name: Deployment Guide
+    url: https://github.com/arslanbasharat-o-o/Scraper/blob/main/DEPLOYMENT.md
+    about: Review production process, worker, and storage guidance.

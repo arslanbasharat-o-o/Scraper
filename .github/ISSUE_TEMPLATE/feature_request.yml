@@ -5,46 +5,41 @@ labels:
   - enhancement
 body:
   - type: dropdown
-    id: project_area
+    id: area
     attributes:
       label: Target area
       options:
-        - image-scraper
-        - parts-extractor
-        - repository / CI
-        - not sure
+        - Extractor
+        - Automation
+        - History
+        - Menu Map
+        - Authentication
+        - Deployment
+        - Other
     validations:
       required: true
   - type: input
     id: problem
     attributes:
       label: Problem statement
-      description: What problem are you trying to solve?
-      placeholder: Operators cannot easily tell whether an action belongs in image-scraper or parts-extractor
+      placeholder: Operators need a clearer way to resume interrupted detail scans
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: Proposed solution
-      description: Describe your preferred implementation
-      placeholder: Add clearer project-level guidance, workflow automation, or product behavior improvements
+      placeholder: Describe the workflow, API, or UI behavior you want.
     validations:
       required: true
   - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives considered
-      placeholder: Manual steps, docs-only changes, or a smaller UI/API tweak
-  - type: textarea
-    id: scope
+    id: success
     attributes:
       label: Success criteria
-      description: How do we know this feature is done?
       placeholder: |
-        - Behavior is defined clearly
-        - UI/API/docs are updated where needed
-        - Validation steps are straightforward
+        - Behavior is clear
+        - Tests cover the new path
+        - Deployment notes are updated when needed
     validations:
       required: true
   - type: dropdown
@@ -57,12 +52,3 @@ body:
         - Low
     validations:
       required: true
-  - type: checkboxes
-    id: checks
-    attributes:
-      label: Checklist
-      options:
-        - label: I reviewed existing issues and discussions.
-          required: true
-        - label: I can help validate the solution once implemented.
-          required: false

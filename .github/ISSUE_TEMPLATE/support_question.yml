@@ -5,34 +5,35 @@ labels:
   - question
 body:
   - type: dropdown
-    id: project_area
+    id: area
     attributes:
       label: Question area
       options:
-        - image-scraper
-        - parts-extractor
-        - repository / CI
-        - not sure
+        - Installation
+        - Configuration
+        - Automation
+        - Scrapers
+        - Deployment
+        - Other
     validations:
       required: true
   - type: textarea
     id: question
     attributes:
       label: Your question
-      description: What are you trying to do?
-      placeholder: How should I run or configure the affected app for my use case?
+      placeholder: What are you trying to do?
     validations:
       required: true
   - type: textarea
     id: context
     attributes:
       label: Context
-      description: Include relevant config, logs, and environment info
+      description: Include relevant config, logs, and environment details.
       render: text
   - type: checkboxes
     id: checks
     attributes:
       label: Checklist
       options:
-        - label: I checked the root README and the relevant app README/docs first.
+        - label: I checked the README and deployment guide first.
           required: true
