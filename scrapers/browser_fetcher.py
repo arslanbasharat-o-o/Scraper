@@ -10,6 +10,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .botasaurus_wrapper import close_botasaurus_driver, resolve_chrome_executable, resolve_chrome_profile_root
+
 
 _BROWSER_FETCH_ENABLED = contextvars.ContextVar("browser_fetch_enabled", default=None)
 _LOCAL_BROWSER_SLOT_LOCK = threading.Lock()
@@ -140,8 +142,6 @@ def _local_browser_headless() -> bool:
 def _local_browser_profile_dir() -> Path:
     configured = (os.getenv("SCRAPER_LOCAL_BROWSER_PROFILE_DIR") or "").strip()
     default = Path(configured) if configured else Path.cwd() / "data" / "browser_profiles"
-    from .botasaurus_wrapper import resolve_chrome_profile_root
-
     return resolve_chrome_profile_root(default)
 
 
@@ -175,7 +175,7 @@ def fetch_html(
 ) -> BrowserFetchResult:
     """Fetch a rendered page with a headless local Botasaurus browser."""
     try:
-        from .botasaurus_wrapper import Driver, browser, close_botasaurus_driver, resolve_chrome_executable
+        from .botasaurus_wrapper import Driver, browser
     except Exception as exc:
         raise RuntimeError(f"Botasaurus is required for rendered scraping: {exc}") from exc
 
