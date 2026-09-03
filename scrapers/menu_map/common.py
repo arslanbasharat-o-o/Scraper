@@ -20,7 +20,13 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
-from scrapers.botasaurus_wrapper import Driver, browser
+from scrapers.botasaurus_wrapper import (
+    Driver,
+    browser,
+    close_botasaurus_driver,
+    resolve_chrome_executable,
+    resolve_chrome_profile_root,
+)
 from scrapers.browser_fetcher import MOBILESENTRIX_CANADA_POPUP_DISMISS_JS
 
 
@@ -975,8 +981,15 @@ async def run_site(
     start = time.monotonic()
     headless = bool(args.headless or not args.visible)
 
-    profile_dir = Path("data") / "browser_profiles" / f"menu-map-{config.output_slug}"
+    profile_root = resolve_chrome_profile_root(Path("data") / "browser_profiles")
+    profile_dir = profile_root / f"menu-map-{config.output_slug}"
     profile_dir.mkdir(parents=True, exist_ok=True)
+    chrome_executable = resolve_chrome_executable()
+    logger.info(
+        "Starting Botasaurus with Chrome executable %s and profile %s",
+        chrome_executable or "Botasaurus default discovery",
+        profile_dir,
+    )
 
     @browser(
         headless=headless,
@@ -990,6 +1003,7 @@ async def run_site(
         ),
         output=None,
         raise_exception=True,
+        create_error_logs=False,
         close_on_crash=True,
     )
     def _run_with_botasaurus(driver: Driver, _data):
@@ -1042,6 +1056,7 @@ async def run_site(
                         await save_screenshot(page, output_dir, "final-menu-state")
                     except Exception:
                         pass
+                close_botasaurus_driver(driver, logger)
 
         asyncio.run(_extract())
 
@@ -1055,7 +1070,10 @@ async def run_site(
             error_message=str(exc),
             timestamp=utc_now(),
         ))
-        logger.exception("Botasaurus menu-map run failed")
+        logger.exception(
+            "Botasaurus menu-map run failed while starting or connecting to Chrome executable %s",
+            chrome_executable or "Botasaurus default discovery",
+        )
     result.completion_time = utc_now()
     result.runtime_seconds = time.monotonic() - start
     for r in result.records:

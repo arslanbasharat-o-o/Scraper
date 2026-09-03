@@ -139,9 +139,10 @@ def _local_browser_headless() -> bool:
 
 def _local_browser_profile_dir() -> Path:
     configured = (os.getenv("SCRAPER_LOCAL_BROWSER_PROFILE_DIR") or "").strip()
-    path = Path(configured) if configured else Path.cwd() / "data" / "browser_profiles"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    default = Path(configured) if configured else Path.cwd() / "data" / "browser_profiles"
+    from .botasaurus_wrapper import resolve_chrome_profile_root
+
+    return resolve_chrome_profile_root(default)
 
 
 def _should_use_botasaurus_request_html() -> bool:
@@ -174,7 +175,7 @@ def fetch_html(
 ) -> BrowserFetchResult:
     """Fetch a rendered page with a headless local Botasaurus browser."""
     try:
-        from .botasaurus_wrapper import Driver, browser
+        from .botasaurus_wrapper import Driver, browser, close_botasaurus_driver, resolve_chrome_executable
     except Exception as exc:
         raise RuntimeError(f"Botasaurus is required for rendered scraping: {exc}") from exc
 
@@ -189,6 +190,14 @@ def fetch_html(
     with _local_browser_slot() as slot:
         profile_dir = _local_browser_profile_dir() / f"worker-{slot}"
         profile_dir.mkdir(parents=True, exist_ok=True)
+        chrome_executable = resolve_chrome_executable()
+        if logger:
+            logger.info(
+                "[botasaurus] Starting browser slot %s with Chrome executable %s and profile %s",
+                slot,
+                chrome_executable or "Botasaurus default discovery",
+                profile_dir,
+            )
 
         @browser(
             headless=_local_browser_headless(),
@@ -202,55 +211,64 @@ def fetch_html(
             ),
             output=None,
             raise_exception=True,
+            create_error_logs=False,
             close_on_crash=True,
         )
         def _fetch(driver: Driver, data):
             if logger:
                 logger.info("[botasaurus] Fetching %s in browser slot %s", data["url"], data["slot"])
             try:
-                driver.get(data["url"], timeout=timeout)
-            except Exception as exc:
-                partial_html = driver.page_html or ""
-                if partial_html and _looks_like_html_document(partial_html):
-                    if logger:
-                        logger.warning(
-                            "[botasaurus] Page load did not fully complete for %s; using rendered HTML already present: %s",
-                            data["url"],
-                            exc,
-                        )
-                else:
-                    raise
-            if wait_time > 0:
-                driver.sleep(wait_time)
-            _dismiss_canada_prompt(driver.run_js, driver.sleep, url=data["url"], logger=logger)
-
-            html = driver.page_html or ""
-            challenge_deadline = time.time() + max(0.0, challenge_wait_seconds)
-            while time.time() < challenge_deadline and _looks_like_browser_challenge(html):
-                driver.sleep(2)
-                html = driver.page_html or ""
-
-            final_url = driver.current_url or data["url"]
-            if _should_use_botasaurus_request_html() and not _looks_like_browser_challenge(html):
                 try:
-                    response = driver.requests.get(data["url"])
-                    response_text = getattr(response, "text", "") or ""
-                    response_status = int(getattr(response, "status_code", 0) or 0)
-                    if (
-                        response_text
-                        and (response_status == 0 or response_status < 400)
-                        and _looks_like_html_document(response_text)
-                        and not _looks_like_browser_challenge(response_text)
-                    ):
-                        html = response_text
-                        final_url = getattr(response, "url", "") or final_url
+                    driver.get(data["url"], timeout=timeout)
                 except Exception as exc:
-                    if logger:
-                        logger.warning("[botasaurus] Browser-backed request failed: %s", exc)
+                    partial_html = driver.page_html or ""
+                    if partial_html and _looks_like_html_document(partial_html):
+                        if logger:
+                            logger.warning(
+                                "[botasaurus] Page load did not fully complete for %s; using rendered HTML already present: %s",
+                                data["url"],
+                                exc,
+                            )
+                    else:
+                        raise
+                if wait_time > 0:
+                    driver.sleep(wait_time)
+                _dismiss_canada_prompt(driver.run_js, driver.sleep, url=data["url"], logger=logger)
 
-            return {"final_url": final_url, "html": html}
+                html = driver.page_html or ""
+                challenge_deadline = time.time() + max(0.0, challenge_wait_seconds)
+                while time.time() < challenge_deadline and _looks_like_browser_challenge(html):
+                    driver.sleep(2)
+                    html = driver.page_html or ""
 
-        result = _fetch({"url": url, "slot": slot})
+                final_url = driver.current_url or data["url"]
+                if _should_use_botasaurus_request_html() and not _looks_like_browser_challenge(html):
+                    try:
+                        response = driver.requests.get(data["url"])
+                        response_text = getattr(response, "text", "") or ""
+                        response_status = int(getattr(response, "status_code", 0) or 0)
+                        if (
+                            response_text
+                            and (response_status == 0 or response_status < 400)
+                            and _looks_like_html_document(response_text)
+                            and not _looks_like_browser_challenge(response_text)
+                        ):
+                            html = response_text
+                            final_url = getattr(response, "url", "") or final_url
+                    except Exception as exc:
+                        if logger:
+                            logger.warning("[botasaurus] Browser-backed request failed: %s", exc)
+
+                return {"final_url": final_url, "html": html}
+            finally:
+                close_botasaurus_driver(driver, logger)
+
+        try:
+            result = _fetch({"url": url, "slot": slot})
+        except Exception as exc:
+            if logger:
+                logger.exception("[botasaurus] DevTools connection or rendered fetch failed for %s", url)
+            raise RuntimeError(f"Botasaurus browser fetch failed for {url}: {exc}") from exc
 
     html = (result or {}).get("html") or ""
     final_url = (result or {}).get("final_url") or url
