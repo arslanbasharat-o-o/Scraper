@@ -484,6 +484,32 @@ def test_resume_worker_lock_blocks_duplicate_resume(tmp_path, monkeypatch):
     assert not app_module._resume_worker_lock_path(52).exists()
 
 
+def test_resume_reconciles_interrupted_run_when_worker_is_alive(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    job = app_module.db_manager.save_automation_job(
+        {
+            "name": "Live worker",
+            "scraper_key": "xcell",
+            "category_query": "live",
+            "root_url": "https://xcellparts.com/",
+            "interval_minutes": 1440,
+            "enabled": True,
+        },
+        targets=[{"label": "One", "url": "https://xcellparts.com/one", "active": True}],
+    )
+    run = app_module.db_manager.create_automation_run(
+        job["id"], trigger_type="manual", target_urls=["https://xcellparts.com/one"]
+    )
+    app_module.db_manager.recover_running_automation_runs()
+    monkeypatch.setattr(app_module, "_resume_worker_is_locked", lambda _run_id: True)
+
+    launched, message = app_module._launch_existing_automation_run(run["id"])
+    restored = app_module.db_manager.get_automation_run(run["id"])
+    assert launched is False
+    assert message == "This automation run is already running."
+    assert restored["status"] == "running"
+
+
 def test_exited_resume_worker_cleans_lock_atomically(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
     monkeypatch.setattr(app_module, "APP_ROOT", tmp_path)

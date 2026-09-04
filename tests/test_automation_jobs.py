@@ -208,6 +208,31 @@ def test_recover_running_run_preserves_jobs_last_history_id(tmp_path, monkeypatc
     assert recovered["summary"]["resume_available"] is True
 
 
+def test_restore_interrupted_run_for_surviving_worker(tmp_path, monkeypatch):
+    database = _fresh_database_module(tmp_path, monkeypatch)
+    manager = database.DatabaseManager(db_path=str(tmp_path / "automation.db"))
+
+    created = manager.save_automation_job(_base_job_payload(), targets=_sample_targets())
+    run = manager.create_automation_run(
+        created["id"],
+        trigger_type="manual",
+        target_urls=[_sample_targets()[0]["url"]],
+    )
+    manager.update_automation_run_progress(
+        run["id"],
+        items_count=42,
+        summary={"current_items": 42, "completed_targets": 3},
+    )
+    manager.recover_running_automation_runs()
+
+    restored = manager.restore_automation_run_for_active_worker(run["id"])
+    assert restored["status"] == "running"
+    assert restored["completed_at"] is None
+    assert restored["error_text"] == ""
+    assert restored["summary"]["current_items"] == 42
+    assert restored["summary"]["worker_reconciled"] is True
+
+
 def test_pause_automation_run_preserves_progress_for_resume(tmp_path, monkeypatch):
     database = _fresh_database_module(tmp_path, monkeypatch)
     manager = database.DatabaseManager(db_path=str(tmp_path / "automation.db"))

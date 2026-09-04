@@ -2964,11 +2964,18 @@ def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
         return False, 'Automation run not found.'
 
     status = str(run.get('status') or '').strip().lower()
+    worker_locked = _resume_worker_is_locked(normalized_run_id)
+    if worker_locked and status == 'interrupted':
+        # A server restart can mark the DB row interrupted while the detached
+        # worker keeps running. Reconcile that state instead of asking the user
+        # to resume an already-active process.
+        db_manager.restore_automation_run_for_active_worker(normalized_run_id)
+        return False, 'This automation run is already running.'
     if status in {'running', 'resuming'}:
         return False, 'This automation run is already running.'
     if status == 'completed':
         return False, 'Completed runs already have a saved snapshot. Start a new run only when you want a fresh comparison.'
-    if _resume_worker_is_locked(normalized_run_id):
+    if worker_locked:
         return False, 'This automation run already has a resume worker still shutting down. Wait a moment and refresh.'
 
     try:
@@ -3008,6 +3015,37 @@ def _automation_scheduler_loop():
         db_manager.close_connection()
 
 
+def _active_resume_worker_run_ids() -> set[int]:
+    """Find detached resume workers before startup recovery marks runs interrupted."""
+    active_ids: set[int] = set()
+    lock_root = APP_ROOT / '.tmp'
+    if not lock_root.exists():
+        return active_ids
+    for lock_path in lock_root.glob('resume-run-*.lock'):
+        lock_data = _read_resume_worker_lock_from_path(lock_path)
+        try:
+            run_id = int(lock_data.get('run_id') or lock_path.stem.removeprefix('resume-run-'))
+            pid = int(lock_data.get('pid') or 0)
+        except (TypeError, ValueError):
+            continue
+        if pid and _resume_worker_pid_is_alive(pid):
+            active_ids.add(run_id)
+        else:
+            try:
+                lock_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return active_ids
+
+
+def _read_resume_worker_lock_from_path(lock_path: Path) -> Dict[str, object]:
+    try:
+        data = json.loads(lock_path.read_text(encoding='utf-8') or '{}')
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
 def ensure_automation_scheduler_started():
     global AUTOMATION_SCHEDULER_STARTED, AUTOMATION_SCHEDULER_THREAD
     if os.getenv('PYTEST_CURRENT_TEST') or 'pytest' in sys.modules:
@@ -3027,7 +3065,9 @@ def ensure_automation_scheduler_started():
             return
         recover_enabled = str(os.getenv("AUTOMATION_RECOVER_RUNNING", "1")).strip().lower() not in {"0", "false", "no", "off"}
         if recover_enabled:
-            recovered_runs = db_manager.recover_running_automation_runs()
+            recovered_runs = db_manager.recover_running_automation_runs(
+                exclude_run_ids=_active_resume_worker_run_ids()
+            )
             if recovered_runs:
                 app.logger.warning(f"[automation] Recovered {recovered_runs} interrupted automation run(s) from a previous process")
         else:
@@ -4532,6 +4572,9 @@ def api_automation_run_detail(run_id):
         run = db_manager.get_automation_run(run_id)
         if not run:
             return jsonify({'error': 'Automation run not found.'}), 404
+
+        if str(run.get('status') or '').strip().lower() == 'interrupted' and _resume_worker_is_locked(run_id):
+            run = db_manager.restore_automation_run_for_active_worker(run_id) or run
 
         current_history = db_manager.get_history_detail(run.get('current_history_id')) if run.get('current_history_id') else None
         previous_history = db_manager.get_history_detail(run.get('previous_history_id')) if run.get('previous_history_id') else None

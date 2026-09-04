@@ -1886,6 +1886,47 @@ class DatabaseManager:
                 conn.rollback()
             return None
 
+    def restore_automation_run_for_active_worker(self, run_id: int) -> Optional[Dict[str, Any]]:
+        """Reconcile a run marked interrupted while its external worker survived."""
+        conn = None
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT job_id, summary_json FROM automation_runs WHERE id = ? AND status = 'interrupted' LIMIT 1",
+                (normalized_run_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return self.get_automation_run(normalized_run_id)
+            summary = self._parse_json_text(row['summary_json'], {})
+            summary = dict(summary) if isinstance(summary, dict) else {}
+            summary['interrupted'] = False
+            summary['resume_available'] = False
+            summary['worker_reconciled'] = True
+            now_iso = get_pakistan_time().isoformat()
+            cursor.execute(
+                """UPDATE automation_runs
+                   SET status = 'running', completed_at = NULL, error_text = '', summary_json = ?
+                   WHERE id = ? AND status = 'interrupted'""",
+                (json.dumps(summary, ensure_ascii=True, separators=(',', ':')), normalized_run_id),
+            )
+            cursor.execute(
+                "UPDATE automation_jobs SET last_status = 'running', last_error = '', updated_at = ? WHERE id = ?",
+                (now_iso, int(row['job_id'])),
+            )
+            conn.commit()
+            return self.get_automation_run(normalized_run_id)
+        except Exception as e:
+            print(f"Error reconciling active automation worker: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
     def fail_automation_run_resume_launch(self, run_id: int, error_text: str) -> Optional[Dict[str, Any]]:
         """Return a claimed run to a resumable failed state if its worker cannot launch."""
         conn = None
@@ -2086,7 +2127,11 @@ class DatabaseManager:
                 conn.rollback()
             return None
 
-    def recover_running_automation_runs(self, reason: str = 'Automation run interrupted by server restart.') -> int:
+    def recover_running_automation_runs(
+        self,
+        reason: str = 'Automation run interrupted by server restart.',
+        exclude_run_ids: Optional[set[int]] = None,
+    ) -> int:
         conn = None
         try:
             conn = self.get_connection()
@@ -2097,7 +2142,8 @@ class DatabaseManager:
                 JOIN automation_jobs j ON j.id = r.job_id
                 WHERE r.status IN ('running', 'resuming')
             ''')
-            running_rows = cursor.fetchall()
+            excluded = {int(run_id) for run_id in (exclude_run_ids or set())}
+            running_rows = [row for row in cursor.fetchall() if int(row['id']) not in excluded]
             if not running_rows:
                 return 0
 
