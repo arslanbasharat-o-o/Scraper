@@ -517,6 +517,37 @@
   padding: .75rem;
 }
 
+.job-event--completed {
+  padding: 0;
+}
+
+.job-event--completed summary {
+  cursor: pointer;
+  list-style: none;
+  padding: .75rem;
+}
+
+.job-event--completed summary::-webkit-details-marker {
+  display: none;
+}
+
+.job-event--completed summary::before {
+  content: '\25B8';
+  color: var(--text-3);
+  display: inline-block;
+  margin-right: .45rem;
+  transition: transform .15s ease;
+}
+
+.job-event--completed[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.job-event__details {
+  border-top: 1px solid var(--border);
+  padding: 0 .75rem .75rem;
+}
+
 .job-event__head {
   display: flex;
   justify-content: space-between;

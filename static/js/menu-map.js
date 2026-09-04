@@ -64,9 +64,9 @@ let automationSubmissionPending = false;
 let excludedBySite = loadExclusions();
 let treeOpenStateBySite = loadTreeOpenState();
 let activeTreeFilter = 'all';
-const COMPLETED_JOB_LOG_CLEAR_MS = 30000;
 const MENU_POLL_BASE_MS = 2500;
 const MENU_POLL_MAX_MS = 30000;
+const MAX_JOB_OUTPUT_CHARS = 1600;
 
 const AUTOMATION_SITE_KEY = {
   xcellparts: 'xcell',
@@ -788,38 +788,44 @@ function renderJob(job) {
   elements.jobPanel.className = 'job-event-list';
   elements.jobPanel.setAttribute('aria-busy', String(['queued', 'running'].includes(activeJobStatus)));
   const events = Array.isArray(job.events) ? job.events : [];
+  const completedSites = Object.values(job.site_status || {}).filter(status => status === 'success' || status === 'failed').length;
+  const totalSites = Array.isArray(job.sites) ? job.sites.length : 0;
+  const statusLabel = ['queued', 'running'].includes(activeJobStatus) && totalSites
+    ? `${activeJobStatus} • ${completedSites}/${totalSites} sites complete`
+    : activeJobStatus;
+  const compactOutput = value => {
+    const text = String(value || '');
+    if (text.length <= MAX_JOB_OUTPUT_CHARS) return text;
+    return `…${text.slice(-MAX_JOB_OUTPUT_CHARS)}`;
+  };
+  const renderEvent = event => {
+    const finished = event.returncode != null;
+    const body = `
+      ${event.command ? `<pre>${escapeHtml(compactOutput(event.command))}</pre>` : ''}
+      ${event.stdout ? `<pre>${escapeHtml(compactOutput(event.stdout))}</pre>` : ''}
+      ${event.stderr ? `<pre>${escapeHtml(compactOutput(event.stderr))}</pre>` : ''}
+      ${event.message ? `<div class="section-subtitle">${escapeHtml(event.message)}</div>` : ''}
+    `;
+    const heading = `
+      <div class="job-event__head">
+        <span>${escapeHtml(event.site || 'command')}</span>
+        <span>${event.returncode == null ? 'active' : `exit ${escapeHtml(event.returncode)}`}</span>
+      </div>
+    `;
+    if (!finished) return `<div class="job-event job-event--active">${heading}${body}</div>`;
+    return `<details class="job-event job-event--completed"><summary>${heading}</summary><div class="job-event__details">${body}</div></details>`;
+  };
   elements.jobPanel.innerHTML = `
     <div class="job-event">
       <div class="job-event__head">
-        <span>Status: ${escapeHtml(job.status)}</span>
+        <span>Status: ${escapeHtml(statusLabel)}</span>
         <span>${escapeHtml(job.current_site || job.completed_at || job.created_at || '')}</span>
       </div>
       <div class="section-subtitle">Sites: ${(job.sites || []).map(escapeHtml).join(', ')}</div>
     </div>
-    ${events.slice().reverse().map(event => `
-      <div class="job-event">
-        <div class="job-event__head">
-          <span>${escapeHtml(event.site || 'command')}</span>
-          <span>${event.returncode == null ? '' : `exit ${escapeHtml(event.returncode)}`}</span>
-        </div>
-        ${event.command ? `<pre>${escapeHtml(event.command)}</pre>` : ''}
-        ${event.stdout ? `<pre>${escapeHtml(event.stdout)}</pre>` : ''}
-        ${event.stderr ? `<pre>${escapeHtml(event.stderr)}</pre>` : ''}
-        ${event.message ? `<div class="section-subtitle">${escapeHtml(event.message)}</div>` : ''}
-      </div>
-    `).join('')}
+    ${events.slice().reverse().map(renderEvent).join('')}
   `;
   updateRunControls();
-}
-
-function scheduleCompletedJobLogClear(jobId) {
-  window.clearTimeout(completedJobClearTimer);
-  completedJobClearTimer = window.setTimeout(() => {
-    if (jobPanelMode !== 'job') return;
-    if (String(activeJobId || '') !== String(jobId || '')) return;
-    activeJobId = '';
-    renderJob(null);
-  }, COMPLETED_JOB_LOG_CLEAR_MS);
 }
 
 function render() {
@@ -898,7 +904,9 @@ async function loadSites() {
       activeJobId = latestActiveJob.id;
       renderJob(latestActiveJob);
       beginPolling();
-    } else if (!activeJobId) {
+    } else if (jobPanelMode === 'job') {
+      stopPolling();
+      activeJobId = '';
       renderJob(null);
     }
   } catch (error) {
@@ -1086,7 +1094,10 @@ async function pollJob() {
       stopPolling();
       await loadSites();
       showAlert(data.job.status === 'complete' ? 'success' : 'warn', `Menu scraper job ${data.job.status}.`);
-      scheduleCompletedJobLogClear(polledJobId);
+      if (activeJobId === polledJobId) {
+        activeJobId = '';
+        renderJob(null);
+      }
     }
   } finally {
     pollRequestPending = false;

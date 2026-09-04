@@ -69,6 +69,19 @@ def test_real_time_polling_is_visibility_aware_and_payloads_are_compact():
     assert menu_map_template.count("sessionStorage.setItem('cy_theme'") == 0
 
 
+def test_menu_map_completed_runs_do_not_keep_the_page_busy_or_expand_all_logs():
+    menu_map_script = (ROOT / "static" / "js" / "menu-map.js").read_text(encoding="utf-8")
+    menu_map_styles = (ROOT / "static" / "css" / "menu-map.css").read_text(encoding="utf-8")
+    menu_map_template = (ROOT / "templates" / "menu_map.html").read_text(encoding="utf-8")
+
+    assert "job-event--completed" in menu_map_script
+    assert "MAX_JOB_OUTPUT_CHARS = 1600" in menu_map_script
+    assert "activeJobId = '';" in menu_map_script
+    assert "jobPanelMode === 'job'" in menu_map_script
+    assert ".job-event--completed summary" in menu_map_styles
+    assert "Finished runs are cleared automatically" in menu_map_template
+
+
 def test_menu_map_automation_names_are_category_scoped_not_date_stamped():
     menu_map_script = (ROOT / "static" / "js" / "menu-map.js").read_text(encoding="utf-8")
     automation_script = (ROOT / "static" / "js" / "automation.js").read_text(encoding="utf-8")
