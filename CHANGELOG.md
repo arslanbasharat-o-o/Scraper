@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.2.0] - 2026-09-05
+
+- Added memory-tuned worker profiles for 10 GB local and 40 GB server deployments.
+- Fixed resume-worker shutdown lock races and expanded Phone LCD menu extraction.
+
 All notable changes to Parts Extractor are documented here.
 
 This project follows Semantic Versioning.
