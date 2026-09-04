@@ -472,6 +472,25 @@ def test_resume_worker_lock_blocks_duplicate_resume(tmp_path, monkeypatch):
     assert not app_module._resume_worker_lock_path(52).exists()
 
 
+def test_exited_resume_worker_cleans_lock_atomically(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_module, "APP_ROOT", tmp_path)
+
+    class ExitedProcess:
+        pid = 6789
+
+        @staticmethod
+        def poll():
+            return 0
+
+    app_module._write_resume_worker_lock(53, ExitedProcess.pid)
+    app_module.AUTOMATION_RESUME_PROCESSES[53] = ExitedProcess()
+
+    assert app_module._resume_worker_is_locked(53) is False
+    assert 53 not in app_module.AUTOMATION_RESUME_PROCESSES
+    assert not app_module._resume_worker_lock_path(53).exists()
+
+
 def test_sparse_target_guard_blocks_bad_history_save(tmp_path, monkeypatch):
     monkeypatch.setenv("SCRAPER_ANOMALY_GUARD", "1")
     monkeypatch.setenv("SCRAPER_ANOMALY_MIN_PREVIOUS", "10")

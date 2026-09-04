@@ -2815,12 +2815,28 @@ def _read_resume_worker_lock(run_id: int) -> Dict[str, object]:
         return {}
 
 
+def _remove_resume_worker_lock_if_owned(run_id: int, pid: int) -> None:
+    """Remove a worker lock only when it still belongs to the given process."""
+    lock_path = _resume_worker_lock_path(run_id)
+    try:
+        lock_data = _read_resume_worker_lock(run_id)
+        if int(lock_data.get('pid') or 0) == int(pid):
+            lock_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def _resume_worker_is_locked(run_id: int) -> bool:
     with AUTOMATION_RESUME_PROCESSES_LOCK:
         proc = AUTOMATION_RESUME_PROCESSES.get(int(run_id))
-        if proc and proc.poll() is None:
-            return True
-        AUTOMATION_RESUME_PROCESSES.pop(int(run_id), None)
+        if proc is not None:
+            if proc.poll() is None:
+                return True
+            # The process has exited. Clean its file lock while holding the
+            # same mutex so a new resume cannot observe a half-cleaned state.
+            AUTOMATION_RESUME_PROCESSES.pop(int(run_id), None)
+            _remove_resume_worker_lock_if_owned(run_id, getattr(proc, 'pid', 0))
+            return False
 
     lock_path = _resume_worker_lock_path(run_id)
     lock_data = _read_resume_worker_lock(run_id)
@@ -2861,12 +2877,7 @@ def _watch_resume_worker(run_id: int, proc: subprocess.Popen) -> None:
         with AUTOMATION_RESUME_PROCESSES_LOCK:
             if AUTOMATION_RESUME_PROCESSES.get(int(run_id)) is proc:
                 AUTOMATION_RESUME_PROCESSES.pop(int(run_id), None)
-        try:
-            lock_data = _read_resume_worker_lock(run_id)
-            if int(lock_data.get('pid') or 0) == int(proc.pid):
-                _resume_worker_lock_path(run_id).unlink(missing_ok=True)
-        except Exception:
-            pass
+            _remove_resume_worker_lock_if_owned(run_id, proc.pid)
 
 
 def _spawn_automation_run_worker(run_id: int, *, resume_from_checkpoint: bool) -> Tuple[bool, str]:
