@@ -65,3 +65,13 @@ All state is stored in `data/site_dbs/`. Ensure this directory is mounted as a p
 - `/api/health`: Provides detailed system status.
 - `/livez`: Liveness probe (HTTP 200 if process is up).
 - `/readyz`: Readiness probe (HTTP 200 if DB is accessible).
+
+### Headless Chrome on Hostinger / Ubuntu
+
+Menu Map auto-discovers `google-chrome`, `chromium`, `chromium-browser`, and
+Snap Chromium. Each run uses an isolated temporary profile, so a terminated
+process cannot leave a `SingletonLock` that breaks the next DevTools connection.
+If Chromium is installed in a custom location, set `CHROME_BIN` to the absolute
+executable path. The service user must be able to write either
+`SCRAPER_CHROME_PROFILE_ROOT` or, for Snap Chromium, its
+`~/snap/chromium/common/` directory.

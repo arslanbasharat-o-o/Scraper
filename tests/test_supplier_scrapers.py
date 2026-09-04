@@ -339,6 +339,27 @@ def test_phonelcdparts_product_detail_prefers_main_sku_and_price_metadata(monkey
     assert item.original == 21.0
 
 
+def test_phonelcdparts_product_detail_reads_hyva_labeled_sku():
+    html = """
+    <html><body class="catalog-product-view">
+      <h1 class="page-title"><span class="base">Quartz Tool</span></h1>
+      <dl>
+        <dt class="product-detail-label">SKU</dt>
+        <dd class="product-detail-value">QEIF-IP-SET</dd>
+      </dl>
+    </body></html>
+    """
+
+    item = scrape_phonelcd_product_page(
+        FakeSession(html),
+        "https://www.phonelcdparts.com/quartz-tool-qeif-ip-set",
+        {},
+        None,
+    )
+
+    assert item.sku == "QEIF-IP-SET"
+
+
 def test_gadgetfix_category_extracts_product_cards_and_skips_category_links():
     html = """
     <html><body>

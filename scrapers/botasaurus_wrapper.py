@@ -14,6 +14,7 @@ import signal
 import shutil
 import subprocess
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,12 +26,12 @@ LOGGER = logging.getLogger(__name__)
 
 def resolve_chrome_executable() -> str | None:
     """Return the Chrome/Chromium executable Botasaurus should launch."""
-    candidates = [
+    configured_candidates = [
         os.getenv("CHROME_BIN"),
         os.getenv("CHROMIUM_BIN"),
         os.getenv("GOOGLE_CHROME_BIN"),
     ]
-    for candidate in candidates:
+    for candidate in configured_candidates:
         path = str(candidate or "").strip()
         if not path:
             continue
@@ -41,18 +42,41 @@ def resolve_chrome_executable() -> str | None:
         if resolved:
             return resolved
         LOGGER.warning("[botasaurus] Configured Chrome executable was not found: %s", path)
+
+    discovery_candidates = [
+        "google-chrome-stable",
+        "google-chrome",
+        "chromium",
+        "chromium-browser",
+        "/usr/bin/chromium",
+        "/usr/bin/google-chrome",
+        "/snap/bin/chromium",
+    ]
+    for candidate in discovery_candidates:
+        path = str(candidate or "").strip()
+        expanded = os.path.expandvars(os.path.expanduser(path))
+        if Path(expanded).is_file():
+            return expanded
+        resolved = shutil.which(expanded)
+        if resolved:
+            return resolved
     return None
 
 
 def is_snap_chromium(executable: str | None = None) -> bool:
-    path = (
+    raw_path = (
         executable
         or os.getenv("CHROME_BIN")
         or os.getenv("CHROMIUM_BIN")
         or os.getenv("GOOGLE_CHROME_BIN")
         or resolve_chrome_executable()
         or ""
-    ).replace("\\", "/").lower()
+    )
+    try:
+        raw_path = str(Path(raw_path).resolve(strict=False))
+    except (OSError, RuntimeError):
+        pass
+    path = raw_path.replace("\\", "/").lower()
     return "/snap/bin/chromium" in path or path.endswith("/snap/bin/chromium")
 
 
@@ -67,6 +91,27 @@ def resolve_chrome_profile_root(default_root: str | Path) -> Path:
         root = Path(default_root)
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def create_chrome_run_profile(default_root: str | Path, label: str = "scraper") -> Path:
+    """Create an isolated profile so stale Chrome locks cannot break the next run."""
+    root = resolve_chrome_profile_root(default_root)
+    safe_label = "".join(char if char.isalnum() or char in "-_" else "-" for char in str(label or "scraper"))
+    profile = root / f"{safe_label}-{os.getpid()}-{uuid.uuid4().hex[:10]}"
+    profile.mkdir(parents=True, exist_ok=False)
+    return profile
+
+
+def remove_chrome_run_profile(profile: str | Path, logger: logging.Logger | None = None) -> None:
+    """Remove only the isolated profile created for one scraper run."""
+    path = Path(profile)
+    active_logger = logger or LOGGER
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        active_logger.warning("[botasaurus] Could not remove temporary Chrome profile %s: %s", path, exc)
 
 
 def chrome_launch_arguments() -> list[str]:
@@ -210,7 +255,9 @@ __all__ = [
     "browser",
     "chrome_launch_arguments",
     "close_botasaurus_driver",
+    "create_chrome_run_profile",
     "is_snap_chromium",
     "resolve_chrome_executable",
     "resolve_chrome_profile_root",
+    "remove_chrome_run_profile",
 ]

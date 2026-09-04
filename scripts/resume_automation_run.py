@@ -70,11 +70,21 @@ def resume_run(run_id: int) -> int:
     original_summary = run.get("summary") if isinstance(run.get("summary"), dict) else {}
     resume_from_checkpoint = _truthy_env("RESUME_FROM_CHECKPOINT")
     base_completed_targets = 0
+    completed_target_urls = []
     base_items_count = 0
     base_preview_items = []
     if resume_from_checkpoint:
-        base_completed_targets = max(0, int(original_summary.get("completed_targets") or 0))
-        base_completed_targets = min(base_completed_targets, total_target_count)
+        completed_target_urls = db_manager.get_automation_run_completed_target_urls(run_id)
+        completed_target_keys = {
+            str(url or "").strip().rstrip("/").lower()
+            for url in completed_target_urls
+            if str(url or "").strip()
+        }
+        completed_target_urls = [
+            url for url in target_urls
+            if str(url or "").strip().rstrip("/").lower() in completed_target_keys
+        ]
+        base_completed_targets = len(completed_target_urls)
         base_items_count = max(
             0,
             int(
@@ -94,7 +104,14 @@ def resume_run(run_id: int) -> int:
         if checkpoint_items:
             base_preview_items = checkpoint_items
             base_items_count = len(checkpoint_items)
-    remaining_target_urls = target_urls[base_completed_targets:]
+    completed_target_keys = {
+        str(url or "").strip().rstrip("/").lower()
+        for url in completed_target_urls
+    }
+    remaining_target_urls = [
+        url for url in target_urls
+        if str(url or "").strip().rstrip("/").lower() not in completed_target_keys
+    ]
     checkpoint_only_phase1 = base_items_count > 0 and base_completed_targets <= 0
     phase_name = "Restoring Product Checkpoint" if checkpoint_only_phase1 else "Phase 1: Category Crawling"
     db_manager.mark_automation_run_resuming(
@@ -130,6 +147,9 @@ def resume_run(run_id: int) -> int:
 
     def progress_callback(progress: Dict[str, object]):
         automation_stop_check()
+        enriched_checkpoint = progress.get("enriched_item")
+        if isinstance(enriched_checkpoint, dict):
+            db_manager.save_automation_run_product_detail(run_id, enriched_checkpoint)
         now = time.time()
         current_phase = int(progress.get("phase") or (2 if progress.get("phase2_total") else 1))
         total_targets_local = max(1, total_target_count)
@@ -148,8 +168,16 @@ def resume_run(run_id: int) -> int:
         preview_items = progress.get("preview_items") if isinstance(progress.get("preview_items"), list) else []
         checkpoint_preview_items = preview_items or base_preview_items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT]
         cutoff = now - 10 * 60
-        phase2_completed = int(progress.get("phase2_completed") or 0)
-        phase2_total = int(progress.get("phase2_total") or 0)
+        phase2_completed = int(
+            progress.get("phase2_completed")
+            if progress.get("phase2_completed") is not None
+            else progress_summary_cache.get("phase2_completed") or 0
+        )
+        phase2_total = int(
+            progress.get("phase2_total")
+            if progress.get("phase2_total") is not None
+            else progress_summary_cache.get("phase2_total") or 0
+        )
         if current_phase == 2 and phase2_completed > 0:
             phase2_total = max(phase2_total, phase2_completed)
 
@@ -251,7 +279,7 @@ def resume_run(run_id: int) -> int:
             progress_callback=progress_callback,
             stop_check=automation_stop_check,
             initial_items=base_preview_items if resume_from_checkpoint else None,
-            skip_target_urls=target_urls[:base_completed_targets] if resume_from_checkpoint else None,
+            skip_target_urls=completed_target_urls if resume_from_checkpoint else None,
         )
     except AutomationRunPaused as exc:
         db_manager.pause_automation_run(run_id, reason=str(exc) or "Automation run paused.")

@@ -253,6 +253,29 @@ class DatabaseManager:
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_run_completed_targets (
+                run_id INTEGER NOT NULL,
+                target_url TEXT NOT NULL,
+                target_url_key TEXT NOT NULL,
+                completed_at DATETIME NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES automation_runs (id) ON DELETE CASCADE,
+                UNIQUE (run_id, target_url_key)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_run_product_details (
+                run_id INTEGER NOT NULL,
+                product_url TEXT NOT NULL,
+                product_url_key TEXT NOT NULL,
+                item_json TEXT NOT NULL,
+                updated_at DATETIME NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES automation_runs (id) ON DELETE CASCADE,
+                UNIQUE (run_id, product_url_key)
+            )
+        ''')
+
         # ===== AUTO-SCRAPER TABLES =====
 
         # Scraper runs tracking
@@ -388,6 +411,8 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_runs_job ON automation_runs (job_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_runs_started ON automation_runs (started_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_run_items_run ON automation_run_items (run_id, item_index)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_run_targets_run ON automation_run_completed_targets (run_id, target_url_key)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_run_details_run ON automation_run_product_details (run_id, product_url_key)')
 
         # Auto-scraper indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_scraper_runs_status ON scraper_runs (status)')
@@ -1579,6 +1604,113 @@ class DatabaseManager:
                 conn.rollback()
             return 0
 
+    def mark_automation_run_target_completed(self, run_id: int, target_url: str) -> bool:
+        """Persist the exact target that finished, independent of parallel completion order."""
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return False
+        normalized_url = self._normalize_automation_url(target_url)
+        if not normalized_url:
+            return False
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR IGNORE INTO automation_run_completed_targets (
+                    run_id, target_url, target_url_key, completed_at
+                ) VALUES (?, ?, ?, ?)
+            ''', (
+                normalized_run_id,
+                str(target_url or '').strip(),
+                normalized_url,
+                get_pakistan_time().isoformat(),
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error recording completed automation target: {e}")
+            return False
+
+    def get_automation_run_completed_target_urls(self, run_id: int) -> List[str]:
+        """Return exact completed targets, with a safe legacy checkpoint fallback."""
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return []
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT target_url
+                FROM automation_run_completed_targets
+                WHERE run_id = ?
+                ORDER BY completed_at ASC, rowid ASC
+            ''', (normalized_run_id,))
+            recorded = [str(row['target_url'] or '').strip() for row in cursor.fetchall() if str(row['target_url'] or '').strip()]
+            if recorded:
+                return recorded
+
+            # Runs created before exact target tracking can still recover every
+            # target which yielded at least one checkpointed product. Re-running
+            # zero-product targets is safer than incorrectly skipping them.
+            cursor.execute('''
+                SELECT item_json
+                FROM automation_run_items
+                WHERE run_id = ?
+                ORDER BY item_index ASC
+            ''', (normalized_run_id,))
+            legacy_urls = []
+            seen = set()
+            for row in cursor.fetchall():
+                item = self._parse_json_text(row['item_json'], {})
+                extra = item.get('extra') if isinstance(item, dict) and isinstance(item.get('extra'), dict) else {}
+                target_url = str(extra.get('target_url') or '').strip()
+                target_key = self._normalize_automation_url(target_url)
+                if target_key and target_key not in seen:
+                    seen.add(target_key)
+                    legacy_urls.append(target_url)
+            return legacy_urls
+        except Exception as e:
+            print(f"Error getting completed automation targets: {e}")
+            return []
+
+    def save_automation_run_product_detail(self, run_id: int, item: Dict[str, Any]) -> bool:
+        """Checkpoint one enriched product so phase 2 can resume after a crash."""
+        if not isinstance(item, dict):
+            return False
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return False
+        product_url = str(item.get('url') or '').strip()
+        product_url_key = self._normalize_automation_url(product_url)
+        if not product_url_key:
+            return False
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO automation_run_product_details (
+                    run_id, product_url, product_url_key, item_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(run_id, product_url_key) DO UPDATE SET
+                    product_url = excluded.product_url,
+                    item_json = excluded.item_json,
+                    updated_at = excluded.updated_at
+            ''', (
+                normalized_run_id,
+                product_url,
+                product_url_key,
+                json.dumps(item, ensure_ascii=True, separators=(',', ':')),
+                get_pakistan_time().isoformat(),
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error saving automation product detail checkpoint: {e}")
+            return False
+
     def get_automation_run_items(self, run_id: int, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         try:
             normalized_run_id = int(run_id)
@@ -1600,10 +1732,27 @@ class DatabaseManager:
                 ORDER BY item_index ASC
                 {limit_clause}
             ''', tuple(params))
+            item_rows = cursor.fetchall()
+            cursor.execute('''
+                SELECT product_url_key, item_json
+                FROM automation_run_product_details
+                WHERE run_id = ?
+            ''', (normalized_run_id,))
+            details = {}
+            for detail_row in cursor.fetchall():
+                parsed_detail = self._parse_json_text(detail_row['item_json'], {})
+                if isinstance(parsed_detail, dict):
+                    details[str(detail_row['product_url_key'] or '')] = parsed_detail
+
             items = []
-            for row in cursor.fetchall():
+            for row in item_rows:
                 parsed = self._parse_json_text(row['item_json'], {})
                 if isinstance(parsed, dict):
+                    detail = details.get(self._normalize_automation_url(parsed.get('url')))
+                    if detail:
+                        base_extra = parsed.get('extra') if isinstance(parsed.get('extra'), dict) else {}
+                        detail_extra = detail.get('extra') if isinstance(detail.get('extra'), dict) else {}
+                        parsed = {**parsed, **detail, 'extra': {**detail_extra, **base_extra}}
                     items.append(parsed)
             return items
         except Exception as e:

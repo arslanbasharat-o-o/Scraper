@@ -42,6 +42,20 @@ def clean_text(text: str) -> str:
     return re.sub(r'\s+', ' ', str(text or '')).strip()
 
 
+def extract_labeled_sku(soup: BeautifulSoup) -> str:
+    """Extract SKU from the Hyva product-detail label/value markup."""
+    for label in soup.select('dt.product-detail-label, dt, .product-detail-label'):
+        if clean_text(label.get_text(' ', strip=True)).rstrip(':').lower() != 'sku':
+            continue
+        value = label.find_next_sibling('dd')
+        if value is None and label.parent is not None:
+            value = label.parent.select_one('dd.product-detail-value, .product-detail-value')
+        sku = clean_text(value.get_text(' ', strip=True) if value else '')
+        if sku:
+            return sku
+    return ''
+
+
 def strip_markup(text: str) -> str:
     if not text:
         return ""
@@ -448,6 +462,8 @@ def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional
             or sku_el.get('content')
             or sku_el.get_text(' ', strip=True)
         )
+    if not item.sku:
+        item.sku = extract_labeled_sku(soup)
 
     stock_el = soup.select_one('.product-info-stock-sku .stock, .stock.available, .stock.unavailable, .stock')
     if stock_el:

@@ -24,8 +24,9 @@ from scrapers.botasaurus_wrapper import (
     Driver,
     browser,
     close_botasaurus_driver,
+    create_chrome_run_profile,
+    remove_chrome_run_profile,
     resolve_chrome_executable,
-    resolve_chrome_profile_root,
 )
 from scrapers.browser_fetcher import MOBILESENTRIX_CANADA_POPUP_DISMISS_JS
 
@@ -981,9 +982,10 @@ async def run_site(
     start = time.monotonic()
     headless = bool(args.headless or not args.visible)
 
-    profile_root = resolve_chrome_profile_root(Path("data") / "browser_profiles")
-    profile_dir = profile_root / f"menu-map-{config.output_slug}"
-    profile_dir.mkdir(parents=True, exist_ok=True)
+    profile_dir = create_chrome_run_profile(
+        Path("data") / "browser_profiles",
+        f"menu-map-{config.output_slug}",
+    )
     chrome_executable = resolve_chrome_executable()
     logger.info(
         "Starting Botasaurus with Chrome executable %s and profile %s",
@@ -1074,6 +1076,8 @@ async def run_site(
             "Botasaurus menu-map run failed while starting or connecting to Chrome executable %s",
             chrome_executable or "Botasaurus default discovery",
         )
+    finally:
+        remove_chrome_run_profile(profile_dir, logger)
     result.completion_time = utc_now()
     result.runtime_seconds = time.monotonic() - start
     for r in result.records:

@@ -265,6 +265,36 @@ def test_automation_run_items_are_persisted_for_crash_recovery(tmp_path, monkeyp
     assert [item["title"] for item in manager.get_automation_run_items(run["id"], limit=1)] == ["Screen A"]
 
 
+def test_parallel_resume_tracks_exact_targets_and_overlays_detail_checkpoint(tmp_path, monkeypatch):
+    database = _fresh_database_module(tmp_path, monkeypatch)
+    manager = database.DatabaseManager(db_path=str(tmp_path / "automation.db"))
+    targets = [
+        {**_sample_targets()[0], "url": "https://xcellparts.com/category/a"},
+        {**_sample_targets()[0], "url": "https://xcellparts.com/category/b"},
+    ]
+    created = manager.save_automation_job(_base_job_payload(), targets=targets)
+    run = manager.create_automation_run(created["id"], target_urls=[target["url"] for target in targets])
+    manager.append_automation_run_items(run["id"], [{
+        "title": "Screen B",
+        "url": "https://xcellparts.com/product/b",
+        "sku": "",
+        "extra": {"target_url": targets[1]["url"], "target_label": "Category B"},
+    }])
+
+    manager.mark_automation_run_target_completed(run["id"], targets[1]["url"])
+    manager.save_automation_run_product_detail(run["id"], {
+        "title": "Screen B",
+        "url": "https://xcellparts.com/product/b",
+        "sku": "SKU-B",
+        "extra": {"sku": "SKU-B"},
+    })
+
+    assert manager.get_automation_run_completed_target_urls(run["id"]) == [targets[1]["url"]]
+    restored = manager.get_automation_run_items(run["id"])[0]
+    assert restored["sku"] == "SKU-B"
+    assert restored["extra"]["target_label"] == "Category B"
+
+
 def test_resume_claim_is_atomic_and_preserves_checkpoint(tmp_path, monkeypatch):
     database = _fresh_database_module(tmp_path, monkeypatch)
     manager = database.DatabaseManager(db_path=str(tmp_path / "automation.db"))

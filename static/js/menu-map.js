@@ -1053,7 +1053,9 @@ async function runAutomationForSelectedSite() {
     automationSubmissionPending = true;
     updateRunControls();
     const payload = automationPayloadForSite(site, targets);
-    const saved = await fetchJson('/api/automation/jobs', {
+    // Keep this response compact: large menu maps can contain thousands of
+    // targets, and echoing them back causes a visible main-thread JSON pause.
+    const saved = await fetchJson('/api/automation/jobs?compact=1', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

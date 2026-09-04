@@ -837,6 +837,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 futures[executor.submit(run_with_supplier_limit)] = item_url
             for future in as_completed(futures):
                 item_url = futures[future]
+                enriched_data = None
                 try:
                     _, enriched_data = future.result()
                 except AutomationRunPaused:
@@ -861,6 +862,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                             'phase2_total': total_to_enrich,
                             'current_items': len(items),
                             'last_item_url': item_url,
+                            'enriched_item': enriched_data,
                         })
                     except AutomationRunPaused:
                         for pending_future in futures:
@@ -2124,8 +2126,6 @@ def execute_scrape_workflow(
         return target_items
 
     def _report_progress(target_url: str, scraped_items) -> None:
-        if not progress_callback:
-            return
         valid_items_count = _count_valid_items(scraped_items)
         preview_items = [
             serialize_scraped_item(item)
@@ -2139,11 +2139,15 @@ def execute_scrape_workflow(
                     preview_items,
                 )
                 progress_state['checkpoint_items'] += persisted_count
+            if active_run_id_for_progress > 0:
+                db_manager.mark_automation_run_target_completed(active_run_id_for_progress, target_url)
             progress_state['completed_targets'] += 1
             progress_state['items_found'] += valid_items_count
             if preview_items and len(progress_state['preview_items']) < AUTOMATION_CHECKPOINT_ITEM_LIMIT:
                 remaining = AUTOMATION_CHECKPOINT_ITEM_LIMIT - len(progress_state['preview_items'])
                 progress_state['preview_items'].extend(preview_items[:remaining])
+            if not progress_callback:
+                return
             progress_callback({
                 'completed_targets': progress_state['completed_targets'],
                 'total_targets': total_targets,
@@ -2538,8 +2542,6 @@ def execute_scrape_workflow(
             'completed_targets': len(urls),
             'total_targets': len(urls),
             'current_items': len(items),
-            'phase2_completed': enriched_count if effective_enrich_details else len(items),
-            'phase2_total': len(items) if effective_enrich_details else 0,
             'progress_percent': 96.0,
         })
 
@@ -2575,8 +2577,6 @@ def execute_scrape_workflow(
             'completed_targets': len(urls),
             'total_targets': len(urls),
             'current_items': len(items),
-            'phase2_completed': len(items),
-            'phase2_total': len(items),
             'progress_percent': 99.0,
         })
 
@@ -2733,6 +2733,18 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
             if not run_record:
                 return
 
+            # Run CPU-heavy parsing in a child process so the single Gunicorn
+            # web worker remains responsive to dashboard and menu-map requests.
+            run_in_process = str(os.getenv('AUTOMATION_RUN_IN_PROCESS', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
+            if not run_in_process:
+                launched, launch_error = _spawn_automation_run_worker(
+                    run_record['id'],
+                    resume_from_checkpoint=False,
+                )
+                if not launched:
+                    db_manager.fail_automation_run_resume_launch(run_record['id'], launch_error)
+                return
+
             total_target_count = len(target_urls)
             db_manager.update_automation_run_progress(
                 run_record['id'],
@@ -2766,6 +2778,9 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
 
             def automation_progress_callback(progress: Dict[str, object]):
                 automation_stop_check()
+                enriched_checkpoint = progress.get('enriched_item')
+                if isinstance(enriched_checkpoint, dict):
+                    db_manager.save_automation_run_product_detail(run_record['id'], enriched_checkpoint)
                 latest_summary = dict(progress_summary_cache)
                 now = time.time()
                 current_phase = int(progress.get('phase') or (2 if progress.get('phase2_total') else 1))
@@ -3075,6 +3090,51 @@ def _watch_resume_worker(run_id: int, proc: subprocess.Popen) -> None:
             pass
 
 
+def _spawn_automation_run_worker(run_id: int, *, resume_from_checkpoint: bool) -> Tuple[bool, str]:
+    """Launch an automation workflow outside the web process."""
+    normalized_run_id = int(run_id)
+    script_path = APP_ROOT / 'scripts' / 'resume_automation_run.py'
+    if not script_path.exists():
+        return False, 'Automation worker script is missing.'
+
+    tmp_dir = APP_ROOT / '.tmp'
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    stdout_path = tmp_dir / f'resume-run-{normalized_run_id}.out.log'
+    stderr_path = tmp_dir / f'resume-run-{normalized_run_id}.err.log'
+    env = os.environ.copy()
+    env['RESUME_FROM_CHECKPOINT'] = '1' if resume_from_checkpoint else '0'
+    env.setdefault('AUTOMATION_SCHEDULER_DISABLED', '1')
+    env.setdefault('AUTOMATION_RECOVER_RUNNING', '0')
+    run = db_manager.get_automation_run(normalized_run_id) or {}
+    if str(run.get('scraper_key') or '').strip().lower() == 'xcell':
+        env.setdefault('XCELL_MAX_WORKERS', '24')
+        env.setdefault('SCRAPER_XCELL_DETAIL_WORKERS', '64')
+        env.setdefault('SCRAPER_USE_BROWSER', '0')
+
+    try:
+        with open(stdout_path, 'ab') as stdout_handle, open(stderr_path, 'ab') as stderr_handle:
+            proc = subprocess.Popen(
+                [sys.executable, '-u', str(script_path), str(normalized_run_id)],
+                cwd=str(APP_ROOT),
+                env=env,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+        with AUTOMATION_RESUME_PROCESSES_LOCK:
+            AUTOMATION_RESUME_PROCESSES[normalized_run_id] = proc
+        _write_resume_worker_lock(normalized_run_id, proc.pid)
+        threading.Thread(
+            target=_watch_resume_worker,
+            args=(normalized_run_id, proc),
+            name=f'automation-worker-watch-{normalized_run_id}',
+            daemon=True,
+        ).start()
+        return True, ''
+    except Exception as exc:
+        return False, str(exc)
+
+
 def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
     try:
         normalized_run_id = int(run_id)
@@ -3093,47 +3153,17 @@ def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
     if _resume_worker_is_locked(normalized_run_id):
         return False, 'This automation run already has a resume worker still shutting down. Wait a moment and refresh.'
 
-    script_path = APP_ROOT / 'scripts' / 'resume_automation_run.py'
-    if not script_path.exists():
-        return False, 'Resume helper script is missing.'
-
-    tmp_dir = APP_ROOT / '.tmp'
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    stdout_path = tmp_dir / f'resume-run-{normalized_run_id}.out.log'
-    stderr_path = tmp_dir / f'resume-run-{normalized_run_id}.err.log'
-    env = os.environ.copy()
-    env['RESUME_FROM_CHECKPOINT'] = '1'
-    env.setdefault('AUTOMATION_SCHEDULER_DISABLED', '1')
-    env.setdefault('AUTOMATION_RECOVER_RUNNING', '0')
-
-    if str(run.get('scraper_key') or '').strip().lower() == 'xcell':
-        env.setdefault('XCELL_MAX_WORKERS', '24')
-        env.setdefault('SCRAPER_XCELL_DETAIL_WORKERS', '64')
-        env.setdefault('SCRAPER_USE_BROWSER', '0')
-
     try:
         claimed_run = db_manager.claim_automation_run_resume(normalized_run_id)
         if not claimed_run:
             return False, 'This automation run is already running or is no longer resumable.'
-        with open(stdout_path, 'ab') as stdout_handle, open(stderr_path, 'ab') as stderr_handle:
-            proc = subprocess.Popen(
-                [sys.executable, '-u', str(script_path), str(normalized_run_id)],
-                cwd=str(APP_ROOT),
-                env=env,
-                stdout=stdout_handle,
-                stderr=stderr_handle,
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
-            )
-        with AUTOMATION_RESUME_PROCESSES_LOCK:
-            AUTOMATION_RESUME_PROCESSES[normalized_run_id] = proc
-        _write_resume_worker_lock(normalized_run_id, proc.pid)
-        threading.Thread(
-            target=_watch_resume_worker,
-            args=(normalized_run_id, proc),
-            name=f'automation-resume-watch-{normalized_run_id}',
-            daemon=True,
-        ).start()
-        return True, ''
+        launched, message = _spawn_automation_run_worker(
+            normalized_run_id,
+            resume_from_checkpoint=True,
+        )
+        if not launched:
+            db_manager.fail_automation_run_resume_launch(normalized_run_id, message)
+        return launched, message
     except Exception as exc:
         db_manager.fail_automation_run_resume_launch(normalized_run_id, str(exc))
         return False, str(exc)
@@ -3162,6 +3192,8 @@ def _automation_scheduler_loop():
 
 def ensure_automation_scheduler_started():
     global AUTOMATION_SCHEDULER_STARTED, AUTOMATION_SCHEDULER_THREAD
+    if os.getenv('PYTEST_CURRENT_TEST') or 'pytest' in sys.modules:
+        return
     scheduler_disabled = str(os.getenv("AUTOMATION_SCHEDULER_DISABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
     if scheduler_disabled:
         app.logger.info("[automation] Scheduler disabled by AUTOMATION_SCHEDULER_DISABLED")
@@ -4407,6 +4439,8 @@ def api_automation_jobs_save():
         job = db_manager.save_automation_job(data, targets=targets)
         if not job:
             return jsonify({'error': 'Failed to save automation job. Check the site and category query.'}), 400
+        if coerce_bool(request.args.get('compact'), default=False):
+            job = {key: value for key, value in job.items() if key != 'targets'}
         return jsonify({
             'success': True,
             'job': job,

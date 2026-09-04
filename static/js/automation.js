@@ -429,7 +429,7 @@
   function getRunProgressPercent(run) {
     const summary = run?.summary || {};
     const phase = Number(summary.phase || 0);
-    if (phase === 2 || Number(summary.phase2_total || 0) > 0 || Number(summary.phase2_completed || 0) > 0) {
+    if (phase === 2) {
       const phase2Progress = getPhase2Progress(run);
       if (phase2Progress.total > 0) {
         return clampPercent((phase2Progress.completed / phase2Progress.total) * 100, 0);
