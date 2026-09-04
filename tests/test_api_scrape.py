@@ -510,6 +510,36 @@ def test_resume_reconciles_interrupted_run_when_worker_is_alive(tmp_path, monkey
     assert restored["status"] == "running"
 
 
+def test_resume_clears_paused_worker_before_claiming_run(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    job = app_module.db_manager.save_automation_job(
+        {
+            "name": "Paused worker",
+            "scraper_key": "xcell",
+            "category_query": "paused",
+            "root_url": "https://xcellparts.com/",
+            "interval_minutes": 1440,
+            "enabled": True,
+        },
+        targets=[{"label": "One", "url": "https://xcellparts.com/one", "active": True}],
+    )
+    run = app_module.db_manager.create_automation_run(
+        job["id"], trigger_type="manual", target_urls=["https://xcellparts.com/one"]
+    )
+    app_module.db_manager.pause_automation_run(run["id"], reason="Paused for test.")
+    stop_calls = []
+    lock_states = iter([True, False])
+    monkeypatch.setattr(app_module, "_resume_worker_is_locked", lambda _run_id: next(lock_states))
+    monkeypatch.setattr(app_module, "_stop_resume_worker", lambda run_id, **_kwargs: stop_calls.append(run_id) or True)
+    monkeypatch.setattr(app_module, "_spawn_automation_run_worker", lambda *_args, **_kwargs: (True, ""))
+
+    launched, message = app_module._launch_existing_automation_run(run["id"])
+
+    assert launched is True
+    assert message == ""
+    assert stop_calls == [run["id"]]
+
+
 def test_exited_resume_worker_cleans_lock_atomically(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
     monkeypatch.setattr(app_module, "APP_ROOT", tmp_path)
@@ -527,6 +557,37 @@ def test_exited_resume_worker_cleans_lock_atomically(tmp_path, monkeypatch):
     assert app_module._resume_worker_is_locked(53) is False
     assert 53 not in app_module.AUTOMATION_RESUME_PROCESSES
     assert not app_module._resume_worker_lock_path(53).exists()
+
+
+def test_pause_stops_inflight_resume_worker_tree_promptly(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    class RunningProcess:
+        pid = 8123
+
+        def __init__(self):
+            self.killed = False
+
+        def poll(self):
+            return 0 if self.killed else None
+
+        def wait(self, timeout=None):
+            if not self.killed:
+                raise app_module.subprocess.TimeoutExpired("worker", timeout)
+            return 0
+
+    worker = RunningProcess()
+
+    def fake_run(command, **_kwargs):
+        assert command[:2] == ["taskkill", "/PID"]
+        worker.killed = True
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(app_module.subprocess, "run", fake_run)
+    app_module.AUTOMATION_RESUME_PROCESSES[61] = worker
+
+    assert app_module._stop_resume_worker(61) is True
+    assert worker.killed is True
 
 
 def test_sparse_target_guard_blocks_bad_history_save(tmp_path, monkeypatch):

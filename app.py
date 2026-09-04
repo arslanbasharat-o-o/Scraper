@@ -2908,6 +2908,76 @@ def _watch_resume_worker(run_id: int, proc: subprocess.Popen) -> None:
             _remove_resume_worker_lock_if_owned(run_id, proc.pid)
 
 
+def _stop_resume_worker(run_id: int, *, grace_seconds: float = 3.0) -> bool:
+    """Stop a paused external worker so its resume lock clears promptly.
+
+    A worker can be inside a large batch of HTTP futures when the pause flag is
+    written.  Waiting for every in-flight request leaves the run looking locked
+    for minutes.  Give the worker a short opportunity to observe the pause, then
+    terminate its process tree (including the Windows Python launcher child).
+    """
+    try:
+        normalized_run_id = int(run_id)
+    except (TypeError, ValueError):
+        return False
+
+    proc = None
+    with AUTOMATION_RESUME_PROCESSES_LOCK:
+        proc = AUTOMATION_RESUME_PROCESSES.get(normalized_run_id)
+
+    if proc is not None and proc.poll() is None:
+        try:
+            proc.wait(timeout=max(0.0, float(grace_seconds)))
+        except subprocess.TimeoutExpired:
+            pass
+        if proc.poll() is None:
+            pid = int(getattr(proc, 'pid', 0) or 0)
+            try:
+                if os.name == 'nt':
+                    subprocess.run(
+                        ['taskkill', '/PID', str(pid), '/T', '/F'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                    )
+                else:
+                    os.killpg(os.getpgid(pid), signal.SIGTERM)
+            except (OSError, subprocess.SubprocessError, ValueError):
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                pass
+        return True
+
+    lock_data = _read_resume_worker_lock(normalized_run_id)
+    pid = int(lock_data.get('pid') or 0)
+    if not pid or not _resume_worker_pid_is_alive(pid):
+        _remove_resume_worker_lock_if_owned(normalized_run_id, pid)
+        return False
+    try:
+        if os.name == 'nt':
+            result = subprocess.run(
+                ['taskkill', '/PID', str(pid), '/T', '/F'],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+            if result.returncode != 0 and _resume_worker_pid_is_alive(pid):
+                return False
+        else:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+    _remove_resume_worker_lock_if_owned(normalized_run_id, pid)
+    return True
+
+
 def _spawn_automation_run_worker(run_id: int, *, resume_from_checkpoint: bool) -> Tuple[bool, str]:
     """Launch an automation workflow outside the web process."""
     normalized_run_id = int(run_id)
@@ -2938,6 +3008,7 @@ def _spawn_automation_run_worker(run_id: int, *, resume_from_checkpoint: bool) -
                 stdout=stdout_handle,
                 stderr=stderr_handle,
                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                start_new_session=os.name != 'nt',
             )
         with AUTOMATION_RESUME_PROCESSES_LOCK:
             AUTOMATION_RESUME_PROCESSES[normalized_run_id] = proc
@@ -2976,7 +3047,14 @@ def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
     if status == 'completed':
         return False, 'Completed runs already have a saved snapshot. Start a new run only when you want a fresh comparison.'
     if worker_locked:
-        return False, 'This automation run already has a resume worker still shutting down. Wait a moment and refresh.'
+        if status in {'paused', 'failed'}:
+            # A paused/failed worker cannot make forward progress. Stop its
+            # remaining HTTP futures and release the lock so Resume can claim
+            # the run immediately instead of leaving the user in a retry loop.
+            _stop_resume_worker(normalized_run_id, grace_seconds=0)
+            worker_locked = _resume_worker_is_locked(normalized_run_id)
+        if worker_locked:
+            return False, 'This automation run already has an active resume worker. Refresh its progress before trying again.'
 
     try:
         claimed_run = db_manager.claim_automation_run_resume(normalized_run_id)
@@ -4548,6 +4626,7 @@ def api_pause_automation_run(run_id):
         paused = db_manager.pause_automation_run(run_id, reason='Automation run paused by user.')
         if not paused:
             return jsonify({'error': 'Failed to pause automation run.'}), 500
+        _stop_resume_worker(run_id)
         return jsonify({'success': True, 'run': paused})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
