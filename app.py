@@ -114,6 +114,32 @@ SCRAPER_DETAIL_WORKER_DEFAULTS = {
     'standard': 8,
 }
 SCRAPER_WORKER_HARD_CAP = 96
+SCRAPER_WORKER_PROFILES = {
+    # Conservative high-throughput profile for a 10 GB development machine.
+    'local_10gb': {
+        'hard_cap': 64,
+        'phase1': {'xcell': 16, 'txparts': 16, 'parts4cells': 16, 'phonelcdparts': 16, 'gadgetfix': 12, 'standard': 16},
+        'detail': {'xcell': 40, 'txparts': 24, 'parts4cells': 24, 'phonelcdparts': 32, 'gadgetfix': 20, 'mobilesentrix_canada': 12, 'standard': 16},
+    },
+    # Wider profile for the 40 GB Hostinger server; HTTP remains primary and
+    # browser fallback is still separately bounded by SCRAPER_LOCAL_BROWSER_MAX_WINDOWS.
+    'server_40gb': {
+        'hard_cap': 160,
+        'phase1': {'xcell': 48, 'txparts': 40, 'parts4cells': 40, 'phonelcdparts': 40, 'gadgetfix': 32, 'standard': 48},
+        'detail': {'xcell': 96, 'txparts': 64, 'parts4cells': 64, 'phonelcdparts': 80, 'gadgetfix': 64, 'mobilesentrix_canada': 32, 'standard': 48},
+    },
+}
+
+
+def resolve_scraper_worker_hard_cap() -> int:
+    """Return the global worker cap selected by the active memory profile."""
+    profile_name = str(os.getenv('SCRAPER_WORKER_PROFILE') or '').strip().lower()
+    profile = SCRAPER_WORKER_PROFILES.get(profile_name) or {}
+    raw_value = os.getenv('SCRAPER_WORKER_HARD_CAP') or profile.get('hard_cap') or SCRAPER_WORKER_HARD_CAP
+    try:
+        return max(1, min(256, int(raw_value)))
+    except (TypeError, ValueError):
+        return int(profile.get('hard_cap') or SCRAPER_WORKER_HARD_CAP)
 
 
 def resolve_scraper_worker_limit(engine_type: str, phase: str) -> int:
@@ -121,14 +147,16 @@ def resolve_scraper_worker_limit(engine_type: str, phase: str) -> int:
     normalized_engine = str(engine_type or 'standard').strip().lower() or 'standard'
     normalized_phase = 'detail' if str(phase or '').strip().lower() == 'detail' else 'phase1'
     defaults = SCRAPER_DETAIL_WORKER_DEFAULTS if normalized_phase == 'detail' else SCRAPER_PHASE1_WORKER_DEFAULTS
-    default = int(defaults.get(normalized_engine, defaults['standard']))
+    profile_name = str(os.getenv('SCRAPER_WORKER_PROFILE') or '').strip().lower()
+    profile_defaults = (SCRAPER_WORKER_PROFILES.get(profile_name) or {}).get(normalized_phase, {})
+    default = int(profile_defaults.get(normalized_engine, defaults.get(normalized_engine, defaults['standard'])))
     engine_token = re.sub(r'[^A-Z0-9]+', '_', normalized_engine.upper()).strip('_') or 'STANDARD'
     names = [f'SCRAPER_{engine_token}_{normalized_phase.upper()}_WORKERS']
     if normalized_engine == 'xcell' and normalized_phase == 'phase1':
         names.extend(['XCELL_MAX_WORKERS', 'SCRAPER_XCELL_MAX_WORKERS'])
     raw_value = next((os.getenv(name) for name in names if os.getenv(name) not in (None, '')), default)
     try:
-        return max(1, min(SCRAPER_WORKER_HARD_CAP, int(raw_value)))
+        return max(1, min(resolve_scraper_worker_hard_cap(), int(raw_value)))
     except (TypeError, ValueError):
         return default
 
@@ -798,7 +826,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
     }
     max_workers = min(
         total_to_enrich,
-        SCRAPER_WORKER_HARD_CAP,
+        resolve_scraper_worker_hard_cap(),
         max(1, sum(engine_worker_limits.values())),
     )
     engine_semaphores = {

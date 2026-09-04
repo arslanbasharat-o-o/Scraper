@@ -333,6 +333,18 @@ def test_supplier_worker_profiles_restore_fast_http_concurrency(tmp_path, monkey
     assert app_module.resolve_scraper_worker_limit("xcell", "detail") == app_module.SCRAPER_WORKER_HARD_CAP
 
 
+def test_memory_profiles_scale_worker_limits_for_local_and_server(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    monkeypatch.setenv("SCRAPER_WORKER_PROFILE", "local_10gb")
+    assert app_module.resolve_scraper_worker_hard_cap() == 64
+    assert app_module.resolve_scraper_worker_limit("phonelcdparts", "detail") == 32
+
+    monkeypatch.setenv("SCRAPER_WORKER_PROFILE", "server_40gb")
+    assert app_module.resolve_scraper_worker_hard_cap() == 160
+    assert app_module.resolve_scraper_worker_limit("phonelcdparts", "detail") == 80
+
+
 def test_phase_two_reuses_phase_one_supplier_cookies(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
     observed_cookies = []
