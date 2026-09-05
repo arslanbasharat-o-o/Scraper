@@ -179,6 +179,13 @@ def _run_one(source_run: dict) -> None:
                 summary=final_summary,
                 error_text=error_text,
             )
+            if status == "completed":
+                merged = db_manager.merge_automation_run(source_id, continuation_id)
+                if not merged:
+                    raise RuntimeError(
+                        f"continuation {continuation_id} completed but could not merge into source run {source_id}"
+                    )
+                print(f"[run {source_id}] merged continuation {continuation_id} into the original run", flush=True)
             print(
                 f"[run {source_id}] continuation {continuation_id} finished: "
                 f"SKU found={summary['sku_found']:,}/{summary['sku_total']:,}, "

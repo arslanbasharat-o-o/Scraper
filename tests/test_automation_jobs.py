@@ -320,6 +320,58 @@ def test_parallel_resume_tracks_exact_targets_and_overlays_detail_checkpoint(tmp
     assert restored["extra"]["target_label"] == "Category B"
 
 
+def test_completed_phase2_continuation_merges_without_false_comparison_run(tmp_path, monkeypatch):
+    database = _fresh_database_module(tmp_path, monkeypatch)
+    manager = database.DatabaseManager(db_path=str(tmp_path / "automation.db"))
+    target_url = "https://xcellparts.com/category/a"
+    job = manager.save_automation_job(_base_job_payload(), targets=[{
+        "label": "Category A",
+        "url": target_url,
+        "active": True,
+    }])
+
+    assert manager.save_fetch_history("1000", [target_url], [{
+        "title": "Screen A",
+        "url": "https://xcellparts.com/product/a",
+        "site": "xcellparts.com",
+        "sku": "",
+        "price_value": 10.0,
+        "price_text": "$10.00",
+        "source": "listing",
+    }], {})
+    assert manager.save_fetch_history("2000", [target_url], [{
+        "title": "Screen A",
+        "url": "https://xcellparts.com/product/a",
+        "site": "xcellparts.com",
+        "sku": "SKU-A",
+        "price_value": 10.0,
+        "price_text": "$10.00",
+        "source": "listing",
+    }], {"_phase2_backfill": True})
+
+    source = manager.create_automation_run(job["id"], target_urls=[target_url])
+    manager.complete_automation_run(
+        source["id"], status="completed", current_history_id="1000",
+        target_urls=[target_url], items_count=1, summary={"changed": 0},
+    )
+    continuation = manager.create_automation_run(
+        job["id"], trigger_type="phase2_sku_backfill",
+        target_urls=[target_url], previous_history_id="1000",
+    )
+    manager.complete_automation_run(
+        continuation["id"], status="completed", current_history_id="2000",
+        previous_history_id="1000", target_urls=[target_url], items_count=1,
+        summary={"phase": 3, "sku_found": 1, "source_run_id": source["id"]},
+    )
+
+    merged = manager.merge_automation_run(source["id"], continuation["id"])
+
+    assert merged["id"] == source["id"]
+    assert merged["current_history_id"] == "2000"
+    assert merged["previous_history_id"] == ""
+    assert manager.get_automation_run(continuation["id"]) is None
+
+
 def test_resume_claim_is_atomic_and_preserves_checkpoint(tmp_path, monkeypatch):
     database = _fresh_database_module(tmp_path, monkeypatch)
     manager = database.DatabaseManager(db_path=str(tmp_path / "automation.db"))

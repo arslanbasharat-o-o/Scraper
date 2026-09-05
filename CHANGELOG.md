@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.4.2] - 2026-09-05
+
+- Merged completed phase-2 SKU continuations back into their source runs so detail hydration does not create duplicate runs or false differences.
+- Added cross-engine comparison regression coverage for all configured suppliers.
+
 ## [8.4.1] - 2026-09-05
 
 - Added a resumable local phase-2 worker for backfilling SKUs in completed automation histories.

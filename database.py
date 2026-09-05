@@ -1383,6 +1383,71 @@ class DatabaseManager:
                 conn.rollback()
             return False
 
+    def merge_automation_run(self, source_run_id: int, continuation_run_id: int) -> Optional[Dict[str, Any]]:
+        """Fold a completed phase-2 continuation back into its source run.
+
+        The source run keeps its original previous-history baseline, so a
+        detail-only SKU backfill does not appear as a fresh scrape with false
+        price/stock/URL differences. The continuation row is removed after
+        its enriched history has been attached to the source.
+        """
+        try:
+            source_id = int(source_run_id)
+            continuation_id = int(continuation_run_id)
+        except (TypeError, ValueError):
+            return None
+        if source_id == continuation_id:
+            return None
+
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, job_id, status, current_history_id, items_count,
+                       summary_json, error_text
+                FROM automation_runs
+                WHERE id IN (?, ?)
+            ''', (source_id, continuation_id))
+            rows = {int(row['id']): row for row in cursor.fetchall()}
+            source = rows.get(source_id)
+            continuation = rows.get(continuation_id)
+            if not source or not continuation:
+                return None
+            if int(source['job_id']) != int(continuation['job_id']):
+                return None
+            if str(continuation['status'] or '').lower() != 'completed':
+                return None
+            current_history_id = str(continuation['current_history_id'] or '').strip()
+            if not current_history_id:
+                return None
+
+            summary = self._parse_json_text(continuation['summary_json'], {})
+            summary.pop('source_run_id', None)
+            summary.pop('source_history_id', None)
+            now_iso = get_pakistan_time().isoformat()
+            cursor.execute('''
+                UPDATE automation_runs
+                SET status = 'completed', completed_at = COALESCE(completed_at, ?),
+                    current_history_id = ?, items_count = ?, summary_json = ?, error_text = ?
+                WHERE id = ?
+            ''', (
+                now_iso,
+                current_history_id,
+                int(continuation['items_count'] or 0),
+                json.dumps(summary, ensure_ascii=True, separators=(',', ':')),
+                str(continuation['error_text'] or ''),
+                source_id,
+            ))
+            cursor.execute('DELETE FROM automation_runs WHERE id = ?', (continuation_id,))
+            conn.commit()
+            return self.get_automation_run(source_id)
+        except Exception as e:
+            print(f"Error merging automation runs: {e}")
+            if conn:
+                conn.rollback()
+            return None
+
     def set_automation_job_enabled(self, job_id: int, enabled: bool) -> Optional[Dict[str, Any]]:
         conn = None
         try:

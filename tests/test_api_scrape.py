@@ -33,6 +33,46 @@ def test_scrape_requires_at_least_one_url(tmp_path, monkeypatch):
     assert app_module.db_manager.get_history_list(limit=10) == []
 
 
+@pytest.mark.parametrize("product_url", [
+    "https://www.mobilesentrix.com/product/a",
+    "https://www.mobilesentrix.ca/product/a",
+    "https://xcellparts.com/product/a",
+    "https://txparts.com/product/a",
+    "https://txpartscanada.ca/product/a",
+    "https://parts4cells.com/product/a.html",
+    "https://www.phonelcdparts.com/product/a",
+    "https://gadgetfix.com/product/a.html",
+])
+def test_detail_backfill_metadata_is_not_reported_as_cross_engine_difference(tmp_path, monkeypatch, product_url):
+    """SKU/description hydration must not create a false change on any supplier."""
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    baseline = [{
+        "title": "Screen A",
+        "url": product_url,
+        "site": product_url.split('/')[2],
+        "price_value": 10.0,
+        "price_text": "$10.00",
+        "stock_status": "In Stock",
+        "source": "listing",
+    }]
+    hydrated = [{
+        **baseline[0],
+        "sku": "SKU-A",
+        "description": "Detailed product description",
+        "stock_status": "In stock (5)",
+    }]
+
+    comparison = app_module.build_session_comparison(
+        {"id": "baseline", "items": baseline},
+        hydrated,
+        current_target_urls=["https://example.test/category"],
+    )
+
+    assert comparison["summary"]["added"] == 0
+    assert comparison["summary"]["removed"] == 0
+    assert comparison["summary"]["changed"] == 0
+
+
 def test_scrape_uses_http_first_when_browser_not_requested(tmp_path, monkeypatch):
     """
     Safari-TLS HTTP is the PRIMARY scraping transport.
