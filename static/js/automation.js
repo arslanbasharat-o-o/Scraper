@@ -460,13 +460,15 @@
     const remainingTargets = Math.max(0, totalTargets - completedTargets);
     const averageMsPerTarget = completedTargets > 0 && elapsedMs > 0 ? elapsedMs / completedTargets : 0;
     const rawRecent = Number(summary.recent_targets_per_min || 0);
-    const recentTargetsPerMin = rawRecent > 0 ? rawRecent : (averageMsPerTarget > 0 && averageMsPerTarget < 5000 ? (60000 / averageMsPerTarget) : 45.0);
+    const recentTargetsPerMin = rawRecent > 0 ? rawRecent : (averageMsPerTarget > 0 ? (60000 / averageMsPerTarget) : 45.0);
     const currentPhase = Number(summary.phase || 0);
     const phase2Progress = getPhase2Progress(run);
     const phase2Total = phase2Progress.total;
     const phase2Completed = phase2Progress.completed;
     const recentItemsPerMin = Number(summary.recent_items_per_min || 0);
-    const isPhase2 = ['running', 'resuming'].includes(status) && (currentPhase === 2 || phase2Total > 0);
+    // Harvested products are already present during category crawling. They
+    // must not switch the ETA to product units until the worker reports phase 2.
+    const isPhase2 = ['running', 'resuming'].includes(status) && currentPhase === 2;
     const currentItems = Number(summary.current_items || run?.items_count || 0);
     const checkpointOnlyPhase1 = hasPhase1CheckpointItems(run);
     const remainingUnits = isPhase2 ? Math.max(0, phase2Total - phase2Completed) : remainingTargets;
@@ -489,6 +491,8 @@
       elapsedLabel: elapsedMs ? formatDuration(elapsedMs) : 'Estimating',
       etaLabel: etaMs ? formatDuration(etaMs) : (['running', 'resuming'].includes(status) ? 'Estimating' : 'Done'),
       rateLabel,
+      targetsPerMin: recentTargetsPerMin,
+      itemsPerMin: recentItemsPerMin,
       progressText,
       phaseLabel: isPhase2 ? 'Products' : 'Categories',
       finishLabel: etaMs ? formatDateTime(new Date(Date.now() + etaMs).toISOString()) : '',
@@ -2253,7 +2257,7 @@
           ? `${totalHarvested.toLocaleString()} products found`
           : `${p1Done} / ${p1Total} categories`;
         activeSpeed = runSummary.phase1_speed || (timing.targetsPerMin ? `${timing.targetsPerMin} cats/min` : '~45 cats/min');
-        activeEta = runSummary.phase1_eta || timing.etaLabel || '20.0m';
+        activeEta = runSummary.phase1_eta || timing.etaLabel || 'Estimating';
         activeRemaining = checkpointOnlyPhase1
           ? `${p1Total.toLocaleString()} categories queued`
           : `${Math.max(0, p1Total - p1Done)} categories`;
