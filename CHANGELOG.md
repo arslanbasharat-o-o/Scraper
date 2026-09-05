@@ -1,5 +1,9 @@
 # Changelog
 
+## [8.4.5] - 2026-09-05
+
+- Replace stale ETA/speed fields with measured rolling progress observations and explicit waiting-for-progress states.
+
 ## [8.4.4] - 2026-09-05
 
 - Keep canonical URL matching variant-aware so separate product variants cannot be paired accidentally.

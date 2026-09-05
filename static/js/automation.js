@@ -127,6 +127,7 @@
     runsRequestId: 0,
     runDetailRequestId: 0,
     lastRunDetailFetchAt: 0,
+    etaObservations: new Map(),
     realtimePollTimer: null,
     realtimeClockTimer: null,
     realtimePollInFlight: false
@@ -468,14 +469,16 @@
     const isPhase2 = ['running', 'resuming'].includes(status) && currentPhase === 2;
     const currentItems = Number(summary.current_items || run?.items_count || 0);
     const checkpointOnlyPhase1 = hasPhase1CheckpointItems(run);
+    const measured = getMeasuredRunRate(run, isPhase2 ? phase2Completed : completedTargets, isPhase2 ? phase2Total : totalTargets);
+    const measuredRate = measured.ratePerMin;
     const remainingUnits = isPhase2 ? Math.max(0, phase2Total - phase2Completed) : remainingTargets;
-    const unitsPerMin = isPhase2 ? recentItemsPerMin : recentTargetsPerMin;
+    const unitsPerMin = measuredRate;
     const etaMs = ['running', 'resuming'].includes(status) && unitsPerMin > 0 && remainingUnits > 0
       ? (remainingUnits / unitsPerMin) * 60000
       : 0;
     const rateLabel = isPhase2
-      ? `${recentItemsPerMin > 0 ? recentItemsPerMin.toFixed(1) : 'estimating'} products/min`
-      : `${recentTargetsPerMin.toFixed(1)} categories/min`;
+      ? `${measuredRate > 0 ? measuredRate.toFixed(1) : 'measuring'} products/min`
+      : `${measuredRate > 0 ? measuredRate.toFixed(1) : 'measuring'} categories/min`;
     const progressText = isPhase2
       ? `${phase2Completed.toLocaleString()} / ${Math.max(phase2Total, phase2Completed).toLocaleString()} products`
       : checkpointOnlyPhase1
@@ -488,12 +491,61 @@
       elapsedLabel: elapsedMs ? formatDuration(elapsedMs) : 'Estimating',
       etaLabel: etaMs ? formatDuration(etaMs) : (['running', 'resuming'].includes(status) ? 'Estimating' : 'Done'),
       rateLabel,
-      targetsPerMin: recentTargetsPerMin,
-      itemsPerMin: recentItemsPerMin,
+      targetsPerMin: isPhase2 ? 0 : measuredRate,
+      itemsPerMin: isPhase2 ? measuredRate : 0,
       progressText,
       phaseLabel: isPhase2 ? 'Products' : 'Categories',
       finishLabel: etaMs ? formatDateTime(new Date(Date.now() + etaMs).toISOString()) : '',
+      stale: measured.stale,
+      lastProgressAgeMs: measured.lastProgressAgeMs,
     };
+  }
+
+  function observeRunProgress(run) {
+    const status = String(run?.status || '').toLowerCase();
+    if (!['running', 'resuming'].includes(status)) return;
+    const summary = run?.summary || {};
+    const phase = Number(summary.phase || 1);
+    const count = phase === 2
+      ? Number(summary.phase2_completed)
+      : Number(summary.completed_targets || summary.phase1_completed);
+    if (!Number.isFinite(count) || count < 0) return;
+    const key = `${run.id}:${phase}:${summary.resumed_from_checkpoint ? 'resume' : 'start'}`;
+    const now = Date.now();
+    const previous = state.etaObservations.get(key);
+    if (!previous || count < previous.count) {
+      state.etaObservations.set(key, { count, samples: [{ at: now, count }], lastAdvancedAt: now });
+      return;
+    }
+    if (count > previous.count) {
+      previous.samples.push({ at: now, count });
+      previous.count = count;
+      previous.lastAdvancedAt = now;
+    }
+    previous.samples = previous.samples.filter(sample => now - sample.at <= 10 * 60 * 1000);
+  }
+
+  function getMeasuredRunRate(run, count, total) {
+    const summary = run?.summary || {};
+    const phase = Number(summary.phase || 1);
+    const key = `${run.id}:${phase}:${summary.resumed_from_checkpoint ? 'resume' : 'start'}`;
+    const observation = state.etaObservations.get(key);
+    if (!observation) return { ratePerMin: 0, stale: false, lastProgressAgeMs: 0 };
+    const now = Date.now();
+    const samples = observation.samples || [];
+    const first = samples[0];
+    const last = samples[samples.length - 1];
+    const delta = first && last ? last.count - first.count : 0;
+    const elapsedMs = first && last ? last.at - first.at : 0;
+    const intervals = samples.slice(1).map((sample, index) => sample.at - samples[index].at).filter(value => value > 0);
+    const averageInterval = intervals.length ? intervals.reduce((sum, value) => sum + value, 0) / intervals.length : 0;
+    const staleAfter = Math.min(10 * 60 * 1000, Math.max(120 * 1000, averageInterval * 3));
+    const lastProgressAgeMs = Math.max(0, now - (observation.lastAdvancedAt || now));
+    const stale = lastProgressAgeMs > staleAfter;
+    if (delta < 3 || elapsedMs < 30 * 1000 || stale || (total > 0 && count > total)) {
+      return { ratePerMin: 0, stale, lastProgressAgeMs };
+    }
+    return { ratePerMin: (delta / elapsedMs) * 60000, stale: false, lastProgressAgeMs };
   }
 
   function clampPercent(value, fallback = 0) {
@@ -568,6 +620,10 @@
   function getRunActivityMessage(run) {
     const summary = run?.summary || {};
     const status = String(run?.status || '').toLowerCase();
+    const phase = Number(summary.phase || 1);
+    if (phase === 2 && ['running', 'resuming'].includes(status) && summary.status_message) {
+      return compactAutomationLabel(summary.status_message);
+    }
     if (summary.resumed_from_checkpoint && ['running', 'resuming'].includes(status)) {
       const completedTargets = Math.max(0, Number(summary.completed_targets || summary.phase1_completed || 0));
       const currentItems = Math.max(0, Number(summary.current_items || run?.items_count || 0));
@@ -592,7 +648,6 @@
     const explicit = compactAutomationLabel(summary.status_message || '');
     if (explicit) return explicit;
     if (['running', 'resuming'].includes(status)) {
-      const phase = Number(summary.phase || 1);
       if (phase === 2) return 'Enriching product details and SKU metadata.';
       if (phase === 3) return 'Validating scraped products and comparing against the previous snapshot.';
       if (phase >= 4) return 'Saving the product snapshot and run history to the database.';
@@ -2239,8 +2294,8 @@
         const phase2Complete = p2Done >= p2Total;
         activeProgressPct = getRunProgressPercent(run);
         activeProgressText = `${p2Done.toLocaleString()} / ${p2Total.toLocaleString()} products`;
-        activeSpeed = runSummary.phase2_speed || (timing.itemsPerMin ? `${timing.itemsPerMin} items/min` : 'Measuring');
-        activeEta = phase2Complete ? 'Finalizing' : (runSummary.phase2_eta || timing.etaLabel || 'Estimating');
+        activeSpeed = timing.rateLabel;
+        activeEta = phase2Complete ? 'Finalizing' : (timing.stale ? 'Waiting for progress' : timing.etaLabel);
         activeRemaining = `${Math.max(0, p2Total - p2Done).toLocaleString()} products`;
         stepCountLabel = 'Products Enriched';
         stepCountValue = `${p2Done.toLocaleString()} / ${p2Total.toLocaleString()}`;
@@ -2253,8 +2308,8 @@
         activeProgressText = checkpointOnlyPhase1
           ? `${totalHarvested.toLocaleString()} products found`
           : `${p1Done} / ${p1Total} categories`;
-        activeSpeed = runSummary.phase1_speed || (timing.targetsPerMin ? `${timing.targetsPerMin} cats/min` : 'Measuring');
-        activeEta = runSummary.phase1_eta || timing.etaLabel || 'Estimating';
+        activeSpeed = timing.rateLabel;
+        activeEta = timing.stale ? 'Waiting for progress' : timing.etaLabel;
         activeRemaining = checkpointOnlyPhase1
           ? `${p1Total.toLocaleString()} categories queued`
           : `${Math.max(0, p1Total - p1Done)} categories`;
@@ -2486,6 +2541,7 @@
       }
       state.selectedRunId = requestedRunId;
       state.lastRunDetailFetchAt = Date.now();
+      observeRunProgress(detail?.run);
       if (silent && isEditingProductFilters()) {
         state.runDetail = detail;
         preserveLiveScroll(() => renderRuns(state.runs));
