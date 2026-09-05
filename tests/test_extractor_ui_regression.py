@@ -115,6 +115,9 @@ def test_automation_live_runs_keep_visible_progress_through_finalizing():
     assert "Products Found" in automation_script
     assert "products found" in automation_script
     assert "Restoring Product Checkpoint" in automation_script
+    assert "Checkpoint restored:" in automation_script
+    assert "resume_checkpoint_targets" in resume_helper
+    assert "resume_checkpoint_items" in resume_helper
     assert "automation-run-progress__fill" in automation_script
     assert "automation-run-progress__label" in automation_script
     assert "activeRunStatus && !isSelectedRun" in automation_script

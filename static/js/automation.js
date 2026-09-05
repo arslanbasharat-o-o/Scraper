@@ -468,6 +468,19 @@
 
   function getRunActivityMessage(run) {
     const summary = run?.summary || {};
+    const status = String(run?.status || '').toLowerCase();
+    if (summary.resumed_from_checkpoint && ['running', 'resuming'].includes(status)) {
+      const checkpointTargets = Math.max(0, Number(summary.resume_checkpoint_targets || 0));
+      const checkpointItems = Math.max(0, Number(summary.resume_checkpoint_items || 0));
+      const completedTargets = Math.max(0, Number(summary.completed_targets || summary.phase1_completed || 0));
+      const currentItems = Math.max(0, Number(summary.current_items || run?.items_count || 0));
+      const baselineTargets = checkpointTargets || completedTargets;
+      const baselineItems = checkpointItems || currentItems;
+      if (baselineTargets > 0 || baselineItems > 0) {
+        return `Checkpoint restored: ${baselineTargets.toLocaleString()} categories and ${baselineItems.toLocaleString()} products preserved. Continuing with the remaining targets.`;
+      }
+      return 'Resume checkpoint restored. Continuing with the remaining targets.';
+    }
     if (hasPhase1CheckpointItems(run)) {
       return summary.resumed_from_checkpoint
         ? 'Restoring saved products while category completion catches up.'
@@ -475,7 +488,6 @@
     }
     const explicit = compactAutomationLabel(summary.status_message || '');
     if (explicit) return explicit;
-    const status = String(run?.status || '').toLowerCase();
     if (['running', 'resuming'].includes(status)) {
       const phase = Number(summary.phase || 1);
       if (phase === 2) return 'Enriching product details and SKU metadata.';
@@ -2102,6 +2114,9 @@
     const totalHarvested = Number(runSummary.current_items || run.items_count || summary.current_items || 0);
     const currentPhase = Number(runSummary.phase || (liveRunStatus ? 1 : 3));
     const isCompleted = !liveRunStatus;
+    const resumeCheckpointMessage = liveRunStatus && runSummary.resumed_from_checkpoint
+      ? getRunActivityMessage(run)
+      : '';
 
     let phaseName = getRunPhaseName(run);
     let activeSpeed = timing.rateLabel || 'Done';
@@ -2202,6 +2217,11 @@
               <strong>${escapeHtml(activeProgressPercentLabel)}</strong>
             </div>
           </div>
+        </div>
+      ` : ''}
+      ${resumeCheckpointMessage ? `
+        <div class="automation-comparison-note" role="status">
+          ${escapeHtml(resumeCheckpointMessage)}
         </div>
       ` : ''}
       ${Number(summary.excluded_previous_non_products || 0) || Number(summary.duplicate_current_rows || 0) || Number(summary.out_of_scope_previous_products || 0) ? `

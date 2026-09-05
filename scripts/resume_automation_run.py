@@ -131,6 +131,11 @@ def resume_run(run_id: int) -> int:
             "resumed_run": True,
             "resumed_from_status": run.get("status") or "",
             "resumed_from_checkpoint": resume_from_checkpoint,
+            # Keep the exact durable baseline visible while the live counters
+            # continue to advance. This prevents a resume from looking like a
+            # reset when the UI is refreshed immediately after launch.
+            "resume_checkpoint_targets": base_completed_targets,
+            "resume_checkpoint_items": base_items_count,
             "preview_items": base_preview_items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT],
             "phase1_completed": base_completed_targets,
             "phase1_total": total_target_count,
@@ -225,6 +230,16 @@ def resume_run(run_id: int) -> int:
             "preview_items": checkpoint_preview_items[:AUTOMATION_CHECKPOINT_ITEM_LIMIT],
             "resumed_run": True,
             "resumed_from_checkpoint": resume_from_checkpoint,
+            "resume_checkpoint_targets": int(
+                progress_summary_cache.get("resume_checkpoint_targets")
+                if progress_summary_cache.get("resume_checkpoint_targets") is not None
+                else base_completed_targets
+            ),
+            "resume_checkpoint_items": int(
+                progress_summary_cache.get("resume_checkpoint_items")
+                if progress_summary_cache.get("resume_checkpoint_items") is not None
+                else base_items_count
+            ),
             "recent_targets_per_min": round(recent_targets_per_min, 2),
             "recent_items_per_min": round(recent_items_per_min, 2),
             "recent_rate_window_seconds": 600,
