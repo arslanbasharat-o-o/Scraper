@@ -1,5 +1,9 @@
 # Changelog
 
+## [8.4.1] - 2026-09-05
+
+- Added a resumable local phase-2 worker for backfilling SKUs in completed automation histories.
+
 ## [8.4.0] - 2026-09-05
 
 - Enabled SKU detail recovery for every supplier engine, including TXParts and Parts4Cells browser fallback.
