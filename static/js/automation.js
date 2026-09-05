@@ -470,12 +470,16 @@
     const summary = run?.summary || {};
     const status = String(run?.status || '').toLowerCase();
     if (summary.resumed_from_checkpoint && ['running', 'resuming'].includes(status)) {
-      const checkpointTargets = Math.max(0, Number(summary.resume_checkpoint_targets || 0));
-      const checkpointItems = Math.max(0, Number(summary.resume_checkpoint_items || 0));
       const completedTargets = Math.max(0, Number(summary.completed_targets || summary.phase1_completed || 0));
       const currentItems = Math.max(0, Number(summary.current_items || run?.items_count || 0));
-      const baselineTargets = checkpointTargets || completedTargets;
-      const baselineItems = checkpointItems || currentItems;
+      const hasCheckpointMetadata = summary.resume_checkpoint_targets !== undefined
+        || summary.resume_checkpoint_items !== undefined;
+      const baselineTargets = hasCheckpointMetadata
+        ? Math.max(0, Number(summary.resume_checkpoint_targets || 0))
+        : completedTargets;
+      const baselineItems = hasCheckpointMetadata
+        ? Math.max(0, Number(summary.resume_checkpoint_items || 0))
+        : currentItems;
       if (baselineTargets > 0 || baselineItems > 0) {
         return `Checkpoint restored: ${baselineTargets.toLocaleString()} categories and ${baselineItems.toLocaleString()} products preserved. Continuing with the remaining targets.`;
       }
