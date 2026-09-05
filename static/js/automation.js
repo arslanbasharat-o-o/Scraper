@@ -4,6 +4,12 @@
   const $ = id => document.getElementById(id);
   const elements = {
     alertBox: $('alert'),
+    confirmModal: $('automationConfirmModal'),
+    confirmModalDialog: $('automationConfirmModalDialog'),
+    confirmModalTitle: $('automationConfirmModalTitle'),
+    confirmModalMessage: $('automationConfirmModalMessage'),
+    confirmConfirmBtn: $('automationConfirmConfirmBtn'),
+    confirmCancelBtn: $('automationConfirmCancelBtn'),
     overlay: $('overlay'),
     darkMode: $('darkMode'),
     automationJobId: $('automationJobId'),
@@ -75,6 +81,10 @@
   const ACTIVE_POLL_MS = 3000;
   const IDLE_POLL_MS = 30000;
   const LIVE_DETAIL_REFRESH_MS = 12000;
+
+  let confirmResolver = null;
+  let confirmReturnFocus = null;
+  let confirmDialogBound = false;
 
   function normalizeSupplierSite(siteKey) {
     const normalized = String(siteKey || '').trim().toLowerCase();
@@ -182,6 +192,94 @@
     const div = document.createElement('div');
     div.textContent = String(text ?? '');
     return div.innerHTML;
+  }
+
+  function resolveConfirmDialog(result) {
+    const modal = elements.confirmModal;
+    const resolver = confirmResolver;
+    const returnFocus = confirmReturnFocus;
+    confirmResolver = null;
+    confirmReturnFocus = null;
+    if (modal) {
+      modal.classList.add('d-none');
+      modal.setAttribute('aria-hidden', 'true');
+    }
+    document.body.classList.remove('modal-open');
+    if (returnFocus?.isConnected && typeof returnFocus.focus === 'function' && !returnFocus.disabled) {
+      returnFocus.focus({ preventScroll: true });
+    }
+    if (typeof resolver === 'function') resolver(Boolean(result));
+  }
+
+  function getConfirmFocusableElements() {
+    if (!elements.confirmModal) return [];
+    return Array.from(elements.confirmModal.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    ));
+  }
+
+  function bindConfirmDialog() {
+    if (confirmDialogBound || !elements.confirmModal) return;
+    confirmDialogBound = true;
+    elements.confirmModal.addEventListener('click', event => {
+      if (event.target === elements.confirmModal) resolveConfirmDialog(false);
+    });
+    elements.confirmCancelBtn?.addEventListener('click', () => resolveConfirmDialog(false));
+    elements.confirmConfirmBtn?.addEventListener('click', () => resolveConfirmDialog(true));
+    document.addEventListener('keydown', event => {
+      if (!confirmResolver || elements.confirmModal?.classList.contains('d-none')) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        resolveConfirmDialog(false);
+        return;
+      }
+      if (event.key === 'Enter' && event.target !== elements.confirmCancelBtn) {
+        event.preventDefault();
+        resolveConfirmDialog(true);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = getConfirmFocusableElements();
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+  }
+
+  function showConfirmDialog({
+    title = 'Please confirm',
+    message = 'Are you sure you want to continue?',
+    confirmLabel = 'Continue',
+    cancelLabel = 'Cancel',
+    danger = false
+  } = {}) {
+    const modal = elements.confirmModal;
+    if (!modal || !elements.confirmModalTitle || !elements.confirmModalMessage || !elements.confirmConfirmBtn || !elements.confirmCancelBtn) {
+      return Promise.resolve(window.confirm(message));
+    }
+    bindConfirmDialog();
+    if (confirmResolver) resolveConfirmDialog(false);
+    confirmReturnFocus = document.activeElement !== document.body ? document.activeElement : null;
+    elements.confirmModalTitle.textContent = title;
+    elements.confirmModalMessage.textContent = message;
+    elements.confirmConfirmBtn.textContent = confirmLabel;
+    elements.confirmCancelBtn.textContent = cancelLabel;
+    elements.confirmConfirmBtn.classList.toggle('btn-danger', danger);
+    elements.confirmConfirmBtn.classList.toggle('btn-export', !danger);
+    modal.classList.remove('d-none');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+    return new Promise(resolve => {
+      confirmResolver = resolve;
+      requestAnimationFrame(() => (danger ? elements.confirmConfirmBtn : elements.confirmCancelBtn).focus());
+    });
   }
 
   function setLoading(on) {
@@ -2624,7 +2722,14 @@
         });
         showAlert('info', job.enabled ? 'Automation job paused.' : 'Automation job enabled.');
       } else if (action === 'delete') {
-        if (!window.confirm('Delete this automation job and its run history?')) return;
+        const confirmed = await showConfirmDialog({
+          title: 'Delete automation job?',
+          message: 'This deletes the job and its saved run history. This action cannot be undone.',
+          confirmLabel: 'Delete Job',
+          cancelLabel: 'Keep Job',
+          danger: true
+        });
+        if (!confirmed) return;
         await api(`/api/automation/jobs/${encodeURIComponent(jobId)}`, {
           method: 'DELETE',
           headers: { 'X-Confirm-Destructive': 'permanently-delete' }
@@ -2760,7 +2865,14 @@
         event.preventDefault();
         event.stopPropagation();
         const runId = deleteBtn.dataset.runId;
-        if (window.confirm('Are you sure you want to delete this past run?')) {
+        const confirmed = await showConfirmDialog({
+          title: 'Delete past run?',
+          message: 'Are you sure you want to delete this past run? This action cannot be undone.',
+          confirmLabel: 'Delete Run',
+          cancelLabel: 'Keep Run',
+          danger: true
+        });
+        if (confirmed) {
           try {
             await api(`/api/automation/runs/${encodeURIComponent(runId)}/delete`, {
               method: 'POST',

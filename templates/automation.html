@@ -94,6 +94,19 @@
 
     <div id="alert" class="alert-banner d-none" role="alert"></div>
 
+    <div id="automationConfirmModal" class="confirm-modal d-none" aria-hidden="true">
+      <div id="automationConfirmModalDialog" class="confirm-modal__dialog cy-card" role="dialog" aria-modal="true" tabindex="-1"
+        aria-labelledby="automationConfirmModalTitle" aria-describedby="automationConfirmModalMessage">
+        <div class="confirm-modal__eyebrow">Confirm Action</div>
+        <h3 id="automationConfirmModalTitle" class="confirm-modal__title">Please confirm</h3>
+        <p id="automationConfirmModalMessage" class="confirm-modal__message">Are you sure you want to continue?</p>
+        <div class="confirm-modal__actions">
+          <button id="automationConfirmCancelBtn" class="btn-export" type="button">Cancel</button>
+          <button id="automationConfirmConfirmBtn" class="btn-danger" type="button">Continue</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Supplier Tabs ───────────────────────────────────── -->
     <div class="cy-card automation-supplier-tabs mb-3" role="tablist" aria-label="Automation suppliers">
       <button class="automation-supplier-tab is-active" type="button" role="tab" data-site-key="xcell">Xcell parts</button>

@@ -101,12 +101,17 @@ def test_menu_map_automation_names_are_category_scoped_not_date_stamped():
 def test_automation_live_runs_keep_visible_progress_through_finalizing():
     automation_script = (ROOT / "static" / "js" / "automation.js").read_text(encoding="utf-8")
     automation_styles = (ROOT / "static" / "css" / "automation.css").read_text(encoding="utf-8")
+    automation_template = (ROOT / "templates" / "automation.html").read_text(encoding="utf-8")
     app_source = (ROOT / "app.py").read_text(encoding="utf-8")
     resume_helper = (ROOT / "scripts" / "resume_automation_run.py").read_text(encoding="utf-8")
 
     assert "function getRunProgressPercent(run)" in automation_script
     assert "function getRunPhaseName(run)" in automation_script
     assert "function getRunActivityMessage(run)" in automation_script
+    assert "function showConfirmDialog({" in automation_script
+    assert "automationConfirmModal" in automation_template
+    assert "Delete past run?" in automation_script
+    assert "window.confirm('Are you sure you want to delete this past run?')" not in automation_script
     assert "const isSelectedRun = Number(run.id) === Number(state.selectedRunId);" in automation_script
     assert "function hasPhase1CheckpointItems(run)" in automation_script
     assert "function getPhase2Progress(run)" in automation_script
