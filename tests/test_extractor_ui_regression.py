@@ -82,6 +82,16 @@ def test_menu_map_completed_runs_do_not_keep_the_page_busy_or_expand_all_logs():
     assert "Finished runs are cleared automatically" in menu_map_template
 
 
+def test_menu_map_uses_styled_confirmation_modal_for_large_actions():
+    menu_map_script = (ROOT / "static" / "js" / "menu-map.js").read_text(encoding="utf-8")
+    menu_map_template = (ROOT / "templates" / "menu_map.html").read_text(encoding="utf-8")
+
+    assert "function showMenuMapConfirm({" in menu_map_script
+    assert "menuMapConfirmModal" in menu_map_template
+    assert "Queue large automation run?" in menu_map_script
+    assert "window.confirm(`This will queue automation" not in menu_map_script
+
+
 def test_menu_map_automation_names_are_category_scoped_not_date_stamped():
     menu_map_script = (ROOT / "static" / "js" / "menu-map.js").read_text(encoding="utf-8")
     automation_script = (ROOT / "static" / "js" / "automation.js").read_text(encoding="utf-8")

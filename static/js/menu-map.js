@@ -88,6 +88,99 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+let menuMapConfirmResolver = null;
+let menuMapConfirmReturnFocus = null;
+let menuMapConfirmBound = false;
+
+function resolveMenuMapConfirm(result) {
+  const modal = document.getElementById('menuMapConfirmModal');
+  const resolver = menuMapConfirmResolver;
+  const returnFocus = menuMapConfirmReturnFocus;
+  menuMapConfirmResolver = null;
+  menuMapConfirmReturnFocus = null;
+  if (modal) {
+    modal.classList.add('d-none');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  document.body.classList.remove('modal-open');
+  if (returnFocus?.isConnected && typeof returnFocus.focus === 'function' && !returnFocus.disabled) {
+    returnFocus.focus({ preventScroll: true });
+  }
+  if (typeof resolver === 'function') resolver(Boolean(result));
+}
+
+function bindMenuMapConfirm() {
+  if (menuMapConfirmBound) return;
+  const modal = document.getElementById('menuMapConfirmModal');
+  if (!modal) return;
+  menuMapConfirmBound = true;
+  const cancel = document.getElementById('menuMapConfirmCancelBtn');
+  const confirm = document.getElementById('menuMapConfirmConfirmBtn');
+  modal.addEventListener('click', event => {
+    if (event.target === modal) resolveMenuMapConfirm(false);
+  });
+  cancel?.addEventListener('click', () => resolveMenuMapConfirm(false));
+  confirm?.addEventListener('click', () => resolveMenuMapConfirm(true));
+  document.addEventListener('keydown', event => {
+    if (!menuMapConfirmResolver || modal.classList.contains('d-none')) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      resolveMenuMapConfirm(false);
+      return;
+    }
+    if (event.key === 'Enter' && event.target !== cancel) {
+      event.preventDefault();
+      resolveMenuMapConfirm(true);
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [cancel, confirm].filter(button => button && !button.disabled);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+}
+
+function showMenuMapConfirm({
+  title = 'Please confirm',
+  message = 'Are you sure you want to continue?',
+  confirmLabel = 'Continue',
+  cancelLabel = 'Cancel',
+  danger = false,
+} = {}) {
+  const modal = document.getElementById('menuMapConfirmModal');
+  const titleEl = document.getElementById('menuMapConfirmModalTitle');
+  const messageEl = document.getElementById('menuMapConfirmModalMessage');
+  const confirm = document.getElementById('menuMapConfirmConfirmBtn');
+  const cancel = document.getElementById('menuMapConfirmCancelBtn');
+  if (!modal || !titleEl || !messageEl || !confirm || !cancel) {
+    return Promise.resolve(window.confirm(message));
+  }
+  bindMenuMapConfirm();
+  if (menuMapConfirmResolver) resolveMenuMapConfirm(false);
+  menuMapConfirmReturnFocus = document.activeElement !== document.body ? document.activeElement : null;
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+  confirm.textContent = confirmLabel;
+  cancel.textContent = cancelLabel;
+  confirm.classList.toggle('btn-danger', danger);
+  confirm.classList.toggle('btn-export', !danger);
+  modal.classList.remove('d-none');
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+  return new Promise(resolve => {
+    menuMapConfirmResolver = resolve;
+    requestAnimationFrame(() => (danger ? confirm : cancel).focus());
+  });
+}
+
 function showAlert(type, message) {
   if (!elements.alert) return;
   const cls = type === 'error' ? 'alert-danger' : type === 'warn' ? 'alert-warning' : type === 'success' ? 'alert-success' : 'alert-info';
@@ -974,7 +1067,14 @@ async function clearAndRunSelected() {
   const names = siteList
     .map(slug => sites.find(site => site.slug === slug)?.name || slug)
     .join(', ');
-  if (!window.confirm(`Delete old menu-map output for ${names}, then run a fresh scrape?`)) return;
+  const confirmed = await showMenuMapConfirm({
+    title: 'Clear old menu-map output?',
+    message: `Delete old menu-map output for ${names}, then run a fresh scrape?`,
+    confirmLabel: 'Clear & Run',
+    cancelLabel: 'Keep Output',
+    danger: true,
+  });
+  if (!confirmed) return;
 
   runSubmissionPending = true;
   updateRunControls();
@@ -1053,8 +1153,14 @@ async function runAutomationForSelectedSite() {
     showAlert('warn', 'No visible category URLs are available for automation.');
     return;
   }
-  if (targets.length > 500 && !window.confirm(`This will queue automation for ${targets.length.toLocaleString()} category URLs. Continue?`)) {
-    return;
+  if (targets.length > 500) {
+    const confirmed = await showMenuMapConfirm({
+      title: 'Queue large automation run?',
+      message: `This will queue automation for ${targets.length.toLocaleString()} category URLs. Continue?`,
+      confirmLabel: 'Queue Automation',
+      cancelLabel: 'Cancel',
+    });
+    if (!confirmed) return;
   }
 
   try {

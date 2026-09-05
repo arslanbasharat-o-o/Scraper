@@ -96,6 +96,19 @@
 
     <div id="alert" class="alert-banner d-none" role="alert"></div>
 
+    <div id="menuMapConfirmModal" class="confirm-modal d-none" aria-hidden="true">
+      <div id="menuMapConfirmModalDialog" class="confirm-modal__dialog cy-card" role="dialog" aria-modal="true" tabindex="-1"
+        aria-labelledby="menuMapConfirmModalTitle" aria-describedby="menuMapConfirmModalMessage">
+        <div class="confirm-modal__eyebrow">Confirm Action</div>
+        <h3 id="menuMapConfirmModalTitle" class="confirm-modal__title">Please confirm</h3>
+        <p id="menuMapConfirmModalMessage" class="confirm-modal__message">Are you sure you want to continue?</p>
+        <div class="confirm-modal__actions">
+          <button id="menuMapConfirmCancelBtn" class="btn-export" type="button">Cancel</button>
+          <button id="menuMapConfirmConfirmBtn" class="btn-danger" type="button">Continue</button>
+        </div>
+      </div>
+    </div>
+
     <section class="cy-card menu-map-hero mb-3">
       <div class="section-heading">
         <div>
