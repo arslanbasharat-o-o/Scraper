@@ -1,5 +1,9 @@
 # Changelog
 
+## [8.4.7] - 2026-09-06
+
+- Avoid launching rendered browser fallback for successful detail pages that explicitly omit a SKU; retain fallback for blocked and transient responses.
+
 ## [8.4.6] - 2026-09-05
 
 - Speed up detail enrichment by preventing duplicate HTTP requests during rendered fallback and isolating Chrome profiles per worker process.

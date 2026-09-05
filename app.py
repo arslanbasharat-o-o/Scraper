@@ -844,7 +844,15 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 )
             )
             missing_sku = not str(getattr(enriched, 'sku', '') or '').strip()
-            if status_code not in {404, 410} and (browser_retryable_error or missing_sku):
+            # A successful HTTP product page that genuinely omits a SKU is
+            # already enough evidence for a not-published result. Do not pay
+            # the browser startup cost for every such item; rendered fallback
+            # is reserved for blocked/transient HTTP responses. Operators can
+            # opt back in for dynamic SKU pages when needed.
+            retry_missing_sku = missing_sku and status_code != 200
+            if str(os.getenv('SCRAPER_BROWSER_FALLBACK_ON_MISSING_SKU') or '').strip().lower() in {'1', 'true', 'yes', 'on'}:
+                retry_missing_sku = missing_sku
+            if status_code not in {404, 410} and (browser_retryable_error or retry_missing_sku):
                 try:
                     _check_stop()
                     browser_attempted = True
