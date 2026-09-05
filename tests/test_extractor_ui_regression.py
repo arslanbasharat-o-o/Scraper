@@ -141,9 +141,12 @@ def test_automation_live_runs_keep_visible_progress_through_finalizing():
     assert "Math.max(rawTotal || harvested, completed)" in automation_script
     assert "phase2Complete ? 'Finalizing'" in automation_script
     assert "const isPhase2 = ['running', 'resuming'].includes(status) && currentPhase === 2;" in automation_script
-    assert "targetsPerMin: recentTargetsPerMin" in automation_script
-    assert "itemsPerMin: recentItemsPerMin" in automation_script
-    assert "activeEta = runSummary.phase1_eta || timing.etaLabel || 'Estimating';" in automation_script
+    assert "targetsPerMin: isPhase2 ? 0 : measuredRate" in automation_script
+    assert "itemsPerMin: isPhase2 ? measuredRate : 0" in automation_script
+    assert "activeEta = timing.stale ? 'Waiting for progress' : timing.etaLabel;" in automation_script
+    assert "activeSpeed = timing.rateLabel;" in automation_script
+    assert "function getMeasuredRunRate(run" in automation_script
+    assert "function observeRunProgress(run)" in automation_script
     assert "Products Found" in automation_script
     assert "products found" in automation_script
     assert "Restoring Product Checkpoint" in automation_script
