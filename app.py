@@ -2942,10 +2942,19 @@ def _stop_resume_worker(run_id: int, *, grace_seconds: float = 3.0) -> bool:
                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
                     )
                 else:
-                    os.killpg(os.getpgid(pid), signal.SIGTERM)
-            except (OSError, subprocess.SubprocessError, ValueError):
+                    try:
+                        pgid = os.getpgid(pid) if hasattr(os, "getpgid") else pid
+                        if hasattr(os, "killpg") and hasattr(os, "getpgrp") and pgid not in (os.getpgrp(), 0, 1):
+                            os.killpg(pgid, signal.SIGTERM)
+                        elif hasattr(os, "kill"):
+                            os.kill(pid, signal.SIGTERM)
+                    except (OSError, AttributeError, ValueError):
+                        if hasattr(os, "kill"):
+                            os.kill(pid, signal.SIGTERM)
+            except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
                 try:
-                    proc.kill()
+                    if hasattr(proc, "kill"):
+                        proc.kill()
                 except Exception:
                     pass
             try:
@@ -2971,7 +2980,15 @@ def _stop_resume_worker(run_id: int, *, grace_seconds: float = 3.0) -> bool:
             if result.returncode != 0 and _resume_worker_pid_is_alive(pid):
                 return False
         else:
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
+            try:
+                pgid = os.getpgid(pid) if hasattr(os, "getpgid") else pid
+                if hasattr(os, "killpg") and hasattr(os, "getpgrp") and pgid not in (os.getpgrp(), 0, 1):
+                    os.killpg(pgid, signal.SIGTERM)
+                elif hasattr(os, "kill"):
+                    os.kill(pid, signal.SIGTERM)
+            except (OSError, AttributeError, ValueError):
+                if hasattr(os, "kill"):
+                    os.kill(pid, signal.SIGTERM)
     except (OSError, subprocess.SubprocessError, ValueError):
         return False
     _remove_resume_worker_lock_if_owned(normalized_run_id, pid)

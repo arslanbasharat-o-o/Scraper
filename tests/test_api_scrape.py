@@ -576,6 +576,12 @@ def test_pause_stops_inflight_resume_worker_tree_promptly(tmp_path, monkeypatch)
                 raise app_module.subprocess.TimeoutExpired("worker", timeout)
             return 0
 
+        def kill(self):
+            self.killed = True
+
+        def terminate(self):
+            self.killed = True
+
     worker = RunningProcess()
 
     def fake_run(command, **_kwargs):
@@ -584,6 +590,11 @@ def test_pause_stops_inflight_resume_worker_tree_promptly(tmp_path, monkeypatch)
         return type("Result", (), {"returncode": 0})()
 
     monkeypatch.setattr(app_module.subprocess, "run", fake_run)
+    if hasattr(app_module.os, "killpg"):
+        monkeypatch.setattr(app_module.os, "getpgid", lambda pid: pid)
+        monkeypatch.setattr(app_module.os, "killpg", lambda pgid, sig: setattr(worker, "killed", True))
+    if hasattr(app_module.os, "kill"):
+        monkeypatch.setattr(app_module.os, "kill", lambda pid, sig: setattr(worker, "killed", True))
     app_module.AUTOMATION_RESUME_PROCESSES[61] = worker
 
     assert app_module._stop_resume_worker(61) is True
