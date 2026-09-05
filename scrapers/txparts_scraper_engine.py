@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse
-from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_requested
 from .sku_utils import extract_jsonld_sku, clean_sku
 
 try:
@@ -275,6 +275,11 @@ def get_html(session, url: str) -> Optional[str]:
     """Fetch HTML with Safari TLS curl_cffi session, fallback to browser if blocked."""
     if session is not None:
         session.txparts_last_status = 0
+    if browser_fetch_requested():
+        result = fetch_html_with_browser(url)
+        if session is not None:
+            session.txparts_last_status = 200
+        return result.html
     if session is not None:
         try:
             r = session.get(url, timeout=25)

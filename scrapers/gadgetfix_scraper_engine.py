@@ -13,7 +13,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_requested
 from .sku_utils import extract_jsonld_sku, clean_sku
 
 try:
@@ -148,6 +148,8 @@ def get_html(session, url: str, logger=None) -> Optional[str]:
     session.gadgetfix_last_error = ''
     session.gadgetfix_last_status = 0
 
+    if browser_fetch_requested():
+        return fetch_html_with_browser(url, logger=logger).html
     if session is not None:
         try:
             r = session.get(url, timeout=25)

@@ -40,7 +40,7 @@ from flask_login import current_user, login_user, logout_user
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.4.5'
+APP_VERSION = '8.4.6'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -848,10 +848,21 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 try:
                     _check_stop()
                     browser_attempted = True
+                    before_signature = tuple(
+                        getattr(enriched, field, None)
+                        for field in ('sku', 'title', 'description', 'stock_status', 'price_value', 'url')
+                    )
                     browser_enriched = _do_enrich(True)
                     if browser_enriched:
                         enriched = browser_enriched
-                        browser_succeeded = True
+                        after_signature = tuple(
+                            getattr(enriched, field, None)
+                            for field in ('sku', 'title', 'description', 'stock_status', 'price_value', 'url')
+                        )
+                        # Engines may swallow fetch exceptions and return the
+                        # original item. Treat an unchanged item as unresolved,
+                        # never as a valid page with an unpublished SKU.
+                        browser_succeeded = after_signature != before_signature
                 except Exception as browser_exc:
                     if logger:
                         logger.debug(f"[detail] Browser fallback also failed for {item_url}: {browser_exc}")

@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 import requests
 from bs4 import BeautifulSoup
 
-from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_requested
 from .sku_utils import extract_jsonld_sku, clean_sku
 
 try:
@@ -151,6 +151,8 @@ def _looks_like_block_page(html: str) -> bool:
 
 def get_html(session, url: str, logger=None) -> Optional[str]:
     """Fetch HTML with Safari TLS curl_cffi session, fallback to browser if blocked."""
+    if browser_fetch_requested():
+        return fetch_html_with_browser(url, logger=logger).html
     if session is not None:
         session.phonelcdparts_last_status = 0
     if session is not None:

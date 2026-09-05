@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urljoin, urlsplit, urlunsplit
-from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_requested
 from .sku_utils import extract_jsonld_sku
 
 try:
@@ -439,6 +439,10 @@ def get_html(session, url: str) -> Optional[str]:
     session.xcell_last_error = ''
     session.xcell_blocked = False
     session.xcell_last_status = 0
+    if browser_fetch_requested():
+        result = fetch_html_with_browser(url)
+        session.xcell_last_status = 200
+        return result.html
 
     is_curl_sess = HAS_CURL and isinstance(session, curl_requests.Session)
     if is_curl_sess:

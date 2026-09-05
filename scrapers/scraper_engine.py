@@ -22,7 +22,7 @@ from urllib.parse import urlparse, urljoin, parse_qs, urlencode, urlunparse
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Set, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_mode
+from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_mode, browser_fetch_requested
 
 # Optional curl_cffi for better Cloudflare bypass
 try:
@@ -211,6 +211,10 @@ logger = logging.getLogger(__name__)
 def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
     """Fetch HTML from URL. Returns (final_url, html_content)"""
     _set_fetch_metadata(sess, status_code=None, final_url=url)
+    if browser_fetch_requested():
+        result = fetch_html_with_browser(url, timeout=max(timeout, 60))
+        _set_fetch_metadata(sess, status_code=200, final_url=result.final_url, blocked=False)
+        return result.final_url, result.html
     try:
         # Fast Safari TLS HTTP request first
         r = sess.get(url, timeout=timeout, allow_redirects=True)

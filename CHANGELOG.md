@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.4.6] - 2026-09-05
+
+- Speed up detail enrichment by preventing duplicate HTTP requests during rendered fallback and isolating Chrome profiles per worker process.
+- Keep failed browser fetches unresolved instead of misclassifying them as products without published SKUs.
+
 ## [8.4.5] - 2026-09-05
 
 - Replace stale ETA/speed fields with measured rolling progress observations and explicit waiting-for-progress states.

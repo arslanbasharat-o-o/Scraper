@@ -14,6 +14,7 @@ from .botasaurus_wrapper import close_botasaurus_driver, resolve_chrome_executab
 
 
 _BROWSER_FETCH_ENABLED = contextvars.ContextVar("browser_fetch_enabled", default=None)
+_BROWSER_FETCH_DIRECT = contextvars.ContextVar("browser_fetch_direct", default=False)
 _LOCAL_BROWSER_SLOT_LOCK = threading.Lock()
 _LOCAL_BROWSER_SEMAPHORE = None
 _LOCAL_BROWSER_SEMAPHORE_SIZE = 0
@@ -120,10 +121,17 @@ def _local_browser_slot():
 @contextlib.contextmanager
 def browser_fetch_mode(enabled: bool | None):
     token = _BROWSER_FETCH_ENABLED.set(None if enabled is None else bool(enabled))
+    direct_token = _BROWSER_FETCH_DIRECT.set(bool(enabled))
     try:
         yield
     finally:
+        _BROWSER_FETCH_DIRECT.reset(direct_token)
         _BROWSER_FETCH_ENABLED.reset(token)
+
+
+def browser_fetch_requested() -> bool:
+    """Whether the current enrichment explicitly requested rendered-only fetch."""
+    return bool(_BROWSER_FETCH_DIRECT.get())
 
 
 def should_use_browser_fetch() -> bool:
@@ -188,7 +196,9 @@ def fetch_html(
     started = time.time()
 
     with _local_browser_slot() as slot:
-        profile_dir = _local_browser_profile_dir() / f"worker-{slot}"
+        # Browser slots are process-local; include the PID so concurrent scraper
+        # workers never attach to the same Chrome profile/DevTools port.
+        profile_dir = _local_browser_profile_dir() / f"process-{os.getpid()}" / f"worker-{slot}"
         profile_dir.mkdir(parents=True, exist_ok=True)
         chrome_executable = resolve_chrome_executable()
         if logger:
