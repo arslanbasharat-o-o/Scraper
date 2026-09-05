@@ -575,9 +575,11 @@ body {
   max-width: calc(100% - 3.4rem);
   padding: 0 .5rem;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 74%, var(--primary) 26%));
-  color: #062116;
-  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 28%, transparent);
+  /* Keep the status text from looking like a second, wider progress fill.
+     The actual fill is the sibling .automation-run-progress__fill element. */
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

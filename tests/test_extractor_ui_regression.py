@@ -152,6 +152,8 @@ def test_automation_live_runs_keep_visible_progress_through_finalizing():
     assert "'status_message': 'Writing scraped products, comparison metadata, and run history to the database.'" in app_source
     assert ".automation-run-progress__track" in automation_styles
     assert ".automation-run-progress__label" in automation_styles
+    assert "background: transparent;" in automation_styles
+    assert "box-shadow: none;" in automation_styles
     assert "transition: width .55s cubic-bezier" in automation_styles
 
 
