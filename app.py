@@ -18,7 +18,7 @@ import sys
 import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 from dataclasses import asdict
 from typing import Callable, List, Dict, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -40,7 +40,7 @@ from flask_login import current_user, login_user, logout_user
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.4.2'
+APP_VERSION = '8.4.3'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -510,7 +510,9 @@ def normalize_identifier_compare_text(value) -> str:
     text = normalize_semantic_compare_text(value)
     if not text:
         return ''
-    return re.sub(r'[^a-z0-9]+', '', text)
+    # Keep meaningful separators: ABC-123 and ABC123 may be different supplier
+    # identifiers even though case/spacing differences are presentation noise.
+    return re.sub(r'\s+', '-', text).strip('-')
 
 
 def normalize_compare_url(value) -> str:
@@ -532,12 +534,19 @@ def normalize_compare_url(value) -> str:
     netloc = host if not port or default_port else f'{host}:{port}'
     path = re.sub(r'/+', '/', parsed.path or '/')
     path = path.rstrip('/') or '/'
+    query_pairs = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        key_lower = key.casefold()
+        if key_lower.startswith('utm_') or key_lower in {'fbclid', 'gclid', 'msclkid', 'ref', 'referrer'}:
+            continue
+        query_pairs.append((key, value))
+    query = urlencode(sorted(query_pairs))
     return parsed._replace(
         scheme=parsed.scheme.lower(),
         netloc=netloc,
         path=path,
         params='',
-        query='',
+        query=query,
         fragment='',
     ).geturl()
 
@@ -560,12 +569,12 @@ def normalize_stock_status_for_compare(value) -> str:
         return ''
     if 'outofstock' in text or 'out of stock' in text:
         return 'out of stock'
-    if re.search(r'\b\d+\s+in stock\b', text) or 'in stock' in text:
-        return 'in stock'
-    if 'backorder' in text or 'back order' in text:
-        return 'backorder'
     if 'preorder' in text or 'pre-order' in text:
         return 'preorder'
+    if 'backorder' in text or 'back order' in text:
+        return 'backorder'
+    if re.search(r'\b\d+\s+in stock\b', text) or 'in stock' in text:
+        return 'in stock'
     return text
 
 
@@ -1124,6 +1133,7 @@ def normalize_item_snapshot(item) -> Dict[str, object]:
         'target_url': target_url,
         'target_label': target_label,
         'model_label': model_label,
+        'category_set': [normalize_compare_url(target_url)] if target_url else [],
         'price_formatted': normalize_compare_text(
             item_dict.get('original_formatted')
             or item_dict.get('price_text')
@@ -1192,6 +1202,10 @@ def prepare_comparison_snapshots(items) -> Tuple[List[Dict[str, object]], Dict[s
     for snapshot in comparable:
         key = str(snapshot.get('url_compare') or '')
         existing = by_url.get(key)
+        categories = set(snapshot.get('category_set') or [])
+        if existing:
+            categories.update(existing.get('category_set') or [])
+        snapshot['category_set'] = sorted(categories)
         if existing is None or snapshot_quality(snapshot) > snapshot_quality(existing):
             by_url[key] = snapshot
     return list(by_url.values()), {
@@ -1207,11 +1221,13 @@ def deduplicate_comparable_items(items) -> List[Dict[str, object]]:
     by_url: Dict[str, Dict[str, object]] = {}
     category_map: Dict[str, List[str]] = {}
     url_counts: Dict[str, int] = {}
+    quality_map: Dict[str, tuple] = {}
     out: List[Dict[str, object]] = []
 
     for item in items or []:
         item_dict = asdict(item) if hasattr(item, '__dataclass_fields__') else dict(item or {})
-        url = str(item_dict.get('url') or '').strip().rstrip('/')
+        raw_url = str(item_dict.get('url') or '').strip()
+        url = normalize_compare_url(raw_url)
         if not url:
             continue
 
@@ -1244,14 +1260,23 @@ def deduplicate_comparable_items(items) -> List[Dict[str, object]]:
         if cat and cat not in category_map[url]:
             category_map[url].append(cat)
 
+        candidate_quality = snapshot_quality(normalize_item_snapshot(item_dict))
         if url not in by_url:
             if not isinstance(item_dict.get('extra'), dict):
                 item_dict['extra'] = extra
             by_url[url] = item_dict
+            quality_map[url] = candidate_quality
             out.append(item_dict)
+        elif candidate_quality > quality_map.get(url, ()):
+            if not isinstance(item_dict.get('extra'), dict):
+                item_dict['extra'] = extra
+            index = out.index(by_url[url])
+            by_url[url] = item_dict
+            quality_map[url] = candidate_quality
+            out[index] = item_dict
 
     for item_dict in out:
-        url = str(item_dict.get('url') or '').strip().rstrip('/')
+        url = normalize_compare_url(item_dict.get('url'))
         cats = category_map.get(url, [])
         occurrences = url_counts.get(url, 1)
         is_dup = occurrences > 1 or len(cats) > 1
@@ -1424,13 +1449,22 @@ def build_session_comparison(
     matched_curr_ids = set()
 
     identity_matchers = (
-        ('product_id_compare', 'product_id'),
-        ('variant_id_compare', 'variant_id'),
-        ('sku_compare', 'sku'),
-        ('canonical_url_compare', 'canonical_url'),
         ('url_compare', 'url'),
+        ('canonical_url_compare', 'canonical_url'),
+        ('variant_id_compare', 'variant_id'),
+        ('product_id_compare', 'product_id'),
+        ('sku_compare', 'sku'),
         ('title_compare', 'title'),
     )
+
+    def identity_key(item: Dict[str, object], key_name: str):
+        value = item.get(key_name)
+        if not value:
+            return None
+        if key_name in {'variant_id_compare', 'product_id_compare', 'sku_compare', 'title_compare'}:
+            host = (urlparse(str(item.get('url_compare') or '')).hostname or str(item.get('site') or '')).casefold()
+            return f'{host}|{value}'
+        return value
 
     for key_name, reason in identity_matchers:
         prev_map = {}
@@ -1439,14 +1473,14 @@ def build_session_comparison(
             item_id = match_ref(item)
             if item_id in matched_prev_ids:
                 continue
-            k = item.get(key_name)
+            k = identity_key(item, key_name)
             if k:
                 prev_map.setdefault(k, []).append(item)
         for item in current_snapshots:
             item_id = match_ref(item)
             if item_id in matched_curr_ids:
                 continue
-            k = item.get(key_name)
+            k = identity_key(item, key_name)
             if k:
                 curr_map.setdefault(k, []).append(item)
 
@@ -1506,9 +1540,8 @@ def build_session_comparison(
             # Target failed to fetch/parse â€” product fate unknown, not removed.
             comparison['scrape_failures'].append(public_item)
         else:
-            # 'Review Required' (run failed completeness validation) â€” treated as
-            # a potential removal candidate requiring manual review.
-            comparison['removed'].append(public_item)
+            # Failed completeness validation never confirms a removal.
+            comparison['review_required'].append(public_item)
 
     for prev_item, current_item, match_reason in matched_pairs:
         field_changes = {}
@@ -1517,7 +1550,9 @@ def build_session_comparison(
             field_changes['url'] = {'before': prev_item['url'], 'after': current_item['url']}
         if prev_item['title_compare'] != current_item['title_compare']:
             field_changes['title'] = {'before': prev_item['title'], 'after': current_item['title']}
-        if normalize_compare_url(prev_item.get('target_url')) != normalize_compare_url(current_item.get('target_url')):
+        previous_categories = set(prev_item.get('category_set') or [])
+        current_categories = set(current_item.get('category_set') or [])
+        if previous_categories and current_categories and previous_categories != current_categories:
             field_changes['target_url'] = {'before': prev_item.get('target_url', ''), 'after': current_item.get('target_url', '')}
         if prev_item['sku_compare'] and current_item['sku_compare'] and prev_item['sku_compare'] != current_item['sku_compare']:
             field_changes['sku'] = {'before': prev_item['sku'], 'after': current_item['sku']}
@@ -3142,6 +3177,8 @@ def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
         return False, 'Automation run not found.'
 
     status = str(run.get('status') or '').strip().lower()
+    if str(run.get('trigger_type') or '').strip().lower() == 'phase2_sku_backfill':
+        return False, 'Phase-2 SKU continuations must be resumed by the SKU backfill worker.'
     worker_locked = _resume_worker_is_locked(normalized_run_id)
     if worker_locked and status == 'interrupted':
         # A server restart can mark the DB row interrupted while the detached

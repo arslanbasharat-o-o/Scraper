@@ -1404,7 +1404,7 @@ class DatabaseManager:
             conn = self.get_connection()
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT id, job_id, status, current_history_id, items_count,
+                SELECT id, job_id, trigger_type, status, current_history_id, items_count,
                        summary_json, error_text
                 FROM automation_runs
                 WHERE id IN (?, ?)
@@ -1416,6 +1416,8 @@ class DatabaseManager:
                 return None
             if int(source['job_id']) != int(continuation['job_id']):
                 return None
+            if str(continuation['trigger_type'] or '').strip().lower() != 'phase2_sku_backfill':
+                return None
             if str(continuation['status'] or '').lower() != 'completed':
                 return None
             current_history_id = str(continuation['current_history_id'] or '').strip()
@@ -1423,6 +1425,8 @@ class DatabaseManager:
                 return None
 
             summary = self._parse_json_text(continuation['summary_json'], {})
+            if int(summary.get('source_run_id') or source_id) != source_id:
+                return None
             summary.pop('source_run_id', None)
             summary.pop('source_history_id', None)
             now_iso = get_pakistan_time().isoformat()
@@ -1775,6 +1779,30 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error saving automation product detail checkpoint: {e}")
             return False
+
+    def get_automation_run_product_details(self, run_id: int) -> Dict[str, Dict[str, Any]]:
+        """Return detail checkpoints keyed by normalized product URL."""
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return {}
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT product_url_key, item_json
+                FROM automation_run_product_details
+                WHERE run_id = ?
+            ''', (normalized_run_id,))
+            details = {}
+            for row in cursor.fetchall():
+                parsed = self._parse_json_text(row['item_json'], {})
+                if isinstance(parsed, dict):
+                    details[str(row['product_url_key'] or '')] = parsed
+            return details
+        except Exception as e:
+            print(f"Error getting automation product detail checkpoints: {e}")
+            return {}
 
     def get_automation_run_items(self, run_id: int, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         try:

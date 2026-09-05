@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.4.3] - 2026-09-05
+
+- Resume phase-2 SKU backfills from saved product-detail checkpoints without routing them through category crawling.
+- Prevent duplicate continuation jobs and preserve clean merged-run comparisons.
+
 ## [8.4.2] - 2026-09-05
 
 - Merged completed phase-2 SKU continuations back into their source runs so detail hydration does not create duplicate runs or false differences.
