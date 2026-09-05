@@ -1461,6 +1461,9 @@ def build_session_comparison(
         value = item.get(key_name)
         if not value:
             return None
+        if key_name == 'canonical_url_compare':
+            variant = item.get('variant_id_compare')
+            return f'{value}|variant:{variant}' if variant else value
         if key_name in {'variant_id_compare', 'product_id_compare', 'sku_compare', 'title_compare'}:
             host = (urlparse(str(item.get('url_compare') or '')).hostname or str(item.get('site') or '')).casefold()
             return f'{host}|{value}'

@@ -1,5 +1,9 @@
 # Changelog
 
+## [8.4.4] - 2026-09-05
+
+- Keep canonical URL matching variant-aware so separate product variants cannot be paired accidentally.
+
 ## [8.4.3] - 2026-09-05
 
 - Resume phase-2 SKU backfills from saved product-detail checkpoints without routing them through category crawling.
