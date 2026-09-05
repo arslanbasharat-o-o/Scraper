@@ -1,5 +1,11 @@
 # Changelog
 
+## [8.3.0] - 2026-09-05
+
+- Added bounded MobileSentrix browser fallback for blocked or SKU-less detail pages while keeping Safari HTTP primary.
+- Moved version information from page headers into a shared footer and added maintainer contact details.
+- Tuned local and server environment examples for the detail fallback and removed the obsolete header badge styling.
+
 ## [8.2.0] - 2026-09-05
 
 - Added memory-tuned worker profiles for 10 GB local and 40 GB server deployments.

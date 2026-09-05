@@ -395,6 +395,60 @@ def test_phase_two_reuses_phase_one_supplier_cookies(tmp_path, monkeypatch):
     assert observed_cookies == [{"supplier_session": "ready"}]
 
 
+def test_mobilesentrix_sku_missing_after_http_is_retried_in_browser(tmp_path, monkeypatch):
+    """MobileSentrix keeps HTTP/Safari primary but retries a blocked detail page in a browser."""
+    monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    calls = []
+
+    class Session:
+        mobilesentrix_last_status = None
+
+        def close(self):
+            return None
+
+    def fake_build_session(**_kwargs):
+        return Session(), False
+
+    def fake_enrich(session, item, *_args, **_kwargs):
+        from scrapers.browser_fetcher import should_use_browser_fetch
+
+        calls.append(should_use_browser_fetch())
+        if not should_use_browser_fetch():
+            session.mobilesentrix_last_status = 403
+            raise RuntimeError("blocked by anti-bot challenge (403)")
+        item.sku = "MS-BROWSER-SKU"
+        return item
+
+    monkeypatch.setattr(app_module, "build_session", fake_build_session)
+    monkeypatch.setattr(app_module, "enrich_standard_item_details", fake_enrich)
+    item = app_module.Item(
+        url="https://www.mobilesentrix.com/product/iphone-screen",
+        site="www.mobilesentrix.com",
+        title="iPhone Screen",
+        price_value=10.0,
+        price_currency="USD",
+        price_text="$10.00",
+        discounted_value=10.0,
+        discounted_formatted="$10.00",
+        original_formatted="$10.00",
+        source="listing",
+        image_url="",
+    )
+
+    enriched, _ = app_module.enrich_scraped_items(
+        [item],
+        rules={},
+        retries=1,
+        verify_ssl=True,
+        use_curl=True,
+        enrich_details=True,
+    )
+
+    assert calls == [False, True]
+    assert enriched[0].sku == "MS-BROWSER-SKU"
+
+
 def test_resume_checkpoint_items_skip_completed_targets_and_still_enrich(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
     scraped_urls = []

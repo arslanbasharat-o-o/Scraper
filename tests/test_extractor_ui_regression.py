@@ -28,6 +28,19 @@ def test_extractor_template_groups_and_dialog_accessibility():
     assert confirm_dialog.get("tabindex") == "-1"
 
 
+def test_shared_footer_holds_version_and_maintainer_details():
+    template_names = ("index.html", "history.html", "automation.html", "menu_map.html", "login.html", "users.html")
+    footer = (ROOT / "templates" / "_footer.html").read_text(encoding="utf-8")
+
+    assert "{{ app_version }}" in footer
+    assert "Arslanbasharat414@gmail.com" in footer
+    for name in template_names:
+        source = (ROOT / "templates" / name).read_text(encoding="utf-8")
+        assert '{% include "_footer.html" %}' in source
+        assert "version-badge" not in source
+        assert "v8.2.0" not in source
+
+
 def test_extractor_script_syncs_filters_results_and_dialog_focus():
     script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
 

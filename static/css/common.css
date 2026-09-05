@@ -1,5 +1,5 @@
 /* ============================================================
-   Parts Extractor v8.2.0 - Design System
+   Parts Extractor v8.3.0 - Design System
    Clean solid UI, no glassmorphism, no transparency.
    ============================================================ */
 
@@ -262,20 +262,55 @@ body {
   white-space: nowrap;
 }
 
-.version-badge {
-  display: inline-flex;
+.app-footer {
+  display: flex;
   align-items: center;
-  min-height: 19px;
-  margin: 0;
-  padding: .12rem .38rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface-3);
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding: .85rem 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: .72rem;
+  line-height: 1.35;
+}
+
+.app-footer__brand {
   color: var(--text-2);
-  font-size: .62rem;
   font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0;
+}
+
+.app-footer__version {
+  margin-left: .35rem;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-footer__maintainer {
+  text-align: right;
+}
+
+.app-footer a {
+  color: var(--primary-2);
+  text-decoration: none;
+}
+
+.app-footer a:hover,
+.app-footer a:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .app-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .app-footer__maintainer {
+    text-align: left;
+  }
 }
 
 .header-right {

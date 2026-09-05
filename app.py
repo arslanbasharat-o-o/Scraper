@@ -40,6 +40,7 @@ from flask_login import current_user, login_user, logout_user
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
+APP_VERSION = '8.3.0'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -360,6 +361,7 @@ def asset_url(filename: str) -> str:
 def inject_asset_url():
     return {
         'asset_url': asset_url,
+        'app_version': APP_VERSION,
         'browser_rendering_enabled': True,
     }
 
@@ -703,6 +705,9 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
     if not enrich_details or not items:
         return items, 0
 
+    browser_fallback_setting = str(os.getenv('SCRAPER_LOCAL_BROWSER_FALLBACK') or '').strip().lower()
+    browser_fallback_enabled = bool(use_browser) or browser_fallback_setting in {'1', 'true', 'yes', 'on'}
+    mobilesentrix_engines = {'standard', 'mobilesentrix_canada'}
     allow_txparts_detail = str(os.getenv('TXPARTS_ENRICH_DETAILS', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
     skipped_detail_urls = 0
     url_to_indexes: Dict[str, List[int]] = {}
@@ -789,17 +794,49 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         # Fast Safari 15.5 TLS detail enrichment
         enriched = item
         engine_type, _ = get_scraper_for_url(item_url)
+        http_error = None
         try:
             _check_stop()
             candidate = _do_enrich(False)
             if candidate:
                 enriched = candidate
         except Exception as http_exc:
+            http_error = http_exc
             if logger:
                 logger.debug(f"[detail] HTTP enrichment skipped for {item_url}: {http_exc}")
             enriched = item
 
-        # Browser fallback for xcell only when HTTP fails or is blocked
+        # MobileSentrix detail pages frequently return a Cloudflare 403 after
+        # a fast category crawl. Keep Safari HTTP as the primary path, then
+        # retry blocked/unresolved or SKU-less pages in a bounded browser slot.
+        if browser_fallback_enabled and engine_type in mobilesentrix_engines:
+            detail_session = None
+            try:
+                detail_session = get_thread_session(engine_type)
+            except Exception:
+                pass
+            status_code = int(getattr(detail_session, 'mobilesentrix_last_status', 0) or 0)
+            error_text = str(http_error or '').lower()
+            browser_retryable_error = (
+                http_error is not None
+                and status_code not in {404, 410}
+                and (
+                    status_code in {401, 403, 408, 429, 500, 502, 503, 504}
+                    or any(marker in error_text for marker in ('blocked', 'timed out', 'timeout', 'connection', 'resolve host'))
+                )
+            )
+            missing_sku = not str(getattr(enriched, 'sku', '') or '').strip()
+            if status_code not in {404, 410} and (browser_retryable_error or missing_sku):
+                try:
+                    _check_stop()
+                    browser_enriched = _do_enrich(True)
+                    if browser_enriched:
+                        enriched = browser_enriched
+                except Exception as browser_exc:
+                    if logger:
+                        logger.debug(f"[detail] Browser fallback also failed for {item_url}: {browser_exc}")
+
+        # Preserve the existing opt-in XCell browser fallback behavior.
         if engine_type == 'xcell' and use_browser:
             result_dict = asdict(enriched) if hasattr(enriched, '__dataclass_fields__') else {}
             if not result_dict.get('sku') and not result_dict.get('description'):

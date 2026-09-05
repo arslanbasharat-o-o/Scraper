@@ -690,8 +690,10 @@ def enrich_item_details(sess, item: Item, rules: Optional[Dict] = None, logger=N
         return item
 
     try:
-        with browser_fetch_mode(False):
-            final_url, html = get_html(sess, item.url, timeout=5)
+        # The caller controls the fetch mode. Automation starts with the fast
+        # Safari HTTP path and may explicitly retry this method in a browser
+        # context when the supplier blocks or omits dynamic SKU markup.
+        final_url, html = get_html(sess, item.url, timeout=5)
         soup = BeautifulSoup(html, PARSER)
         detail = extract_product_detail_snapshot(soup, final_url)
 
