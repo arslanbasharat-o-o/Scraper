@@ -1,11 +1,22 @@
 document.addEventListener('DOMContentLoaded', () => {
   const tbody = document.getElementById('usersTbody');
   const modal = document.getElementById('userModal');
+  const modalCard = modal?.querySelector('[role="dialog"]');
   const form = document.getElementById('userForm');
   const addBtn = document.getElementById('addBtn');
   const cancelBtn = document.getElementById('cancelBtn');
   const modalTitle = document.getElementById('modalTitle');
   const pwdHint = document.getElementById('pwdHint');
+  let modalReturnFocus = null;
+
+  const focusableSelector = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled]):not([type="hidden"])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])'
+  ].join(',');
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -18,6 +29,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderTableMessage(message) {
     tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">${escapeHtml(message)}</td></tr>`;
+  }
+
+  function getModalFocusableElements() {
+    if (!modalCard) return [];
+    return Array.from(modalCard.querySelectorAll(focusableSelector)).filter(element => {
+      const style = window.getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    });
+  }
+
+  function openUserModal(opener) {
+    modalReturnFocus = opener || document.activeElement;
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+    const firstInput = document.getElementById('username');
+    window.requestAnimationFrame(() => {
+      (firstInput || getModalFocusableElements()[0] || modalCard)?.focus();
+    });
+  }
+
+  function closeUserModal() {
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+    if (modalReturnFocus && typeof modalReturnFocus.focus === 'function' && document.contains(modalReturnFocus)) {
+      modalReturnFocus.focus();
+    }
+    modalReturnFocus = null;
   }
 
   function fetchUsers() {
@@ -68,11 +106,40 @@ document.addEventListener('DOMContentLoaded', () => {
     modalTitle.textContent = 'Add User';
     pwdHint.style.display = 'none';
     document.getElementById('password').required = true;
-    modal.classList.add('active');
+    openUserModal(addBtn);
   });
 
   cancelBtn.addEventListener('click', () => {
-    modal.classList.remove('active');
+    closeUserModal();
+  });
+
+  modal.addEventListener('click', e => {
+    if (e.target === modal) closeUserModal();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (!modal.classList.contains('active')) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeUserModal();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const focusable = getModalFocusableElements();
+    if (!focusable.length) {
+      e.preventDefault();
+      modalCard?.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   });
 
   tbody.addEventListener('click', e => {
@@ -92,7 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
       pwdHint.style.display = 'inline';
       document.getElementById('password').required = false;
 
-      modal.classList.add('active');
+      openUserModal(e.target);
     }
 
     if (e.target.classList.contains('del-btn')) {
@@ -129,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(resData => {
         if (resData.error) alert(resData.error);
         else {
-          modal.classList.remove('active');
+          closeUserModal();
           fetchUsers();
         }
       })
@@ -145,7 +212,7 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(resData => {
         if (resData.error) alert(resData.error);
         else {
-          modal.classList.remove('active');
+          closeUserModal();
           fetchUsers();
         }
       })

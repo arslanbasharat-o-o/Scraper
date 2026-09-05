@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urljoin, urlsplit, urlunsplit
 from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+from .sku_utils import extract_jsonld_sku
 
 try:
     from curl_cffi import requests as curl_requests
@@ -354,6 +355,8 @@ def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional
 
     # Authoritative SKU extraction for XCell WooCommerce Elementor pages
     item.sku = extract_xcell_sku(soup, html)
+    if not item.sku:
+        item.sku = extract_jsonld_sku(soup, item.url)
 
     stock_elem = soup.select_one('.stock')
     if stock_elem:
@@ -435,12 +438,14 @@ def get_html(session, url: str) -> Optional[str]:
     """
     session.xcell_last_error = ''
     session.xcell_blocked = False
+    session.xcell_last_status = 0
 
     is_curl_sess = HAS_CURL and isinstance(session, curl_requests.Session)
     if is_curl_sess:
         try:
             response = session.get(url, timeout=20, allow_redirects=True)
             status_code = int(getattr(response, 'status_code', 0) or 0)
+            session.xcell_last_status = status_code
             response_text = getattr(response, 'text', '') or ''
             if status_code == 200 and is_html_document(response_text):
                 session.xcell_last_error = ''
@@ -449,6 +454,7 @@ def get_html(session, url: str) -> Optional[str]:
                 try:
                     session.get("https://xcellparts.com/", timeout=10)
                     retry_resp = session.get(url, timeout=20, allow_redirects=True)
+                    session.xcell_last_status = int(getattr(retry_resp, 'status_code', 0) or 0)
                     if retry_resp.status_code == 200 and is_html_document(retry_resp.text):
                         session.xcell_last_error = ''
                         return retry_resp.text
@@ -468,6 +474,7 @@ def get_html(session, url: str) -> Optional[str]:
     try:
         response = session.get(url, timeout=30, allow_redirects=True)
         status_code = int(getattr(response, 'status_code', 0) or 0)
+        session.xcell_last_status = status_code
         response_text = getattr(response, 'text', '') or ''
         if status_code in {401, 403, 429}:
             lowered = response_text[:1000].lower()
@@ -488,6 +495,7 @@ def get_html(session, url: str) -> Optional[str]:
         retry_headers['Accept-Encoding'] = 'gzip, deflate'
         retry_response = session.get(url, timeout=30, headers=retry_headers, allow_redirects=True)
         retry_status_code = int(getattr(retry_response, 'status_code', 0) or 0)
+        session.xcell_last_status = retry_status_code
         retry_text = getattr(retry_response, 'text', '') or ''
         if retry_status_code in {401, 403, 429}:
             lowered = retry_text[:1000].lower()

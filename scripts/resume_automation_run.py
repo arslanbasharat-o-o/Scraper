@@ -334,12 +334,21 @@ def resume_run(run_id: int) -> int:
     result_count = int(result.get("count") or 0)
     summary["current_items"] = result_count
     summary["progress_percent"] = round((summary["completed_targets"] / max(1, total_target_count)) * 100, 1)
+    for key in ("sku_total", "sku_found", "sku_not_published", "sku_unavailable", "sku_unresolved"):
+        summary[key] = int(result.get(key) or 0)
     workflow_error = str(result.get("error") or "").strip()
     no_items_error = ""
     if remaining_target_urls and int(result.get("count") or 0) == 0:
         no_items_error = "No products were scraped from the selected category targets."
 
-    final_error_text = workflow_error or no_items_error
+    sku_unresolved = int(result.get("sku_unresolved") or 0)
+    sku_error = (
+        f"SKU recovery incomplete: {sku_unresolved} product detail page(s) remain unresolved. "
+        "The run is resumable and will retry these pages."
+        if result.get("enrich_details") and sku_unresolved > 0
+        else ""
+    )
+    final_error_text = workflow_error or no_items_error or sku_error
     if final_error_text and not result.get("history_public_id") and result_count > 0:
         partial_history_id, partial_count, partial_summary = save_automation_partial_history(
             run_id,

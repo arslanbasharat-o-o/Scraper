@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse
 from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+from .sku_utils import extract_jsonld_sku, clean_sku
 
 try:
     from curl_cffi import requests as curl_requests
@@ -273,8 +274,11 @@ def _looks_like_block_page(html: str) -> bool:
 def get_html(session, url: str) -> Optional[str]:
     """Fetch HTML with Safari TLS curl_cffi session, fallback to browser if blocked."""
     if session is not None:
+        session.txparts_last_status = 0
+    if session is not None:
         try:
             r = session.get(url, timeout=25)
+            session.txparts_last_status = int(getattr(r, 'status_code', 0) or 0)
             if r.status_code == 200 and r.text and not _looks_like_block_page(r.text):
                 return r.text
         except Exception:
@@ -353,7 +357,9 @@ def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional
         soup.select_one('[data-product_sku]')
     )
     if sku_elem:
-        item.sku = clean_text(sku_elem.get_text() or sku_elem.get('content') or sku_elem.get('data-product-sku') or sku_elem.get('data-product_sku', ''))
+        item.sku = clean_sku(sku_elem.get_text() or sku_elem.get('content') or sku_elem.get('data-product-sku') or sku_elem.get('data-product_sku', ''))
+    if not item.sku:
+        item.sku = extract_jsonld_sku(soup, item.url)
     if not item.sku:
         text = clean_text(soup.get_text(' ', strip=True))
         match = re.search(r'\bSKU\b\s*[:#-]?\s*([A-Za-z0-9._/-]{3,})', text, re.I)

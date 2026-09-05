@@ -40,7 +40,7 @@ from flask_login import current_user, login_user, logout_user
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.3.0'
+APP_VERSION = '8.4.0'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -707,28 +707,20 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
 
     browser_fallback_setting = str(os.getenv('SCRAPER_LOCAL_BROWSER_FALLBACK') or '').strip().lower()
     browser_fallback_enabled = bool(use_browser) or browser_fallback_setting in {'1', 'true', 'yes', 'on'}
-    mobilesentrix_engines = {'standard', 'mobilesentrix_canada'}
-    allow_txparts_detail = str(os.getenv('TXPARTS_ENRICH_DETAILS', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
-    skipped_detail_urls = 0
+    browser_fallback_engines = set(SCRAPER_MODULES)
     url_to_indexes: Dict[str, List[int]] = {}
     for idx, item in enumerate(items):
         item_sku = str(getattr(item, 'sku', '') or '').strip()
         if item_sku:
+            if hasattr(item, 'extra') and isinstance(item.extra, dict):
+                item.extra.setdefault('sku_status', 'found')
             continue
         item_url = normalize_compare_text(getattr(item, 'url', ''))
         if item_url:
             engine_type, _ = get_scraper_for_url(item_url)
-            if engine_type == 'txparts' and not allow_txparts_detail:
-                skipped_detail_urls += 1
-                continue
             url_to_indexes.setdefault(item_url, []).append(idx)
 
     if not url_to_indexes:
-        if skipped_detail_urls and logger:
-            logger.info(
-                "[detail] Skipped %s TXParts detail URL(s); set TXPARTS_ENRICH_DETAILS=1 to enable TXParts phase-2 detail fetches.",
-                skipped_detail_urls,
-            )
         return items, 0
 
     thread_state = threading.local()
@@ -795,6 +787,10 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         enriched = item
         engine_type, _ = get_scraper_for_url(item_url)
         http_error = None
+        browser_attempted = False
+        browser_succeeded = False
+        status_code = 0
+        detail_session = None
         try:
             _check_stop()
             candidate = _do_enrich(False)
@@ -806,16 +802,29 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 logger.debug(f"[detail] HTTP enrichment skipped for {item_url}: {http_exc}")
             enriched = item
 
-        # MobileSentrix detail pages frequently return a Cloudflare 403 after
-        # a fast category crawl. Keep Safari HTTP as the primary path, then
-        # retry blocked/unresolved or SKU-less pages in a bounded browser slot.
-        if browser_fallback_enabled and engine_type in mobilesentrix_engines:
-            detail_session = None
+        # Every supplier keeps the fast Safari HTTP request primary. If the
+        # detail response is blocked, transient, or omits the SKU, retry the
+        # same URL in a bounded browser slot. A confirmed 404/410 is treated
+        # as unavailable and is never turned into a fabricated identifier.
+        if browser_fallback_enabled and engine_type in browser_fallback_engines:
             try:
                 detail_session = get_thread_session(engine_type)
             except Exception:
                 pass
-            status_code = int(getattr(detail_session, 'mobilesentrix_last_status', 0) or 0)
+            status_code = 0
+            for status_name in (
+                'mobilesentrix_last_status',
+                'xcell_last_status',
+                'txparts_last_status',
+                'phonelcdparts_last_status',
+                'gadgetfix_last_status',
+            ):
+                try:
+                    status_code = int(getattr(detail_session, status_name, 0) or 0)
+                except (TypeError, ValueError):
+                    status_code = 0
+                if status_code:
+                    break
             error_text = str(http_error or '').lower()
             browser_retryable_error = (
                 http_error is not None
@@ -829,25 +838,39 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             if status_code not in {404, 410} and (browser_retryable_error or missing_sku):
                 try:
                     _check_stop()
+                    browser_attempted = True
                     browser_enriched = _do_enrich(True)
                     if browser_enriched:
                         enriched = browser_enriched
+                        browser_succeeded = True
                 except Exception as browser_exc:
                     if logger:
                         logger.debug(f"[detail] Browser fallback also failed for {item_url}: {browser_exc}")
 
-        # Preserve the existing opt-in XCell browser fallback behavior.
-        if engine_type == 'xcell' and use_browser:
-            result_dict = asdict(enriched) if hasattr(enriched, '__dataclass_fields__') else {}
-            if not result_dict.get('sku') and not result_dict.get('description'):
-                try:
-                    _check_stop()
-                    browser_enriched = _do_enrich(True)
-                    if browser_enriched:
-                        enriched = browser_enriched
-                except Exception as browser_exc:
-                    if logger:
-                        logger.debug(f"[detail] Browser fallback also failed for {item_url}: {browser_exc}")
+        if hasattr(enriched, 'extra') and isinstance(enriched.extra, dict):
+            final_sku = str(getattr(enriched, 'sku', '') or '').strip()
+            if final_sku:
+                enriched.extra.update({'sku': final_sku, 'sku_status': 'found', 'sku_source': 'product_detail'})
+            elif status_code in {404, 410}:
+                enriched.extra.update({'sku_status': 'unavailable', 'sku_error': f'HTTP {status_code}'})
+            elif browser_succeeded or status_code == 200:
+                enriched.extra.update({'sku_status': 'not_published'})
+            else:
+                fetch_error = str(http_error or '')
+                for error_name in (
+                    'mobilesentrix_last_error',
+                    'xcell_last_error',
+                    'txparts_last_error',
+                    'phonelcdparts_last_error',
+                    'gadgetfix_last_error',
+                ):
+                    fetch_error = fetch_error or str(getattr(detail_session, error_name, '') or '')
+                enriched.extra.update({
+                    'sku_status': 'unresolved',
+                    'sku_error': fetch_error or 'detail fetch did not produce a SKU',
+                })
+            if browser_attempted:
+                enriched.extra['sku_browser_fallback'] = True
 
         return item_url, asdict(enriched)
 
@@ -1263,6 +1286,34 @@ def is_usable_scraped_item(item) -> bool:
     if source == 'error' or price_text.startswith(('fetch_failed:', 'parallel_scrape_failed:')):
         return False
     return bool(title and url)
+
+
+def summarize_sku_resolution(items) -> Dict[str, int]:
+    """Count SKU outcomes without treating fetch failures as a clean absence."""
+    counts = {
+        'sku_total': 0,
+        'sku_found': 0,
+        'sku_not_published': 0,
+        'sku_unavailable': 0,
+        'sku_unresolved': 0,
+    }
+    for item in items or []:
+        if not is_usable_scraped_item(item):
+            continue
+        counts['sku_total'] += 1
+        item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
+        sku = normalize_compare_text(item_dict.get('sku'))
+        extra = item_dict.get('extra') if isinstance(item_dict.get('extra'), dict) else {}
+        status = normalize_compare_text(extra.get('sku_status')).lower()
+        if sku or status == 'found':
+            counts['sku_found'] += 1
+        elif status == 'not_published':
+            counts['sku_not_published'] += 1
+        elif status == 'unavailable':
+            counts['sku_unavailable'] += 1
+        else:
+            counts['sku_unresolved'] += 1
+    return counts
 
 
 def serialize_scraped_item(item) -> Dict[str, object]:
@@ -2598,6 +2649,7 @@ def execute_scrape_workflow(
     items, enriched_count = enrich_scraped_items(
         items, rules, retries, verify_ssl, use_curl, enrich_details=effective_enrich_details, logger=app.logger, use_browser=use_browser, progress_callback=progress_callback, stop_check=stop_check, session_cookies_by_engine=session_cookies_by_engine
     )
+    sku_summary = summarize_sku_resolution(items)
     if progress_callback:
         progress_callback({
             'phase': 3,
@@ -2705,6 +2757,7 @@ def execute_scrape_workflow(
         "auto_enrich_details": auto_enrich_details,
         "details_hydrated_from_history": hydrated_from_history,
         "details_enriched": enriched_count,
+        **sku_summary,
         "items": [serialize_scraped_item(i) for i in items],
         "history_id": history_id,
         "history_public_id": history_public_id,

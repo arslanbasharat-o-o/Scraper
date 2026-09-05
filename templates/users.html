@@ -123,21 +123,21 @@
     {% include "_footer.html" %}
   </div>
 
-  <div class="modal-overlay" id="userModal">
-    <div class="modal-card">
+  <div class="modal-overlay" id="userModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle" tabindex="-1">
       <h3 id="modalTitle" style="margin-top:0; margin-bottom:1.5rem;">Add User</h3>
       <form id="userForm">
         <input type="hidden" id="userId">
         <div class="form-group">
-          <label>Username</label>
+          <label for="username">Username</label>
           <input type="text" class="form-control" id="username" required>
         </div>
         <div class="form-group">
-          <label>Password <small id="pwdHint" style="display:none; color:#888;">(leave blank to keep)</small></label>
+          <label for="password">Password <small id="pwdHint" style="display:none; color:#888;">(leave blank to keep)</small></label>
           <input type="password" class="form-control" id="password">
         </div>
         <div class="form-group">
-          <label>Role</label>
+          <label for="role">Role</label>
           <select class="form-control" id="role">
             <option value="viewer">Viewer (Read-only)</option>
             <option value="operator">Operator (Can Scrape)</option>

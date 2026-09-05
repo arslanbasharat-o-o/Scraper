@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse, urlencode, parse_qs, urlunparse
 from .browser_fetcher import fetch_html as fetch_html_with_browser
+from .browser_fetcher import should_use_browser_fetch
+from .sku_utils import extract_jsonld_sku, clean_sku
 
 try:
     from curl_cffi import requests as curl_req
@@ -105,24 +107,36 @@ def _looks_like_block_page(html: str) -> bool:
 
 
 def _fetch(url: str, logger=None) -> Optional[str]:
-    """Fetch Parts4Cells through high-speed Safari TLS session with 3-attempt backoff."""
-    if _HAS_CURL:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Connection": "keep-alive",
-        }
-        for attempt in range(3):
-            try:
+    """Fetch Parts4Cells HTTP-first, with the bounded browser fallback."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+    }
+    for attempt in range(3):
+        try:
+            if _HAS_CURL:
                 resp = curl_req.get(url, impersonate="safari15_5", headers=headers, timeout=12)
-                if resp.status_code == 200 and resp.text and not _looks_like_block_page(resp.text):
-                    return resp.text
-                elif resp.status_code in (429, 503):
-                    time.sleep(0.5 + attempt * 0.5)
-            except Exception as exc:
-                time.sleep(0.3)
+            else:
+                resp = curl_req.get(url, headers=headers, timeout=12)
+            if resp.status_code == 200 and resp.text and not _looks_like_block_page(resp.text):
+                return resp.text
+            if resp.status_code in (429, 503):
+                time.sleep(0.5 + attempt * 0.5)
+        except Exception as exc:
+            if logger:
+                logger.debug("[parts4cells] HTTP fetch attempt %s failed for %s: %s", attempt + 1, url, exc)
+            time.sleep(0.3)
 
+    if should_use_browser_fetch():
+        try:
+            result = fetch_html_with_browser(url, timeout=60, logger=logger)
+            if result.html and not _looks_like_block_page(result.html):
+                return result.html
+        except Exception as exc:
+            if logger:
+                logger.warning("[parts4cells] Browser fallback failed for %s: %s", url, exc)
     return None
 
 
@@ -218,7 +232,9 @@ def scrape_product_page(url: str, rules: dict, logger=None,
         soup.select_one('[itemprop="sku"]')
     )
     if sku_elem:
-        item.sku = clean_text(sku_elem.get('content') or sku_elem.get_text())
+        item.sku = clean_sku(sku_elem.get('content') or sku_elem.get_text())
+    if not item.sku:
+        item.sku = extract_jsonld_sku(soup, item.url)
 
     stock_elem = (
         soup.select_one('.product-info-stock-sku .stock') or

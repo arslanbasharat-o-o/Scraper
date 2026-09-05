@@ -14,6 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+from .sku_utils import extract_jsonld_sku, clean_sku
 
 try:
     from curl_cffi import requests as curl_requests
@@ -145,10 +146,12 @@ def get_html(session, url: str, logger=None) -> Optional[str]:
     url = normalize_gadgetfix_url(url)
     session.gadgetfix_blocked = False
     session.gadgetfix_last_error = ''
+    session.gadgetfix_last_status = 0
 
     if session is not None:
         try:
             r = session.get(url, timeout=25)
+            session.gadgetfix_last_status = int(getattr(r, 'status_code', 0) or 0)
             if r.status_code == 200 and r.text and not _looks_blocked(200, r.text):
                 return r.text
         except Exception:
@@ -389,7 +392,9 @@ def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional
     page_text = clean_text(soup.get_text(' ', strip=True))
     sku_match = re.search(r'\bItem:\s*([A-Za-z0-9._/-]+)', page_text, re.I)
     if sku_match:
-        item.sku = clean_text(sku_match.group(1))
+        item.sku = clean_sku(sku_match.group(1))
+    if not item.sku:
+        item.sku = extract_jsonld_sku(soup, item.url)
     stock_match = re.search(r'\bAvailability:\s*([^:]+?)(?:\s+Brand:|\s+Compatible with:|\s+What you get:|$)', page_text, re.I)
     if stock_match:
         item.stock_status = clean_text(stock_match.group(1))

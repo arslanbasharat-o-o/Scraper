@@ -10,7 +10,6 @@
     confirmModalMessage: $('automationConfirmModalMessage'),
     confirmConfirmBtn: $('automationConfirmConfirmBtn'),
     confirmCancelBtn: $('automationConfirmCancelBtn'),
-    overlay: $('overlay'),
     darkMode: $('darkMode'),
     automationJobId: $('automationJobId'),
     automationName: $('automationName'),
@@ -25,7 +24,6 @@
     automationAutoDiscover: $('automationAutoDiscover'),
     automationParallel: $('automationParallel'),
     automationEnrich: $('automationEnrich'),
-    automationDiscoverBtn: $('automationDiscoverBtn'),
     automationSaveBtn: $('automationSaveBtn'),
     automationResetBtn: $('automationResetBtn'),
     automationDiscoverySummary: $('automationDiscoverySummary'),
@@ -361,7 +359,6 @@
   }
 
   function removeDiscoveryControls() {
-    elements.automationDiscoverBtn?.remove();
     const autoDiscoverWrapper = elements.automationAutoDiscover?.closest('label');
     if (autoDiscoverWrapper) {
       autoDiscoverWrapper.remove();
@@ -460,7 +457,7 @@
     const remainingTargets = Math.max(0, totalTargets - completedTargets);
     const averageMsPerTarget = completedTargets > 0 && elapsedMs > 0 ? elapsedMs / completedTargets : 0;
     const rawRecent = Number(summary.recent_targets_per_min || 0);
-    const recentTargetsPerMin = rawRecent > 0 ? rawRecent : (averageMsPerTarget > 0 ? (60000 / averageMsPerTarget) : 45.0);
+    const recentTargetsPerMin = rawRecent > 0 ? rawRecent : (averageMsPerTarget > 0 ? (60000 / averageMsPerTarget) : 0);
     const currentPhase = Number(summary.phase || 0);
     const phase2Progress = getPhase2Progress(run);
     const phase2Total = phase2Progress.total;
@@ -472,7 +469,7 @@
     const currentItems = Number(summary.current_items || run?.items_count || 0);
     const checkpointOnlyPhase1 = hasPhase1CheckpointItems(run);
     const remainingUnits = isPhase2 ? Math.max(0, phase2Total - phase2Completed) : remainingTargets;
-    const unitsPerMin = isPhase2 ? Math.max(recentItemsPerMin, 25) : Math.max(recentTargetsPerMin, 0.5);
+    const unitsPerMin = isPhase2 ? recentItemsPerMin : recentTargetsPerMin;
     const etaMs = ['running', 'resuming'].includes(status) && unitsPerMin > 0 && remainingUnits > 0
       ? (remainingUnits / unitsPerMin) * 60000
       : 0;
@@ -2242,7 +2239,7 @@
         const phase2Complete = p2Done >= p2Total;
         activeProgressPct = getRunProgressPercent(run);
         activeProgressText = `${p2Done.toLocaleString()} / ${p2Total.toLocaleString()} products`;
-        activeSpeed = runSummary.phase2_speed || (timing.itemsPerMin ? `${timing.itemsPerMin} items/min` : '~440 items/min');
+        activeSpeed = runSummary.phase2_speed || (timing.itemsPerMin ? `${timing.itemsPerMin} items/min` : 'Measuring');
         activeEta = phase2Complete ? 'Finalizing' : (runSummary.phase2_eta || timing.etaLabel || 'Estimating');
         activeRemaining = `${Math.max(0, p2Total - p2Done).toLocaleString()} products`;
         stepCountLabel = 'Products Enriched';
@@ -2256,7 +2253,7 @@
         activeProgressText = checkpointOnlyPhase1
           ? `${totalHarvested.toLocaleString()} products found`
           : `${p1Done} / ${p1Total} categories`;
-        activeSpeed = runSummary.phase1_speed || (timing.targetsPerMin ? `${timing.targetsPerMin} cats/min` : '~45 cats/min');
+        activeSpeed = runSummary.phase1_speed || (timing.targetsPerMin ? `${timing.targetsPerMin} cats/min` : 'Measuring');
         activeEta = runSummary.phase1_eta || timing.etaLabel || 'Estimating';
         activeRemaining = checkpointOnlyPhase1
           ? `${p1Total.toLocaleString()} categories queued`
@@ -2303,10 +2300,22 @@
           <div class="automation-detail-card__value">${escapeHtml(String(summary.removed || 0))}</div>
           <div class="automation-detail-card__label">Removed</div>
         </div>
+        ${Number(summary.sku_total || 0) ? `
+          <div class="automation-detail-card">
+            <div class="automation-detail-card__value">${escapeHtml(`${Number(summary.sku_found || 0).toLocaleString()} / ${Number(summary.sku_total || 0).toLocaleString()}`)}</div>
+            <div class="automation-detail-card__label">SKUs Found</div>
+          </div>
+        ` : ''}
+        ${Number(summary.sku_unresolved || 0) ? `
+          <div class="automation-detail-card automation-detail-card--warning">
+            <div class="automation-detail-card__value">${escapeHtml(Number(summary.sku_unresolved).toLocaleString())}</div>
+            <div class="automation-detail-card__label">SKUs Need Retry</div>
+          </div>
+        ` : ''}
         ${liveRunStatus ? `
           <div class="automation-detail-card">
             <div class="automation-detail-card__value" style="color:var(--primary); font-weight:700;">${escapeHtml(activeEta)}</div>
-            <div class="automation-detail-card__label">Total Time Left</div>
+            <div class="automation-detail-card__label">Current Phase Time Left</div>
           </div>
           <div class="automation-detail-card">
             <div class="automation-detail-card__value">${escapeHtml(stepCountValue)}</div>
@@ -2346,6 +2355,11 @@
                 : ''
             ].filter(Boolean).join(' - ')
           )}
+        </div>
+      ` : ''}
+      ${Number(summary.sku_unresolved || 0) ? `
+        <div class="automation-comparison-note automation-comparison-note--warning" role="status">
+          ${escapeHtml(`${Number(summary.sku_unresolved).toLocaleString()} SKU detail page(s) remain unresolved. Resume this run to retry them.`)}
         </div>
       ` : ''}
       <div class="automation-job__meta" style="margin-bottom:1rem">
@@ -2795,7 +2809,6 @@
     });
 
     elements.automationRootUrl?.addEventListener('input', resetDiscovery);
-    elements.automationDiscoverBtn?.addEventListener('click', discoverTargets);
     elements.automationSaveBtn?.addEventListener('click', saveJob);
     elements.automationResetBtn?.addEventListener('click', closeJobEditor);
     elements.automationIncludeAllBtn?.addEventListener('click', () => setAllDiscoveryTargetsActive(true));

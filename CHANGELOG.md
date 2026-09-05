@@ -1,5 +1,11 @@
 # Changelog
 
+## [8.4.0] - 2026-09-05
+
+- Enabled SKU detail recovery for every supplier engine, including TXParts and Parts4Cells browser fallback.
+- Added bounded all-site live SKU smoke testing and explicit unresolved SKU reporting for resumable runs.
+- Removed optimistic ETA fallbacks so the UI only estimates from measured throughput.
+
 ## [8.3.0] - 2026-09-05
 
 - Added bounded MobileSentrix browser fallback for blocked or SKU-less detail pages while keeping Safari HTTP primary.

@@ -14,7 +14,8 @@
 }
 
 .page-shell.page-shell--table-mode {
-  max-width: 1840px;
+  max-width: 100%;
+  padding: .5rem 1rem;
 }
 
 @media (min-width:768px) {
@@ -794,6 +795,14 @@ body {
   font-weight: 600;
 }
 
+.automation-detail-card--warning {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+
+.automation-detail-card--warning .automation-detail-card__value {
+  color: var(--warning);
+}
+
 .automation-comparison-note {
   margin: -.35rem 0 1rem;
   padding: .65rem .75rem;
@@ -802,6 +811,11 @@ body {
   color: var(--text-2);
   font-size: .75rem;
   line-height: 1.45;
+}
+
+.automation-comparison-note--warning {
+  border-left-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
 }
 
 /* ── Model Badges ────────────────────────────────────────────── */
@@ -1565,45 +1579,6 @@ body {
   background: rgba(240, 107, 107, .08);
 }
 
-/* ── Overlay & Spinner ───────────────────────────────────────── */
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(10, 14, 24, .64);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: .75rem;
-  z-index: 9999;
-}
-
-.overlay-status {
-  color: #fff;
-  font-size: .8rem;
-  font-weight: 700;
-}
-
-.spinner {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  border: 3px solid var(--border);
-  border-top-color: var(--primary);
-  animation: spin .8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ── Legacy selectors that may still be in HTML/JS ───────────── */
-.automation-products-panel { min-height: 300px; }
-.automation-overview-card { min-height: 100%; }
-.automation-differences-panel { min-width: 0; }
-.automation-section { scroll-margin-top: 1rem; }
-.automation-map-link { flex-shrink: 0; text-decoration: none; white-space: nowrap; }
-
 .automation-form-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1889,12 +1864,6 @@ body {
   .automation-review-filter {
     flex-basis: 100%;
   }
-}
-
-/* ── Full-Width Table View Expansion ─────────────────────────────────── */
-.page-shell--table-mode {
-  max-width: 100% !important;
-  padding: 0.5rem 1rem !important;
 }
 
 /* ── Phase Progression Stepper ───────────────────────────────────────── */

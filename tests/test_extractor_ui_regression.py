@@ -222,3 +222,38 @@ def test_automation_product_filters_keep_unknown_prices_blank():
     assert "if (parsed === 0) continue;" in script
     assert "if (parsed !== null && parsed > 0) return parsed;" in script
     assert "escapeHtml(original || '-')" in script
+
+
+def test_users_modal_has_accessible_dialog_contract():
+    template = (ROOT / "templates" / "users.html").read_text(encoding="utf-8")
+    script = (ROOT / "static" / "js" / "users.js").read_text(encoding="utf-8")
+    soup = BeautifulSoup(template, "html.parser")
+
+    modal = soup.find(id="userModal")
+    dialog = modal.find(attrs={"role": "dialog"})
+
+    assert modal.get("aria-hidden") == "true"
+    assert dialog is not None
+    assert dialog.get("aria-modal") == "true"
+    assert dialog.get("aria-labelledby") == "modalTitle"
+    assert dialog.get("tabindex") == "-1"
+    assert soup.find("label", attrs={"for": "username"}) is not None
+    assert soup.find("label", attrs={"for": "password"}) is not None
+    assert soup.find("label", attrs={"for": "role"}) is not None
+    assert "function openUserModal(" in script
+    assert "function closeUserModal()" in script
+    assert "modalReturnFocus.focus()" in script
+    assert "e.key === 'Escape'" in script
+    assert "e.key !== 'Tab'" in script
+
+
+def test_automation_ui_cleanup_removes_stale_overlay_and_discover_button_refs():
+    script = (ROOT / "static" / "js" / "automation.js").read_text(encoding="utf-8")
+    styles = (ROOT / "static" / "css" / "automation.css").read_text(encoding="utf-8")
+
+    assert "automationDiscoverBtn" not in script
+    assert "overlay: $('overlay')" not in script
+    assert ".overlay {" not in styles
+    assert ".overlay-status" not in styles
+    assert ".automation-products-panel" not in styles
+    assert styles.count("page-shell--table-mode") == 1

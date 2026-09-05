@@ -17,6 +17,7 @@ from scrapers.xcell_scraper_engine import (
     parse_xcell_product_detail_fast,
 )
 from scrapers.registry import detect_scraper_key
+from scrapers.sku_utils import extract_jsonld_sku
 
 
 class FakeSession:
@@ -46,6 +47,21 @@ def test_detects_new_supplier_domains():
     assert detect_scraper_key("https://gadgetfix.com/category/iphone-1559.html") == "gadgetfix"
     assert detect_scraper_key("https://m.gadgetfix.com/category/iphone-1559.html") == "gadgetfix"
     assert detect_scraper_key("https://txpartscanada.ca/shop/iphone-15") == "txparts"
+
+
+def test_jsonld_sku_matches_requested_product_not_recommendation():
+    html = """
+    <html><head>
+      <link rel="canonical" href="https://example.com/product/main">
+      <script type="application/ld+json">
+        [{"@type":"Product","url":"https://example.com/product/recommended","sku":"RELATED-1"},
+         {"@type":"Product","url":"https://example.com/product/main","sku":"MAIN-1"}]
+      </script>
+    </head><body></body></html>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    assert extract_jsonld_sku(soup, "https://example.com/product/main") == "MAIN-1"
 
 
 def test_security_script_words_do_not_hide_real_catalog_pages():

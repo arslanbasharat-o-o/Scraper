@@ -449,6 +449,47 @@ def test_mobilesentrix_sku_missing_after_http_is_retried_in_browser(tmp_path, mo
     assert enriched[0].sku == "MS-BROWSER-SKU"
 
 
+def test_txparts_missing_sku_detail_is_not_skipped(tmp_path, monkeypatch):
+    """All suppliers, including TXParts, must enter phase-two SKU enrichment."""
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    class Session:
+        def close(self):
+            return None
+
+    def fake_enrich(_session, item, *_args, **_kwargs):
+        item.sku = "TX-PHASE2-SKU"
+        return item
+
+    monkeypatch.setattr(app_module.txparts_scraper_engine, "build_session", lambda **_kwargs: (Session(), False))
+    monkeypatch.setattr(app_module.txparts_scraper_engine, "enrich_item_details", fake_enrich)
+    item = app_module.Item(
+        url="https://txparts.com/product/iphone-screen",
+        site="txparts.com",
+        title="TXParts Screen",
+        price_value=10.0,
+        price_currency="USD",
+        price_text="$10.00",
+        discounted_value=10.0,
+        discounted_formatted="$10.00",
+        original_formatted="$10.00",
+        source="listing",
+        image_url="",
+    )
+
+    enriched, _ = app_module.enrich_scraped_items(
+        [item],
+        rules={},
+        retries=1,
+        verify_ssl=True,
+        use_curl=True,
+        enrich_details=True,
+        use_browser=False,
+    )
+
+    assert enriched[0].sku == "TX-PHASE2-SKU"
+
+
 def test_resume_checkpoint_items_skip_completed_targets_and_still_enrich(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
     scraped_urls = []

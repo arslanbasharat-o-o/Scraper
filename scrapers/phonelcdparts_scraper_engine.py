@@ -14,6 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+from .sku_utils import extract_jsonld_sku, clean_sku
 
 try:
     from curl_cffi import requests as curl_requests
@@ -151,8 +152,11 @@ def _looks_like_block_page(html: str) -> bool:
 def get_html(session, url: str, logger=None) -> Optional[str]:
     """Fetch HTML with Safari TLS curl_cffi session, fallback to browser if blocked."""
     if session is not None:
+        session.phonelcdparts_last_status = 0
+    if session is not None:
         try:
             r = session.get(url, timeout=25)
+            session.phonelcdparts_last_status = int(getattr(r, 'status_code', 0) or 0)
             if r.status_code == 200 and r.text and not _looks_like_block_page(r.text):
                 return r.text
         except Exception:
@@ -457,13 +461,15 @@ def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional
         '[itemprop="sku"]'
     )
     if sku_el:
-        item.sku = clean_text(
+        item.sku = clean_sku(
             sku_el.get('data-sku')
             or sku_el.get('content')
             or sku_el.get_text(' ', strip=True)
         )
     if not item.sku:
         item.sku = extract_labeled_sku(soup)
+    if not item.sku:
+        item.sku = extract_jsonld_sku(soup, item.url)
 
     stock_el = soup.select_one('.product-info-stock-sku .stock, .stock.available, .stock.unavailable, .stock')
     if stock_el:
