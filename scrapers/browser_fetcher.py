@@ -279,10 +279,6 @@ def fetch_html(
                             logger.warning("[botasaurus] Browser-backed request failed: %s", exc)
 
                 return {"final_url": final_url, "html": html}
-            finally:
-                # Reusable drivers stay warm across detail URLs.  The
-                # Botasaurus pool owns cleanup at process exit or crash.
-
         try:
             if cached_fetcher is None:
                 with _REUSABLE_FETCHERS_LOCK:

@@ -1,5 +1,8 @@
 # Changelog
 
+## [8.4.10] - 2026-09-06
+- Corrected the reusable browser fallback cleanup block and verified module compilation.
+
 ## [8.4.9] - 2026-09-06
 - Keep Botasaurus browser fallback drivers warm with blocked-image, early-load settings to remove per-URL Chrome startup overhead.
 
