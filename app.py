@@ -23,7 +23,8 @@ from dataclasses import asdict
 from typing import Callable, List, Dict, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import copy
-from functools import wraps
+from functools import wraps, lru_cache
+import gzip
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from bs4 import BeautifulSoup
@@ -406,6 +407,27 @@ def apply_security_headers(response):
     return response
 
 
+@app.after_request
+def compress_response(response):
+    accept_encoding = request.headers.get('Accept-Encoding', '')
+    if (
+        'gzip' in accept_encoding
+        and response.status_code < 300
+        and not getattr(response, 'direct_passthrough', False)
+        and 'gzip' not in response.headers.get('Content-Encoding', '')
+    ):
+        data = response.get_data()
+        if len(data) > 1024:
+            mimetype = response.mimetype or ''
+            if mimetype in {'application/json', 'text/html', 'text/css', 'application/javascript', 'text/plain', 'image/svg+xml'}:
+                compressed = gzip.compress(data, compresslevel=5)
+                response.set_data(compressed)
+                response.headers['Content-Encoding'] = 'gzip'
+                response.headers['Content-Length'] = len(compressed)
+                response.headers['Vary'] = 'Accept-Encoding'
+    return response
+
+
 def require_destructive_confirmation(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -473,8 +495,17 @@ def close_db_connection(_exception=None):
     """Release SQLite connections after each request to avoid stale thread-local snapshots."""
     db_manager.close_connection()
 
+_WS_RE = re.compile(r'\s+')
+
 def normalize_compare_text(value) -> str:
-    return re.sub(r'\s+', ' ', str(value or '')).strip()
+    if not value:
+        return ''
+    s = str(value).strip()
+    if not s:
+        return ''
+    if '  ' not in s and '\t' not in s and '\n' not in s and '\r' not in s:
+        return s
+    return _WS_RE.sub(' ', s)
 
 
 _SEMANTIC_PUNCTUATION_TRANSLATION = str.maketrans({
@@ -499,18 +530,30 @@ _SEMANTIC_PUNCTUATION_TRANSLATION = str.maketrans({
 })
 
 
+_CONTROL_CHAR_TABLE = {
+    cp: ord(' ')
+    for cp in range(0x110000)
+    if unicodedata.category(chr(cp)) in {'Cc', 'Cf', 'Zl', 'Zp'}
+}
+
+
+@lru_cache(maxsize=32768)
 def normalize_semantic_compare_text(value) -> str:
     """Normalize presentation-only text differences without changing display values."""
-    text = html.unescape(str(value or '')).translate(_SEMANTIC_PUNCTUATION_TRANSLATION)
+    if not value:
+        return ''
+    text = str(value)
+    if '&' in text:
+        text = html.unescape(text)
+    text = text.translate(_SEMANTIC_PUNCTUATION_TRANSLATION)
     text = unicodedata.normalize('NFKC', text).casefold()
-    text = ''.join(
-        ' ' if unicodedata.category(character) in {'Cc', 'Cf', 'Zl', 'Zp'} else character
-        for character in text
-    )
-    text = text.replace("''", '"')
-    return re.sub(r'\s+', ' ', text).strip()
+    text = text.translate(_CONTROL_CHAR_TABLE)
+    if "''" in text:
+        text = text.replace("''", '"')
+    return _WS_RE.sub(' ', text).strip()
 
 
+@lru_cache(maxsize=32768)
 def normalize_identifier_compare_text(value) -> str:
     """Normalize product identifiers without merging different SKUs/models."""
     text = normalize_semantic_compare_text(value)
@@ -518,9 +561,10 @@ def normalize_identifier_compare_text(value) -> str:
         return ''
     # Keep meaningful separators: ABC-123 and ABC123 may be different supplier
     # identifiers even though case/spacing differences are presentation noise.
-    return re.sub(r'\s+', '-', text).strip('-')
+    return _WS_RE.sub('-', text).strip('-')
 
 
+@lru_cache(maxsize=32768)
 def normalize_compare_url(value) -> str:
     """Return a stable URL identity without tracking queries or trailing-slash noise."""
     text = normalize_compare_text(html.unescape(str(value or '')))
@@ -1414,74 +1458,37 @@ def normalize_item_snapshot(item) -> Dict[str, object]:
     comparison_price = get_comparable_item_price(item_dict)
     target_url = normalize_compare_text(item_dict.get('target_url') or extra.get('target_url'))
     target_label = normalize_compare_text(item_dict.get('target_label') or extra.get('target_label'))
-    model_label = normalize_compare_text(item_dict.get('model_label') or extra.get('model_label') or target_label or format_category_label_from_url(target_url))
+    model_label = normalize_compare_text(item_dict.get('model_label') or extra.get('model_label') or target_label or (format_category_label_from_url(target_url) if target_url else ''))
     url = normalize_compare_text(item_dict.get('url'))
     title = normalize_compare_text(item_dict.get('title'))
     sku = normalize_compare_text(item_dict.get('sku') or extra.get('sku'))
     stock_status = normalize_compare_text(item_dict.get('stock_status') or extra.get('stock_status'))
-    description = normalize_compare_text(item_dict.get('description') or extra.get('description'))
-    canonical_url = get_item_extra_value(
-        item_dict,
-        extra,
-        'canonical_url',
-        'canonical',
-        'product_url',
-        'permalink',
-    ) or url
-    product_id = get_item_extra_value(
-        item_dict,
-        extra,
-        'product_id',
-        'productId',
-        'data_product_id',
-        'woocommerce_product_id',
-        'id',
-    )
-    variant_id = get_item_extra_value(
-        item_dict,
-        extra,
-        'variant_id',
-        'variation_id',
-        'variantId',
-        'data_variation_id',
-    )
-    product_type = get_item_extra_value(item_dict, extra, 'product_type', 'type')
-    brand = get_item_extra_value(item_dict, extra, 'brand')
-    model = get_item_extra_value(item_dict, extra, 'model', 'device_model')
-    display_position = get_item_extra_value(item_dict, extra, 'display_position', 'position')
-    frame_type = get_item_extra_value(item_dict, extra, 'frame_type')
-    display_quality = get_item_extra_value(item_dict, extra, 'display_quality', 'quality', 'grade')
+    desc = normalize_compare_text(item_dict.get('description') or extra.get('description'))
+    canonical_url = extra.get('canonical_url') or extra.get('canonical') or extra.get('product_url') or extra.get('permalink') or item_dict.get('canonical_url') or url
+    product_id = extra.get('product_id') or extra.get('productId') or extra.get('data_product_id') or extra.get('woocommerce_product_id') or extra.get('id') or item_dict.get('product_id') or ''
+    variant_id = extra.get('variant_id') or extra.get('variation_id') or extra.get('variantId') or extra.get('data_variation_id') or item_dict.get('variant_id') or ''
+
+    url_norm = normalize_compare_url(url)
+    can_url_norm = normalize_compare_url(canonical_url) if canonical_url != url else url_norm
+
     return {
         'url': url,
-        'url_compare': normalize_compare_url(url),
+        'url_compare': url_norm,
         'canonical_url': canonical_url,
-        'canonical_url_compare': normalize_compare_url(canonical_url),
+        'canonical_url_compare': can_url_norm,
         'site': normalize_compare_text(item_dict.get('site')),
         'source': normalize_compare_text(item_dict.get('source')),
         'title': title,
         'title_compare': normalize_semantic_compare_text(title),
         'sku': sku,
-        'sku_compare': normalize_identifier_compare_text(sku),
+        'sku_compare': normalize_identifier_compare_text(sku) if sku else '',
         'product_id': product_id,
-        'product_id_compare': normalize_identifier_compare_text(product_id),
+        'product_id_compare': normalize_identifier_compare_text(product_id) if product_id else '',
         'variant_id': variant_id,
-        'variant_id_compare': normalize_identifier_compare_text(variant_id),
-        'product_type': product_type,
-        'product_type_compare': normalize_semantic_compare_text(product_type),
-        'brand': brand,
-        'brand_compare': normalize_semantic_compare_text(brand),
-        'model': model,
-        'model_compare': normalize_semantic_compare_text(model),
-        'display_position': display_position,
-        'display_position_compare': normalize_semantic_compare_text(display_position),
-        'frame_type': frame_type,
-        'frame_type_compare': normalize_semantic_compare_text(frame_type),
-        'display_quality': display_quality,
-        'display_quality_compare': normalize_semantic_compare_text(display_quality),
+        'variant_id_compare': normalize_identifier_compare_text(variant_id) if variant_id else '',
         'stock_status': stock_status,
         'stock_status_compare': normalize_stock_status_for_compare(stock_status),
-        'description': description,
-        'description_compare': normalize_semantic_compare_text(description),
+        'description': desc[:160] if desc else '',
         'comparison_price': comparison_price,
         'target_url': target_url,
         'target_label': target_label,
@@ -1547,8 +1554,14 @@ def snapshot_quality(snapshot: Dict[str, object]) -> tuple:
     )
 
 
-def prepare_comparison_snapshots(items) -> Tuple[List[Dict[str, object]], Dict[str, int]]:
+_SNAPSHOT_CACHE: Dict[str, Tuple[List[Dict[str, object]], Dict[str, int]]] = {}
+
+def prepare_comparison_snapshots(items, history_id: str = '') -> Tuple[List[Dict[str, object]], Dict[str, int]]:
     """Filter and deduplicate rows for product-level history comparisons."""
+    global _SNAPSHOT_CACHE
+    if history_id and history_id in _SNAPSHOT_CACHE:
+        return _SNAPSHOT_CACHE[history_id]
+
     raw_snapshots = [normalize_item_snapshot(item) for item in items or []]
     comparable = [snapshot for snapshot in raw_snapshots if is_comparable_product_snapshot(snapshot)]
     by_url: Dict[str, Dict[str, object]] = {}
@@ -1561,12 +1574,20 @@ def prepare_comparison_snapshots(items) -> Tuple[List[Dict[str, object]], Dict[s
         snapshot['category_set'] = sorted(categories)
         if existing is None or snapshot_quality(snapshot) > snapshot_quality(existing):
             by_url[key] = snapshot
-    return list(by_url.values()), {
+
+    result = (list(by_url.values()), {
         'rows': len(raw_snapshots),
         'excluded_non_products': len(raw_snapshots) - len(comparable),
         'duplicate_rows': len(comparable) - len(by_url),
         'unique_products': len(by_url),
-    }
+    })
+
+    if history_id:
+        if len(_SNAPSHOT_CACHE) > 100:
+            _SNAPSHOT_CACHE.pop(next(iter(_SNAPSHOT_CACHE)))
+        _SNAPSHOT_CACHE[history_id] = result
+
+    return result
 
 
 def deduplicate_comparable_items(items) -> List[Dict[str, object]]:
@@ -1575,12 +1596,19 @@ def deduplicate_comparable_items(items) -> List[Dict[str, object]]:
     category_map: Dict[str, List[str]] = {}
     url_counts: Dict[str, int] = {}
     quality_map: Dict[str, tuple] = {}
+    out_indices: Dict[str, int] = {}
     out: List[Dict[str, object]] = []
+    url_cache: Dict[str, str] = {}
 
     for item in items or []:
         item_dict = asdict(item) if hasattr(item, '__dataclass_fields__') else dict(item or {})
         raw_url = str(item_dict.get('url') or '').strip()
-        url = normalize_compare_url(raw_url)
+        if not raw_url:
+            continue
+        url = url_cache.get(raw_url)
+        if url is None:
+            url = normalize_compare_url(raw_url)
+            url_cache[raw_url] = url
         if not url:
             continue
 
@@ -1608,28 +1636,44 @@ def deduplicate_comparable_items(items) -> List[Dict[str, object]]:
             raw_cat = str(extra['target_url']).rstrip('/').split('/')[-1].replace('.html', '').replace('-', ' ').replace('_', ' ')
             cat = ' '.join(word.capitalize() for word in raw_cat.split())
 
-        if url not in category_map:
-            category_map[url] = []
-        if cat and cat not in category_map[url]:
-            category_map[url].append(cat)
+        cats = category_map.setdefault(url, [])
+        if cat and cat not in cats:
+            cats.append(cat)
 
-        candidate_quality = snapshot_quality(normalize_item_snapshot(item_dict))
+        desc = str(item_dict.get('description') or extra.get('description') or '')
+        title = str(item_dict.get('title') or '')
+        comp_price = get_comparable_item_price(item_dict)
+        cand_quality = (
+            bool(item_dict.get('sku') or extra.get('sku')) +
+            bool(item_dict.get('stock_status') or extra.get('stock_status')) +
+            bool(desc) +
+            bool(title) +
+            bool(item_dict.get('site')) +
+            bool(item_dict.get('model_label') or extra.get('model_label') or extra.get('target_label')) +
+            bool(item_dict.get('target_label') or extra.get('target_label')),
+            int(comp_price is not None),
+            len(desc),
+            len(title)
+        )
+
         if url not in by_url:
             if not isinstance(item_dict.get('extra'), dict):
                 item_dict['extra'] = extra
             by_url[url] = item_dict
-            quality_map[url] = candidate_quality
+            quality_map[url] = cand_quality
+            out_indices[url] = len(out)
             out.append(item_dict)
-        elif candidate_quality > quality_map.get(url, ()):
+        elif cand_quality > quality_map.get(url, ()):
             if not isinstance(item_dict.get('extra'), dict):
                 item_dict['extra'] = extra
-            index = out.index(by_url[url])
+            index = out_indices[url]
             by_url[url] = item_dict
-            quality_map[url] = candidate_quality
+            quality_map[url] = cand_quality
             out[index] = item_dict
 
     for item_dict in out:
-        url = normalize_compare_url(item_dict.get('url'))
+        raw_url = str(item_dict.get('url') or '').strip()
+        url = url_cache.get(raw_url) or normalize_compare_url(raw_url)
         cats = category_map.get(url, [])
         occurrences = url_counts.get(url, 1)
         is_dup = occurrences > 1 or len(cats) > 1
@@ -1737,11 +1781,14 @@ def build_session_comparison(
     current_target_urls=None,
     run_validation: Dict | None = None,
     target_errors: List[Dict[str, object]] | None = None,
+    current_history_id: str = '',
 ) -> Dict:
     """Compare current scrape results against the latest previous run for the same target URLs."""
     previous_items = (previous_history or {}).get('items', []) if previous_history else []
-    current_snapshots, current_metrics = prepare_comparison_snapshots(current_items)
-    previous_snapshots, previous_metrics = prepare_comparison_snapshots(previous_items)
+    curr_hid = current_history_id or str((run_validation or {}).get('history_id') or '')
+    prev_hid = str((previous_history or {}).get('id') or '') if previous_history else ''
+    current_snapshots, current_metrics = prepare_comparison_snapshots(current_items, history_id=curr_hid)
+    previous_snapshots, previous_metrics = prepare_comparison_snapshots(previous_items, history_id=prev_hid)
     current_target_scope = {
         normalize_compare_url(url)
         for url in (current_target_urls or [])
@@ -1912,12 +1959,11 @@ def build_session_comparison(
             field_changes['target_url'] = {'before': prev_item.get('target_url', ''), 'after': current_item.get('target_url', '')}
         if prev_item['sku_compare'] and current_item['sku_compare'] and prev_item['sku_compare'] != current_item['sku_compare']:
             field_changes['sku'] = {'before': prev_item['sku'], 'after': current_item['sku']}
-        if (
-            prev_item['description_compare']
-            and current_item['description_compare']
-            and prev_item['description_compare'] != current_item['description_compare']
-        ):
-            field_changes['description'] = {'before': prev_item['description'], 'after': current_item['description']}
+        prev_desc = prev_item.get('description') or ''
+        curr_desc = current_item.get('description') or ''
+        if prev_desc and curr_desc and prev_desc != curr_desc:
+            if normalize_semantic_compare_text(prev_desc) != normalize_semantic_compare_text(curr_desc):
+                field_changes['description'] = {'before': prev_desc, 'after': curr_desc}
         if (
             prev_item['stock_status_compare']
             and current_item['stock_status_compare']
@@ -2241,7 +2287,8 @@ def validate_scrape_completeness(
     """Protect saved history/comparisons from partial or failed scrape runs."""
     current_snapshots, current_metrics = prepare_comparison_snapshots(current_items)
     previous_items = (previous_history or {}).get('items', []) if previous_history else []
-    previous_snapshots, previous_metrics = prepare_comparison_snapshots(previous_items)
+    prev_hid = str((previous_history or {}).get('id') or '') if previous_history else ''
+    previous_snapshots, previous_metrics = prepare_comparison_snapshots(previous_items, history_id=prev_hid)
     validation = {
         'approved': True,
         'status': 'Approved for Comparison',
@@ -5086,12 +5133,27 @@ def api_automation_runs():
         return jsonify({'error': str(e)}), 500
 
 
+_RUN_DETAIL_CACHE = {}
+
+
+def invalidate_run_detail_cache(run_id: int = None) -> None:
+    global _RUN_DETAIL_CACHE
+    if run_id is None:
+        _RUN_DETAIL_CACHE.clear()
+    else:
+        target_id = int(run_id)
+        keys_to_remove = [k for k in _RUN_DETAIL_CACHE if (k == target_id or (isinstance(k, tuple) and k[0] == target_id))]
+        for k in keys_to_remove:
+            _RUN_DETAIL_CACHE.pop(k, None)
+
+
 @app.delete('/api/automation/runs/<int:run_id>')
 @require_login
 @require_role('admin')
 @require_destructive_confirmation
 def api_delete_automation_run(run_id):
     try:
+        invalidate_run_detail_cache(run_id)
         success = db_manager.delete_automation_run(run_id)
         if not success:
             return jsonify({'error': 'Failed to delete automation run or run not found.'}), 404
@@ -5106,6 +5168,7 @@ def api_delete_automation_run(run_id):
 @require_destructive_confirmation
 def api_delete_automation_run_fallback(run_id):
     try:
+        invalidate_run_detail_cache(run_id)
         success = db_manager.delete_automation_run(run_id)
         if not success:
             return jsonify({'error': 'Failed to delete automation run or run not found.'}), 404
@@ -5118,6 +5181,7 @@ def api_delete_automation_run_fallback(run_id):
 @require_login
 def api_pause_automation_run(run_id):
     try:
+        invalidate_run_detail_cache(run_id)
         run = db_manager.get_automation_run(run_id)
         if not run:
             return jsonify({'error': 'Automation run not found.'}), 404
@@ -5136,6 +5200,7 @@ def api_pause_automation_run(run_id):
 @require_login
 def api_resume_automation_run(run_id):
     try:
+        invalidate_run_detail_cache(run_id)
         queued, message = _launch_existing_automation_run(run_id)
         if not queued:
             return jsonify({'error': message or 'Failed to resume automation run.'}), 409
@@ -5148,6 +5213,17 @@ def api_resume_automation_run(run_id):
 @require_login
 def api_automation_run_detail(run_id):
     try:
+        include_items_arg = request.args.get('include_items')
+        items_limit_arg = request.args.get('limit') or request.args.get('items_limit')
+        cache_key = (run_id, include_items_arg, items_limit_arg)
+
+        global _RUN_DETAIL_CACHE
+        if '_RUN_DETAIL_CACHE' not in globals():
+            _RUN_DETAIL_CACHE = {}
+        cached_payload = _RUN_DETAIL_CACHE.get(cache_key)
+        if cached_payload is not None:
+            return jsonify(cached_payload)
+
         run = db_manager.get_automation_run(run_id)
         if not run:
             return jsonify({'error': 'Automation run not found.'}), 404
@@ -5174,23 +5250,24 @@ def api_automation_run_detail(run_id):
         current_product_items = deduplicate_comparable_items(current_history_items)
         curr_hid = str(run.get('current_history_id') or '')
         prev_hid = str(run.get('previous_history_id') or '')
-        cache_key = f"{curr_hid}:{prev_hid}"
+        comparison_cache_key = f"{curr_hid}:{prev_hid}"
 
         global _COMPARISON_CACHE
         if '_COMPARISON_CACHE' not in globals():
             _COMPARISON_CACHE = {}
 
-        if cache_key in _COMPARISON_CACHE and curr_hid:
-            comparison = _COMPARISON_CACHE[cache_key]
+        if comparison_cache_key in _COMPARISON_CACHE and curr_hid:
+            comparison = _COMPARISON_CACHE[comparison_cache_key]
         elif current_history:
             comparison = build_session_comparison(
                 previous_history,
                 current_history_items,
                 current_target_urls=(current_history or {}).get('urls', []),
                 run_validation=validation_from_history_rejection(current_history),
+                current_history_id=curr_hid,
             )
             if curr_hid and len(_COMPARISON_CACHE) < 50:
-                _COMPARISON_CACHE[cache_key] = comparison
+                _COMPARISON_CACHE[comparison_cache_key] = comparison
         else:
             comparison = {
                 'has_previous_run': False,
@@ -5249,13 +5326,10 @@ def api_automation_run_detail(run_id):
             public_run['items_count'] = comparison_summary.get('current_items', len(current_product_items))
         public_run['summary'] = public_summary
 
-        compact_product_items = [
+        duplicate_items = [
             {
                 'title': i.get('title') or '',
                 'url': i.get('url') or '',
-                'image_url': i.get('image_url') or '',
-                'original_formatted': i.get('original_formatted') or '',
-                'discounted_formatted': i.get('discounted_formatted') or '',
                 'sku': i.get('sku') or '',
                 'category': i.get('category') or (i.get('extra') or {}).get('model_label') or (i.get('extra') or {}).get('target_label') or '',
                 'model_label': (i.get('extra') or {}).get('model_label') or '',
@@ -5264,14 +5338,90 @@ def api_automation_run_detail(run_id):
                 'duplicate_count': i.get('duplicate_count', 1),
                 'is_duplicate': bool(i.get('is_duplicate')),
                 'stock_status': i.get('stock_status') or 'In Stock',
-                'description': i.get('description') or '',
-                'source': i.get('site') or i.get('source') or (str(run.get('current_history_id') or '').split(':')[0] if ':' in str(run.get('current_history_id') or '') else 'parts4cells'),
-                'extra': i.get('extra') or {},
+                'original_formatted': i.get('original_formatted') or '',
+                'discounted_formatted': i.get('discounted_formatted') or '',
+                'description': (i.get('description') or '')[:160],
+                'source': i.get('site') or i.get('source') or (str(curr_hid).split(':')[0] if ':' in str(curr_hid) else 'parts4cells'),
             }
             for i in current_product_items
+            if i.get('is_duplicate') or (i.get('duplicate_categories') and len(i.get('duplicate_categories')) > 1)
         ]
+        duplicate_count = len(duplicate_items)
 
-        return jsonify({
+        if include_items_arg in {'0', 'false', 'no'}:
+            returned_items = []
+        elif items_limit_arg:
+            try:
+                lim = max(0, int(items_limit_arg))
+                returned_items = [
+                    {
+                        'title': i.get('title') or '',
+                        'url': i.get('url') or '',
+                        'image_url': i.get('image_url') or '',
+                        'original_formatted': i.get('original_formatted') or '',
+                        'discounted_formatted': i.get('discounted_formatted') or '',
+                        'sku': i.get('sku') or '',
+                        'category': i.get('category') or (i.get('extra') or {}).get('model_label') or (i.get('extra') or {}).get('target_label') or '',
+                        'model_label': (i.get('extra') or {}).get('model_label') or '',
+                        'target_label': (i.get('extra') or {}).get('target_label') or '',
+                        'duplicate_categories': i.get('duplicate_categories') or [],
+                        'duplicate_count': i.get('duplicate_count', 1),
+                        'is_duplicate': bool(i.get('is_duplicate')),
+                        'stock_status': i.get('stock_status') or 'In Stock',
+                        'description': (i.get('description') or '')[:160],
+                        'source': i.get('site') or i.get('source') or (str(curr_hid).split(':')[0] if ':' in str(curr_hid) else 'parts4cells'),
+                        'extra': {},
+                    }
+                    for i in current_product_items[:lim]
+                ]
+            except Exception:
+                returned_items = []
+        elif len(current_product_items) > 250:
+            returned_items = [
+                {
+                    'title': i.get('title') or '',
+                    'url': i.get('url') or '',
+                    'image_url': i.get('image_url') or '',
+                    'original_formatted': i.get('original_formatted') or '',
+                    'discounted_formatted': i.get('discounted_formatted') or '',
+                    'sku': i.get('sku') or '',
+                    'category': i.get('category') or (i.get('extra') or {}).get('model_label') or (i.get('extra') or {}).get('target_label') or '',
+                    'model_label': (i.get('extra') or {}).get('model_label') or '',
+                    'target_label': (i.get('extra') or {}).get('target_label') or '',
+                    'duplicate_categories': i.get('duplicate_categories') or [],
+                    'duplicate_count': i.get('duplicate_count', 1),
+                    'is_duplicate': bool(i.get('is_duplicate')),
+                    'stock_status': i.get('stock_status') or 'In Stock',
+                    'description': (i.get('description') or '')[:160],
+                    'source': i.get('site') or i.get('source') or (str(curr_hid).split(':')[0] if ':' in str(curr_hid) else 'parts4cells'),
+                    'extra': {},
+                }
+                for i in current_product_items[:250]
+            ]
+        else:
+            returned_items = [
+                {
+                    'title': i.get('title') or '',
+                    'url': i.get('url') or '',
+                    'image_url': i.get('image_url') or '',
+                    'original_formatted': i.get('original_formatted') or '',
+                    'discounted_formatted': i.get('discounted_formatted') or '',
+                    'sku': i.get('sku') or '',
+                    'category': i.get('category') or (i.get('extra') or {}).get('model_label') or (i.get('extra') or {}).get('target_label') or '',
+                    'model_label': (i.get('extra') or {}).get('model_label') or '',
+                    'target_label': (i.get('extra') or {}).get('target_label') or '',
+                    'duplicate_categories': i.get('duplicate_categories') or [],
+                    'duplicate_count': i.get('duplicate_count', 1),
+                    'is_duplicate': bool(i.get('is_duplicate')),
+                    'stock_status': i.get('stock_status') or 'In Stock',
+                    'description': (i.get('description') or '')[:160],
+                    'source': i.get('site') or i.get('source') or (str(curr_hid).split(':')[0] if ':' in str(curr_hid) else 'parts4cells'),
+                    'extra': {},
+                }
+                for i in current_product_items
+            ]
+
+        response_payload = {
             'run': public_run,
             'job': db_manager.get_automation_job(run.get('job_id'), include_targets=False),
             'current_history': {
@@ -5280,7 +5430,8 @@ def api_automation_run_detail(run_id):
                 'items_count': comparison_summary.get('current_items', len(current_product_items)),
                 'rows_count': (current_history or {}).get('items_count'),
                 'urls': (current_history or {}).get('urls', []),
-                'items': compact_product_items,
+                'items': returned_items,
+                'items_truncated': len(returned_items) < len(current_product_items),
             } if current_history else ({
                 'id': '',
                 'timestamp': run.get('started_at'),
@@ -5298,6 +5449,71 @@ def api_automation_run_detail(run_id):
             } if previous_history else None,
             'comparison': comparison,
             'models': models,
+            'duplicate_items': duplicate_items[:100],
+            'duplicate_count': duplicate_count,
+        }
+
+        if str(run.get('status') or '').strip().lower() in {'completed', 'failed', 'cancelled'}:
+            if len(_RUN_DETAIL_CACHE) > 50:
+                _RUN_DETAIL_CACHE.pop(next(iter(_RUN_DETAIL_CACHE)))
+            _RUN_DETAIL_CACHE[cache_key] = response_payload
+
+        return jsonify(response_payload)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.get('/api/automation/runs/<int:run_id>/products')
+@require_login
+def api_automation_run_products(run_id):
+    """Return all deduplicated products for a run in compact format for the Product Explorer."""
+    try:
+        run = db_manager.get_automation_run(run_id)
+        if not run:
+            return jsonify({'error': 'Automation run not found.'}), 404
+
+        current_history_id = run.get('current_history_id')
+        if not current_history_id:
+            items = db_manager.get_automation_run_items(run_id, limit=AUTOMATION_LIVE_DETAIL_ITEM_LIMIT)
+            if not items:
+                run_summary = run.get('summary') if isinstance(run.get('summary'), dict) else {}
+                raw_preview = run_summary.get('preview_items')
+                items = [item for item in raw_preview if isinstance(item, dict)] if isinstance(raw_preview, list) else []
+            return jsonify({
+                'items': items,
+                'total': len(items),
+            })
+
+        current_history = db_manager.get_history_detail(current_history_id)
+        raw_items = (current_history or {}).get('items', [])
+        product_items = deduplicate_comparable_items(raw_items)
+
+        curr_hid = str(current_history_id or '')
+        compact = [
+            {
+                'title': i.get('title') or '',
+                'url': i.get('url') or '',
+                'image_url': i.get('image_url') or '',
+                'original_formatted': i.get('original_formatted') or '',
+                'discounted_formatted': i.get('discounted_formatted') or '',
+                'sku': i.get('sku') or '',
+                'category': i.get('category') or (i.get('extra') or {}).get('model_label') or (i.get('extra') or {}).get('target_label') or '',
+                'model_label': (i.get('extra') or {}).get('model_label') or '',
+                'target_label': (i.get('extra') or {}).get('target_label') or '',
+                'duplicate_categories': i.get('duplicate_categories') or [],
+                'duplicate_count': i.get('duplicate_count', 1),
+                'is_duplicate': bool(i.get('is_duplicate')),
+                'stock_status': i.get('stock_status') or 'In Stock',
+                'description': (i.get('description') or '')[:160],
+                'source': i.get('site') or i.get('source') or (curr_hid.split(':')[0] if ':' in curr_hid else 'parts4cells'),
+                'extra': {},
+            }
+            for i in product_items
+        ]
+
+        return jsonify({
+            'items': compact,
+            'total': len(compact),
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

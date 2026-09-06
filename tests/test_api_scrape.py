@@ -943,6 +943,21 @@ def test_running_automation_run_exposes_live_product_preview(tmp_path, monkeypat
     assert payload["current_history"]["is_live_preview"] is True
     assert payload["current_history"]["items_count"] == 1
     assert payload["current_history"]["items"][0]["title"] == "GadgetFix Screen"
+    assert "duplicate_items" in payload
+    assert "duplicate_count" in payload
+
+    with app_module.app.test_client() as client:
+        compact_res = client.get(f"/api/automation/runs/{run['id']}?include_items=0")
+        assert compact_res.status_code == 200
+        compact_payload = compact_res.get_json()
+        assert len(compact_payload["current_history"]["items"]) == 0
+        assert compact_payload["current_history"]["items_count"] == 1
+
+        prod_res = client.get(f"/api/automation/runs/{run['id']}/products")
+        assert prod_res.status_code == 200
+        prod_payload = prod_res.get_json()
+        assert prod_payload["total"] == 1
+        assert prod_payload["items"][0]["title"] == "GadgetFix Screen"
 
 
 def test_automation_polling_is_compact_and_run_action_resumes_checkpoint(tmp_path, monkeypatch):

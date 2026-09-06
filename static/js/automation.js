@@ -110,6 +110,9 @@
     loadedFingerprint: '',
     runDetail: null,
     productExportRows: [],
+    runProducts: new Map(),
+    loadingProductsForRunId: null,
+    loadingProductsPromise: null,
     productFilters: {
       search: '',
       mode: 'all',
@@ -127,6 +130,9 @@
     runsRequestId: 0,
     runDetailRequestId: 0,
     lastRunDetailFetchAt: 0,
+    runDetailInFlightId: null,
+    runDetailInFlightPromise: null,
+    runDetailAbortController: null,
     etaObservations: new Map(),
     realtimePollTimer: null,
     realtimeClockTimer: null,
@@ -1273,7 +1279,7 @@
 
   function startRealtimeUpdates() {
     startRealtimeClock();
-    scheduleRealtimePoll(1000);
+    scheduleRealtimePoll(hasRunningActivity() ? ACTIVE_POLL_MS : IDLE_POLL_MS);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         scheduleRealtimePoll(1000);
@@ -1375,15 +1381,19 @@
     return entries.filter(entry => Object.prototype.hasOwnProperty.call(entry?.changes || {}, changeView));
   }
 
-  function getChangeViewCounts(changedEntries, addedItems, removedItems, allProducts = []) {
+  function getChangeViewCounts(changedEntries, addedItems, removedItems, allProducts = [], detail = null) {
     const changed = Array.isArray(changedEntries) ? changedEntries : [];
     const added = Array.isArray(addedItems) ? addedItems : [];
     const removed = Array.isArray(removedItems) ? removedItems : [];
     const products = Array.isArray(allProducts) ? allProducts : [];
-    const duplicates = products.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1));
+    const duplicatesCount = Number(
+      detail?.duplicate_count
+      ?? detail?.comparison?.summary?.duplicate_current_rows
+      ?? products.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1)).length
+    );
     return {
       all: changed.length + added.length + removed.length,
-      duplicates: duplicates.length,
+      duplicates: duplicatesCount,
       stock_status: getChangedEntriesForView(changed, 'stock_status').length,
       price: getChangedEntriesForView(changed, 'price').length,
       title: getChangedEntriesForView(changed, 'title').length,
@@ -2088,6 +2098,37 @@
     return [...changed, ...added, ...removed];
   }
 
+  async function ensureRunProducts(runId) {
+    if (!runId) return [];
+    const numericId = Number(runId);
+    if (state.runProducts.has(numericId)) {
+      return state.runProducts.get(numericId);
+    }
+    if (state.loadingProductsForRunId === numericId && state.loadingProductsPromise) {
+      return state.loadingProductsPromise;
+    }
+    state.loadingProductsForRunId = numericId;
+    state.loadingProductsPromise = (async () => {
+      try {
+        renderProductsSkeleton();
+        const data = await api(`/api/automation/runs/${encodeURIComponent(numericId)}/products`);
+        const items = Array.isArray(data?.items) ? data.items : [];
+        state.runProducts.set(numericId, items);
+        if (Number(state.selectedRunId) === numericId) {
+          renderScrapedProducts(state.runDetail);
+        }
+        return items;
+      } catch (err) {
+        console.error('Failed to load products for run', numericId, err);
+        return [];
+      } finally {
+        state.loadingProductsForRunId = null;
+        state.loadingProductsPromise = null;
+      }
+    })();
+    return state.loadingProductsPromise;
+  }
+
   function renderScrapedProducts(detail) {
     const container = elements.automationScrapedProducts;
     if (!container) return;
@@ -2101,7 +2142,11 @@
 
     const modelFilter = elements.automationModelFilter?.value || '';
     const selectedChangeView = state.selectedChangeView || 'all';
-    const allItems = Array.isArray(detail.current_history?.items) ? detail.current_history.items : [];
+    const runId = Number(detail.run?.id);
+    const cachedProducts = state.runProducts.get(runId);
+    const allItems = Array.isArray(cachedProducts)
+      ? cachedProducts
+      : (Array.isArray(detail.current_history?.items) ? detail.current_history.items : []);
     const livePreview = Boolean(detail.current_history?.is_live_preview);
     const runTotalItems = Number(
       detail.current_history?.items_count
@@ -2113,12 +2158,28 @@
     const isDuplicateView = selectedChangeView === 'duplicates';
     const differenceItems = isDuplicateView ? [] : getDifferenceProductRows(detail, modelFilter, selectedChangeView);
     const shouldShowDifferences = selectedChangeView !== 'all' && !isDuplicateView;
-    let productItems = filterByModel(allItems, modelFilter);
+
+    let duplicateSource = allItems;
+    if (isDuplicateView && !allItems.length && Array.isArray(detail.duplicate_items) && detail.duplicate_items.length) {
+      duplicateSource = detail.duplicate_items;
+    }
+
+    let productItems = filterByModel(isDuplicateView ? duplicateSource : allItems, modelFilter);
     if (isDuplicateView) {
       productItems = productItems.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1));
     }
     const items = shouldShowDifferences ? differenceItems : productItems;
     const activeConfig = CHANGE_VIEW_CONFIG.find(config => config.key === selectedChangeView) || CHANGE_VIEW_CONFIG[0];
+
+    // If products table is active and we need full items but haven't loaded them yet
+    const isTableViewActive = Boolean(document.querySelector('.inspector-tab[data-target="table-view"]')?.classList.contains('is-active'));
+    if (!shouldShowDifferences && !items.length && runTotalItems > 0 && !livePreview && !cachedProducts) {
+      if (isTableViewActive && !state.loadingProductsForRunId) {
+        ensureRunProducts(runId);
+        return;
+      }
+    }
+
     if (!items.length) {
       setProductExportRows([]);
       container.className = 'automation-products automation-products--empty';
@@ -2262,11 +2323,13 @@
     const comparisonPending = Boolean(detail.current_history?.is_live_preview)
       && currentRunStatus;
     const models = Array.isArray(detail.models) ? detail.models : [];
-    const allProducts = Array.isArray(detail.current_history?.items) ? detail.current_history.items : [];
+    const allProducts = Array.isArray(detail.duplicate_items) && detail.duplicate_items.length
+      ? detail.duplicate_items
+      : (Array.isArray(detail.current_history?.items) ? detail.current_history.items : []);
     const allChanged = filterByModel(comparison.changed || [], modelFilter);
     const allAdded = filterByModel(comparison.added || [], modelFilter);
     const allRemoved = filterByModel(comparison.removed || [], modelFilter);
-    const changeCounts = getChangeViewCounts(allChanged, allAdded, allRemoved, allProducts);
+    const changeCounts = getChangeViewCounts(allChanged, allAdded, allRemoved, allProducts, detail);
     const selectedChangeView = state.selectedChangeView || 'all';
     renderReviewFilters(comparisonPending ? null : changeCounts, selectedChangeView, modelFilter);
     const changed = getChangedEntriesForView(allChanged, selectedChangeView);
@@ -2492,7 +2555,7 @@
             <button type="button" class="btn btn-sm btn-primary" onclick="if(window.switchToTab) window.switchToTab('table-view');">Open Full Products Table</button>
           </div>
           <div class="automation-change-list">
-            ${allProducts.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1)).slice(0, 100).map(item => `
+            ${(Array.isArray(detail.duplicate_items) && detail.duplicate_items.length ? detail.duplicate_items : allProducts.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1))).slice(0, 100).map(item => `
               <div class="automation-change">
                 <div class="automation-change__model">${escapeHtml(item.category || getModelLabel(item) || 'General')}</div>
                 <div class="automation-change__top">
@@ -2532,46 +2595,80 @@
     if (!runId) return;
     const requestedRunId = Number(runId);
     const requestedSite = state.activeSite;
-    const requestId = ++state.runDetailRequestId;
-    try {
-      if (!silent) {
-        setLoading(true);
-        if (Number(state.selectedRunId) !== requestedRunId || !state.runDetail) {
-          renderInspectorSkeleton();
-          renderProductsSkeleton();
-        }
-      }
-      const detail = await api(`/api/automation/runs/${encodeURIComponent(runId)}`);
-      if (requestId !== state.runDetailRequestId || state.activeSite !== requestedSite || Number(state.selectedRunId) !== requestedRunId) return;
-      if (!siteKeyMatches(detail?.run?.scraper_key)) {
-        state.selectedRunId = null;
-        preserveLiveScroll(() => {
-          populateModelFilter(null);
-          renderRunDetail(null);
-        });
-        return;
-      }
-      state.selectedRunId = requestedRunId;
-      state.lastRunDetailFetchAt = Date.now();
-      observeRunProgress(detail?.run);
-      if (silent && isEditingProductFilters()) {
-        state.runDetail = detail;
-        preserveLiveScroll(() => renderRuns(state.runs));
-      } else {
-        preserveLiveScroll(() => {
-          populateModelFilter(detail);
-          renderRunDetail(detail);
-          renderRuns(state.runs);
-        });
-      }
-    } catch (err) {
-      if (requestId === state.runDetailRequestId) {
-        renderRunDetail(null);
-        showAlert('error', err.message || 'Failed to load run detail.', 0);
-      }
-    } finally {
-      if (!silent) setLoading(false);
+
+    // Return the existing in-flight request if already loading this exact run
+    if (state.runDetailInFlightId === requestedRunId && state.runDetailInFlightPromise) {
+      return state.runDetailInFlightPromise;
     }
+
+    // Cancel in-flight request if user switched to a different run
+    if (state.runDetailAbortController && state.runDetailInFlightId !== requestedRunId) {
+      try { state.runDetailAbortController.abort(); } catch { }
+      state.runDetailAbortController = null;
+    }
+
+    const abortController = new AbortController();
+    state.runDetailAbortController = abortController;
+    state.runDetailInFlightId = requestedRunId;
+    const requestId = ++state.runDetailRequestId;
+
+    const fetchPromise = (async () => {
+      try {
+        if (!silent) {
+          setLoading(true);
+          if (Number(state.selectedRunId) !== requestedRunId || !state.runDetail) {
+            renderInspectorSkeleton();
+            renderProductsSkeleton();
+          }
+        }
+        const detail = await api(`/api/automation/runs/${encodeURIComponent(runId)}?include_items=0`, {
+          signal: abortController.signal
+        });
+        if (requestId !== state.runDetailRequestId || state.activeSite !== requestedSite || Number(state.selectedRunId) !== requestedRunId) return detail;
+        if (!siteKeyMatches(detail?.run?.scraper_key)) {
+          state.selectedRunId = null;
+          preserveLiveScroll(() => {
+            populateModelFilter(null);
+            renderRunDetail(null);
+          });
+          return detail;
+        }
+        state.selectedRunId = requestedRunId;
+        state.lastRunDetailFetchAt = Date.now();
+        observeRunProgress(detail?.run);
+        if (silent && isEditingProductFilters()) {
+          state.runDetail = detail;
+          preserveLiveScroll(() => renderRuns(state.runs));
+        } else {
+          preserveLiveScroll(() => {
+            populateModelFilter(detail);
+            renderRunDetail(detail);
+            renderRuns(state.runs);
+          });
+        }
+        const isTableViewActive = Boolean(document.querySelector('.inspector-tab[data-target="table-view"]')?.classList.contains('is-active'));
+        if (isTableViewActive && !state.runProducts.has(requestedRunId)) {
+          ensureRunProducts(requestedRunId);
+        }
+        return detail;
+      } catch (err) {
+        if (err?.name === 'AbortError') return null;
+        if (requestId === state.runDetailRequestId) {
+          renderRunDetail(null);
+          showAlert('error', err.message || 'Failed to load run detail.', 0);
+        }
+      } finally {
+        if (state.runDetailInFlightId === requestedRunId) {
+          state.runDetailInFlightId = null;
+          state.runDetailInFlightPromise = null;
+          state.runDetailAbortController = null;
+        }
+        if (!silent) setLoading(false);
+      }
+    })();
+
+    state.runDetailInFlightPromise = fetchPromise;
+    return fetchPromise;
   }
 
   async function loadRuns(jobId = state.selectedJobId, { silent = false } = {}) {
@@ -2613,12 +2710,16 @@
           && String(selectedRun.status || '') !== String(loadedRun.status || '');
         const detailExpired = selectedRun && isRunningStatus(selectedRun.status)
           && Date.now() - state.lastRunDetailFetchAt >= LIVE_DETAIL_REFRESH_MS;
-        if (!loadedRun || !silent || statusChanged || detailExpired) {
+        const alreadyInFlight = state.runDetailInFlightId === Number(state.selectedRunId);
+        if (!alreadyInFlight && (!loadedRun || !silent || statusChanged || detailExpired)) {
           await loadRunDetail(state.selectedRunId, { silent: true });
         }
       } else if (runs.length) {
         state.selectedRunId = Number(runs[0].id);
-        await loadRunDetail(state.selectedRunId, { silent: true });
+        const alreadyInFlight = state.runDetailInFlightId === Number(state.selectedRunId);
+        if (!alreadyInFlight) {
+          await loadRunDetail(state.selectedRunId, { silent: true });
+        }
       } else {
         renderRunDetail(null);
       }
@@ -3125,6 +3226,16 @@
     initTheme();
     removeDiscoveryControls();
     bindEvents();
+    window.onInspectorTabChanged = function (tabId) {
+      if (tabId === 'table-view' && state.selectedRunId) {
+        const runId = Number(state.selectedRunId);
+        if (!state.runProducts.has(runId)) {
+          ensureRunProducts(runId);
+        } else {
+          renderScrapedProducts(state.runDetail);
+        }
+      }
+    };
     resetForm();
     syncSupplierTabs();
     updateSupplierUrl(state.activeSite, 'replace');

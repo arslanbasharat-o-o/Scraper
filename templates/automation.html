@@ -460,6 +460,9 @@
         if (pageShell) {
           pageShell.classList.toggle('page-shell--table-mode', id === 'table-view');
         }
+        if (typeof window.onInspectorTabChanged === 'function') {
+          window.onInspectorTabChanged(id);
+        }
         if (moveFocus) tab.focus();
       }
       tabs.forEach(function (tab) {
