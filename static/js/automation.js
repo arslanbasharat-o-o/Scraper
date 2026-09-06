@@ -310,8 +310,22 @@
           <div class="skeleton-stat-card"><div class="skeleton-box" style="width: 25%; height: 18px;"></div><div class="skeleton-box" style="width: 55%; height: 11px;"></div></div>
           <div class="skeleton-stat-card"><div class="skeleton-box" style="width: 45%; height: 18px;"></div><div class="skeleton-box" style="width: 75%; height: 11px;"></div></div>
         </div>
-        <div class="skeleton-row"><div class="skeleton-box" style="width: 40px; height: 40px; border-radius: 6px;"></div><div style="flex:1;"><div class="skeleton-box" style="width: 70%; height: 14px; margin-bottom: 6px;"></div><div class="skeleton-box" style="width: 40%; height: 11px;"></div></div><div class="skeleton-box" style="width: 80px; height: 24px;"></div></div>
-        <div class="skeleton-row"><div class="skeleton-box" style="width: 40px; height: 40px; border-radius: 6px;"></div><div style="flex:1;"><div class="skeleton-box" style="width: 60%; height: 14px; margin-bottom: 6px;"></div><div class="skeleton-box" style="width: 35%; height: 11px;"></div></div><div class="skeleton-box" style="width: 80px; height: 24px;"></div></div>
+        <div class="skeleton-row">
+          <div class="skeleton-box" style="width: 40px; height: 40px; border-radius: 6px; flex-shrink: 0;"></div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+            <div class="skeleton-box" style="width: 70%; height: 14px;"></div>
+            <div class="skeleton-box" style="width: 40%; height: 11px;"></div>
+          </div>
+          <div class="skeleton-box" style="width: 80px; height: 24px; flex-shrink: 0;"></div>
+        </div>
+        <div class="skeleton-row">
+          <div class="skeleton-box" style="width: 40px; height: 40px; border-radius: 6px; flex-shrink: 0;"></div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+            <div class="skeleton-box" style="width: 60%; height: 14px;"></div>
+            <div class="skeleton-box" style="width: 35%; height: 11px;"></div>
+          </div>
+          <div class="skeleton-box" style="width: 80px; height: 24px; flex-shrink: 0;"></div>
+        </div>
       </div>
     `;
   }
@@ -328,13 +342,13 @@
         </div>
         ${Array.from({ length: 6 }).map(() => `
           <div class="skeleton-row">
-            <div class="skeleton-box" style="width: 44px; height: 44px; border-radius: 8px;"></div>
-            <div style="flex:1;">
-              <div class="skeleton-box" style="width: 65%; height: 15px; margin-bottom: 6px;"></div>
+            <div class="skeleton-box" style="width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0;"></div>
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+              <div class="skeleton-box" style="width: 65%; height: 15px;"></div>
               <div class="skeleton-box" style="width: 35%; height: 12px;"></div>
             </div>
-            <div class="skeleton-box" style="width: 90px; height: 20px; border-radius: 4px;"></div>
-            <div class="skeleton-box" style="width: 70px; height: 20px; border-radius: 4px;"></div>
+            <div class="skeleton-box" style="width: 90px; height: 20px; border-radius: 4px; flex-shrink: 0;"></div>
+            <div class="skeleton-box" style="width: 70px; height: 20px; border-radius: 4px; flex-shrink: 0;"></div>
           </div>
         `).join('')}
       </div>
@@ -346,11 +360,11 @@
     if (!container) return;
     container.innerHTML = Array.from({ length: 4 }).map(() => `
       <div class="skeleton-row" style="margin-bottom:0.5rem; padding: 1rem;">
-        <div style="flex:1;">
-          <div class="skeleton-box" style="width: 60%; height: 14px; margin-bottom: 6px;"></div>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+          <div class="skeleton-box" style="width: 60%; height: 14px;"></div>
           <div class="skeleton-box" style="width: 85%; height: 11px;"></div>
         </div>
-        <div class="skeleton-box" style="width: 60px; height: 22px; border-radius: 12px;"></div>
+        <div class="skeleton-box" style="width: 60px; height: 22px; border-radius: 12px; flex-shrink: 0;"></div>
       </div>
     `).join('');
   }

@@ -1698,8 +1698,12 @@ body.modal-open {
   height: 1em;
   position: relative;
   overflow: hidden;
-  background-color: color-mix(in srgb, var(--surface-3) 84%, var(--text) 6%);
+  background-color: color-mix(in srgb, var(--surface-3, var(--surface-2)) 84%, var(--text) 6%);
   border-radius: 6px;
+}
+
+[data-bs-theme="light"] .skeleton-box {
+  background-color: color-mix(in srgb, var(--border-2) 30%, var(--surface-2) 70%);
 }
 
 .skeleton-box::after {
@@ -1715,6 +1719,16 @@ body.modal-open {
   );
   animation: skeleton-shimmer 1.5s infinite;
   content: '';
+}
+
+[data-bs-theme="light"] .skeleton-box::after {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.45) 20%,
+    rgba(255, 255, 255, 0.75) 60%,
+    rgba(255, 255, 255, 0)
+  );
 }
 
 @keyframes skeleton-shimmer {
@@ -1736,8 +1750,8 @@ body.modal-open {
 }
 
 .skeleton-stepper-card {
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1rem 1.2rem;
   display: flex;
@@ -1753,8 +1767,8 @@ body.modal-open {
 }
 
 .skeleton-stat-card {
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0.85rem;
   display: flex;
@@ -1767,15 +1781,23 @@ body.modal-open {
   align-items: center;
   gap: 1rem;
   padding: 0.85rem 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(15, 23, 42, 0.3);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
   border-radius: 8px;
   margin-bottom: 0.4rem;
 }
 
+.skeleton-row > div:not(.skeleton-box) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
 .skeleton-site-card {
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0.9rem 1.1rem;
   display: flex;
@@ -1791,9 +1813,9 @@ body.modal-open {
   gap: 0.75rem;
   padding: 0.6rem 0.85rem;
   margin-bottom: 0.35rem;
-  background: rgba(15, 23, 42, 0.25);
+  background: var(--surface-2);
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
 }
 
 .skeleton-table-tr td {
