@@ -1,5 +1,8 @@
 # Changelog
 
+## [8.4.11] - 2026-09-06
+- Verified reusable browser fallback syntax and pooled-driver lifecycle handling.
+
 ## [8.4.10] - 2026-09-06
 - Corrected the reusable browser fallback cleanup block and verified module compilation.
 

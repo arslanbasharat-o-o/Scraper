@@ -279,6 +279,10 @@ def fetch_html(
                             logger.warning("[botasaurus] Browser-backed request failed: %s", exc)
 
                 return {"final_url": final_url, "html": html}
+            finally:
+                # Driver reuse keeps the process warm; Botasaurus owns the
+                # pooled driver's lifecycle and closes it on process exit.
+                pass
         try:
             if cached_fetcher is None:
                 with _REUSABLE_FETCHERS_LOCK:
