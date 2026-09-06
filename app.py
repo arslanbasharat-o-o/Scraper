@@ -5350,9 +5350,11 @@ def api_automation_run_detail(run_id):
 
         if include_items_arg in {'0', 'false', 'no'}:
             returned_items = []
+            returned_live_preview = []
         elif items_limit_arg:
             try:
                 lim = max(0, int(items_limit_arg))
+                returned_live_preview = live_preview_items[:lim]
                 returned_items = [
                     {
                         'title': i.get('title') or '',
@@ -5376,7 +5378,9 @@ def api_automation_run_detail(run_id):
                 ]
             except Exception:
                 returned_items = []
+                returned_live_preview = []
         elif len(current_product_items) > 250:
+            returned_live_preview = live_preview_items[:50]
             returned_items = [
                 {
                     'title': i.get('title') or '',
@@ -5399,6 +5403,7 @@ def api_automation_run_detail(run_id):
                 for i in current_product_items[:250]
             ]
         else:
+            returned_live_preview = live_preview_items[:50]
             returned_items = [
                 {
                     'title': i.get('title') or '',
@@ -5437,7 +5442,7 @@ def api_automation_run_detail(run_id):
                 'timestamp': run.get('started_at'),
                 'items_count': run.get('items_count') or len(live_preview_items),
                 'urls': [],
-                'items': live_preview_items[:50],
+                'items': returned_live_preview,
                 'is_live_preview': True,
             } if live_preview_items else None),
             'previous_history': {

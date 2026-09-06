@@ -302,7 +302,14 @@
     if (!container) return;
     container.className = 'automation-run-detail';
     container.innerHTML = `
-      <div class="skeleton-container">
+      <div class="automation-loader-container" role="status" aria-live="polite">
+        <div class="automation-spinner-wrap">
+          <div class="loader-spinner" aria-hidden="true"></div>
+        </div>
+        <div class="automation-loader-text">Loading run details...</div>
+        <div class="automation-loader-sub">Comparing snapshots & analyzing product changes</div>
+      </div>
+      <div class="skeleton-container" aria-hidden="true" style="opacity: 0.65; margin-top: 1rem;">
         <div class="skeleton-stats">
           <div class="skeleton-stat-card"><div class="skeleton-box" style="width: 40%; height: 18px;"></div><div class="skeleton-box" style="width: 70%; height: 11px;"></div></div>
           <div class="skeleton-stat-card"><div class="skeleton-box" style="width: 30%; height: 18px;"></div><div class="skeleton-box" style="width: 60%; height: 11px;"></div></div>
@@ -321,7 +328,14 @@
     if (!container) return;
     container.className = 'automation-products';
     container.innerHTML = `
-      <div class="skeleton-container">
+      <div class="automation-loader-container" role="status" aria-live="polite">
+        <div class="automation-spinner-wrap">
+          <div class="loader-spinner" aria-hidden="true"></div>
+        </div>
+        <div class="automation-loader-text">Loading scraped products...</div>
+        <div class="automation-loader-sub">Preparing product catalog & table view</div>
+      </div>
+      <div class="skeleton-container" aria-hidden="true" style="opacity: 0.65; margin-top: 1rem;">
         <div style="display:flex; justify-content:space-between; margin-bottom:1rem;">
           <div class="skeleton-box" style="width: 260px; height: 36px; border-radius: 8px;"></div>
           <div class="skeleton-box" style="width: 140px; height: 36px; border-radius: 8px;"></div>
@@ -990,11 +1004,12 @@
     state.runDetailRequestId += 1;
     elements.automationJobEditor?.classList.add('d-none');
     populateModelFilter(null);
-    renderRunDetail(null);
+    renderInspectorSkeleton();
+    renderProductsSkeleton();
     syncSupplierTabs();
     renderJobs(filterJobsByActiveSite(state.allJobs));
     if (updateUrl) updateSupplierUrl(nextSite, urlMode);
-    await loadRuns(null, { silent });
+    await loadRuns(null, { silent: false });
   }
 
   function renderDiscovery() {
@@ -1140,6 +1155,7 @@
     const renderRunCard = run => {
       const summary = run.summary || {};
       const isSelectedRun = Number(run.id) === Number(state.selectedRunId);
+      const isLoadingDetail = Number(state.runDetailInFlightId) === Number(run.id);
       const selected = isSelectedRun ? ' is-selected' : '';
       const runStatus = String(run.status || '').toLowerCase();
       const displayName = automationDisplayName(run);
@@ -1172,9 +1188,11 @@
           <button type="button" class="automation-card-select automation-run__select" data-run-id="${run.id}" aria-pressed="${selected ? 'true' : 'false'}">
             <div class="automation-run__top">
               <div style="min-width: 0; flex: 1;">
-                ${activeRunStatus
-                  ? '<div class="automation-card-kind">Active run</div>'
-                  : '<div class="automation-card-kind">Run snapshot</div>'}
+                ${isLoadingDetail
+                  ? '<div class="automation-card-kind is-loading"><span class="loader-spinner--sm" aria-hidden="true"></span>Loading details...</div>'
+                  : (activeRunStatus
+                    ? '<div class="automation-card-kind">Active run</div>'
+                    : '<div class="automation-card-kind">Run snapshot</div>')}
                 <div class="automation-run__title">${escapeHtml(displayName)}</div>
                 <div class="automation-run__subtitle">${escapeHtml(run.trigger_type)} - ${escapeHtml(formatDateTime(run.started_at))}</div>
               </div>
@@ -2288,6 +2306,11 @@
     if (!detail || !detail.run) {
       renderReviewFilters(null);
       renderScrapedProducts(null);
+      if (state.runDetailInFlightId) {
+        renderInspectorSkeleton();
+        renderProductsSkeleton();
+        return;
+      }
       container.className = 'automation-run-detail automation-run-detail--empty';
       container.textContent = 'Select a run to load its differences.';
       return;
@@ -2611,15 +2634,15 @@
     state.runDetailAbortController = abortController;
     state.runDetailInFlightId = requestedRunId;
     const requestId = ++state.runDetailRequestId;
+    preserveLiveScroll(() => renderRuns(state.runs));
 
     const fetchPromise = (async () => {
       try {
-        if (!silent) {
-          setLoading(true);
-          if (Number(state.selectedRunId) !== requestedRunId || !state.runDetail) {
-            renderInspectorSkeleton();
-            renderProductsSkeleton();
-          }
+        setLoading(true);
+        const hasMatchingDetail = state.runDetail && Number(state.runDetail?.run?.id) === requestedRunId;
+        if (!hasMatchingDetail) {
+          renderInspectorSkeleton();
+          renderProductsSkeleton();
         }
         const detail = await api(`/api/automation/runs/${encodeURIComponent(runId)}?include_items=0`, {
           signal: abortController.signal
@@ -2662,8 +2685,9 @@
           state.runDetailInFlightId = null;
           state.runDetailInFlightPromise = null;
           state.runDetailAbortController = null;
+          preserveLiveScroll(() => renderRuns(state.runs));
         }
-        if (!silent) setLoading(false);
+        setLoading(false);
       }
     })();
 
