@@ -19,6 +19,8 @@ _LOCAL_BROWSER_SLOT_LOCK = threading.Lock()
 _LOCAL_BROWSER_SEMAPHORE = None
 _LOCAL_BROWSER_SEMAPHORE_SIZE = 0
 _LOCAL_BROWSER_AVAILABLE_SLOTS: list[int] = []
+_REUSABLE_FETCHERS: dict[str, object] = {}
+_REUSABLE_FETCHERS_LOCK = threading.Lock()
 
 
 MOBILESENTRIX_CANADA_POPUP_DISMISS_JS = r"""
@@ -209,6 +211,10 @@ def fetch_html(
                 profile_dir,
             )
 
+        fetcher_key = str(profile_dir)
+        with _REUSABLE_FETCHERS_LOCK:
+            cached_fetcher = _REUSABLE_FETCHERS.get(fetcher_key)
+
         @browser(
             headless=_local_browser_headless(),
             profile=str(profile_dir),
@@ -223,13 +229,16 @@ def fetch_html(
             raise_exception=True,
             create_error_logs=False,
             close_on_crash=True,
+            reuse_driver=True,
+            block_images=True,
+            wait_for_complete_page_load=False,
         )
         def _fetch(driver: Driver, data):
             if logger:
                 logger.info("[botasaurus] Fetching %s in browser slot %s", data["url"], data["slot"])
             try:
                 try:
-                    driver.get(data["url"], timeout=timeout)
+                    driver.get(data["url"], timeout=data.get("timeout", timeout))
                 except Exception as exc:
                     partial_html = driver.page_html or ""
                     if partial_html and _looks_like_html_document(partial_html):
@@ -241,8 +250,8 @@ def fetch_html(
                             )
                     else:
                         raise
-                if wait_time > 0:
-                    driver.sleep(wait_time)
+                if data.get("wait_seconds", wait_time) > 0:
+                    driver.sleep(data.get("wait_seconds", wait_time))
                 _dismiss_canada_prompt(driver.run_js, driver.sleep, url=data["url"], logger=logger)
 
                 html = driver.page_html or ""
@@ -271,10 +280,14 @@ def fetch_html(
 
                 return {"final_url": final_url, "html": html}
             finally:
-                close_botasaurus_driver(driver, logger)
+                # Reusable drivers stay warm across detail URLs.  The
+                # Botasaurus pool owns cleanup at process exit or crash.
 
         try:
-            result = _fetch({"url": url, "slot": slot})
+            if cached_fetcher is None:
+                with _REUSABLE_FETCHERS_LOCK:
+                    cached_fetcher = _REUSABLE_FETCHERS.setdefault(fetcher_key, _fetch)
+            result = cached_fetcher({"url": url, "slot": slot, "timeout": timeout, "wait_seconds": wait_time})
         except Exception as exc:
             if logger:
                 logger.exception("[botasaurus] DevTools connection or rendered fetch failed for %s", url)

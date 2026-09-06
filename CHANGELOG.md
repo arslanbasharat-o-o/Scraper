@@ -1,5 +1,8 @@
 # Changelog
 
+## [8.4.9] - 2026-09-06
+- Keep Botasaurus browser fallback drivers warm with blocked-image, early-load settings to remove per-URL Chrome startup overhead.
+
 ## [8.4.8] - 2026-09-06
 - Skip terminal SKU outcomes during detail enrichment and make HTTP detail timeout configurable for faster, safer phase-2 resumes.
 
