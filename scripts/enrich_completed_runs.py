@@ -8,10 +8,13 @@ the process is interrupted.
 
 from __future__ import annotations
 
+import datetime
+import json
 import os
 import sys
 import time
 from pathlib import Path
+import pytz
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -24,10 +27,12 @@ os.environ.setdefault("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
 os.environ.setdefault("SCRAPER_LOCAL_BROWSER_MAX_WINDOWS", "1")
 
 from app import (  # noqa: E402
+    AutomationRunPaused,
     app,
     db_manager,
     deserialize_scraped_item,
     enrich_scraped_items,
+    make_automation_run_stop_checker,
     normalize_compare_url,
     summarize_sku_resolution,
 )
@@ -132,7 +137,32 @@ def _run_one(source_run: dict, continuation: dict | None = None) -> None:
         flush=True,
     )
 
+    lock_file = ROOT / ".tmp" / f"resume-run-{continuation_id}.lock"
+    created_lock = False
+    if not lock_file.exists():
+        try:
+            lock_file.parent.mkdir(parents=True, exist_ok=True)
+            lock_file.write_text(
+                json.dumps(
+                    {
+                        "run_id": continuation_id,
+                        "pid": os.getpid(),
+                        "started_at": datetime.datetime.now(pytz.timezone("Asia/Karachi")).isoformat(),
+                    },
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            created_lock = True
+        except Exception:
+            pass
+
+    automation_stop_check = make_automation_run_stop_checker(continuation_id)
+
     def progress_callback(progress: dict) -> None:
+        if automation_stop_check:
+            automation_stop_check()
         enriched = progress.get("enriched_item")
         if isinstance(enriched, dict):
             # Persist under the original queued URL as well as any canonical
@@ -173,6 +203,7 @@ def _run_one(source_run: dict, continuation: dict | None = None) -> None:
                 logger=app.logger,
                 use_browser=False,
                 progress_callback=progress_callback,
+                stop_check=automation_stop_check,
             )
             summary = summarize_sku_resolution(enriched_items)
             raw_history_id = str(int(time.time() * 1000))
@@ -227,6 +258,9 @@ def _run_one(source_run: dict, continuation: dict | None = None) -> None:
                 f"unresolved={summary['sku_unresolved']:,}",
                 flush=True,
             )
+    except AutomationRunPaused:
+        print(f"[run {source_id}] continuation {continuation_id} paused by user.", flush=True)
+        return
     except Exception as exc:
         db_manager.complete_automation_run(
             continuation_id,
@@ -245,6 +279,15 @@ def _run_one(source_run: dict, continuation: dict | None = None) -> None:
             error_text=str(exc),
         )
         raise
+    finally:
+        if created_lock:
+            try:
+                if lock_file.exists():
+                    data = json.loads(lock_file.read_text(encoding="utf-8") or "{}")
+                    if int(data.get("pid") or 0) == os.getpid():
+                        lock_file.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def main() -> int:
@@ -262,6 +305,9 @@ def main() -> int:
         if source:
             _run_one(source, continuation=continuation)
 
+    if requested and continuation_runs:
+        return 0
+
     runs = [
         run for run in db_manager.list_automation_runs(limit=100)
         if run.get("status") == "completed"
@@ -269,7 +315,8 @@ def main() -> int:
         and (not requested or int(run.get("id") or 0) in requested)
     ]
     if not runs:
-        print("No completed runs with histories matched.", flush=True)
+        if not continuation_runs:
+            print("No completed runs with histories matched.", flush=True)
         return 0
     print(f"Starting local phase-2 SKU backfill for {len(runs)} completed run(s).", flush=True)
     for source_run in sorted(runs, key=lambda row: int(row.get("id") or 0)):

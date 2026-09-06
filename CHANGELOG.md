@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.4.13] - 2026-09-06
+- Add a compact batched Botasaurus retry lane for blocked MobileSentrix detail pages so phase-2 SKU recovery can extract many SKUs per warmed browser session without returning full page HTML to Python.
+- Keep MobileSentrix HTTP/Safari enrichment primary, but defer retryable blocked detail misses into browser batches instead of one-by-one browser navigation.
+- Add a separate browser-batch timeout so high-concurrency detail retries can keep SKU completeness without slowing the fast HTTP path.
+- Enable resuming phase-2 SKU continuations directly via the SKU backfill worker from the Web UI and automation API.
+- Prevent active phase-2 SKU backfill workers from being falsely marked interrupted on server restarts via process lock tracking and graceful pause support.
+
 ## [8.4.12] - 2026-09-06
 - Detect Cloudflare challenge responses via the documented `cf-mitigated` header, including HTTP 200 challenge pages.
 

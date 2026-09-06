@@ -438,6 +438,7 @@ def test_phase_two_reuses_phase_one_supplier_cookies(tmp_path, monkeypatch):
 def test_mobilesentrix_sku_missing_after_http_is_retried_in_browser(tmp_path, monkeypatch):
     """MobileSentrix keeps HTTP/Safari primary but retries a blocked detail page in a browser."""
     monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
+    monkeypatch.setenv("SCRAPER_DETAIL_BROWSER_BATCH", "0")
     app_module = _fresh_app(tmp_path, monkeypatch)
     calls = []
 
@@ -487,6 +488,89 @@ def test_mobilesentrix_sku_missing_after_http_is_retried_in_browser(tmp_path, mo
 
     assert calls == [False, True]
     assert enriched[0].sku == "MS-BROWSER-SKU"
+
+
+def test_mobilesentrix_blocked_details_are_retried_in_browser_batch(tmp_path, monkeypatch):
+    """Blocked MobileSentrix detail pages use the batched Botasaurus lane."""
+    monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
+    monkeypatch.setenv("SCRAPER_DETAIL_BROWSER_BATCH", "1")
+    monkeypatch.setenv("SCRAPER_BOTASAURUS_BATCH_SIZE", "2")
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    batch_calls = []
+    progress_urls = []
+
+    class Session:
+        mobilesentrix_last_status = None
+
+        def close(self):
+            return None
+
+    def fake_build_session(**_kwargs):
+        return Session(), False
+
+    def fake_http_enrich(session, item, *_args, **_kwargs):
+        session.mobilesentrix_last_status = 403
+        raise RuntimeError("blocked by anti-bot challenge (403)")
+
+    class BatchResult:
+        def __init__(self, url, sku):
+            self.request_url = url
+            self.final_url = url
+            self.status_code = 200
+            self.error = ""
+            self.detail = {
+                "url": url,
+                "title": "Screen",
+                "sku": sku,
+                "price_text": "10",
+                "price_currency": "USD",
+                "stock_status": "In Stock",
+                "description": "Replacement screen",
+                "image_url": "",
+            }
+
+    def fake_fetch_many(urls, **_kwargs):
+        batch_calls.append(list(urls))
+        return [BatchResult(url, f"MS-BATCH-{idx}") for idx, url in enumerate(urls, start=1)]
+
+    def progress_callback(progress):
+        if progress.get("last_item_url"):
+            progress_urls.append(progress["last_item_url"])
+
+    monkeypatch.setattr(app_module, "build_session", fake_build_session)
+    monkeypatch.setattr(app_module, "enrich_standard_item_details", fake_http_enrich)
+    monkeypatch.setattr(app_module, "fetch_product_details_many", fake_fetch_many)
+    items = [
+        app_module.Item(
+            url=f"https://www.mobilesentrix.com/product/iphone-screen-{idx}",
+            site="www.mobilesentrix.com",
+            title=f"iPhone Screen {idx}",
+            price_value=10.0,
+            price_currency="USD",
+            price_text="$10.00",
+            discounted_value=10.0,
+            discounted_formatted="$10.00",
+            original_formatted="$10.00",
+            source="listing",
+            image_url="",
+        )
+        for idx in range(2)
+    ]
+
+    enriched, enriched_count = app_module.enrich_scraped_items(
+        items,
+        rules={},
+        retries=1,
+        verify_ssl=True,
+        use_curl=True,
+        enrich_details=True,
+        progress_callback=progress_callback,
+    )
+
+    assert batch_calls == [[item.url for item in items]]
+    assert enriched_count == 2
+    assert [item.sku for item in enriched] == ["MS-BATCH-1", "MS-BATCH-2"]
+    assert progress_urls == [item.url for item in items]
 
 
 def test_txparts_missing_sku_detail_is_not_skipped(tmp_path, monkeypatch):
@@ -1014,3 +1098,140 @@ def test_browser_fetch_uses_rendered_html_after_ready_timeout(monkeypatch):
 
     assert result.final_url == "https://txpartscanada.ca/shop/iphone-16-pro-max"
     assert "Rendered product" in result.html
+
+
+def test_resume_phase2_sku_continuation_spawns_backfill_worker(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    job = app_module.db_manager.save_automation_job(
+        {
+            "name": "Phase 2 resume test",
+            "scraper_key": "standard",
+            "category_query": "iphones",
+            "root_url": "https://www.mobilesentrix.com/",
+            "interval_minutes": 1440,
+            "enabled": True,
+        },
+        targets=[{"label": "One", "url": "https://www.mobilesentrix.com/one", "active": True}],
+    )
+    run = app_module.db_manager.create_automation_run(
+        job["id"],
+        trigger_type="phase2_sku_backfill",
+        target_urls=["https://www.mobilesentrix.com/one"],
+    )
+    app_module.db_manager.pause_automation_run(run["id"], reason="Interrupted for test.")
+    spawn_calls = []
+    monkeypatch.setattr(app_module, "_resume_worker_is_locked", lambda _run_id: False)
+    monkeypatch.setattr(
+        app_module,
+        "_spawn_automation_run_worker",
+        lambda run_id, **kwargs: spawn_calls.append((run_id, kwargs)) or (True, ""),
+    )
+
+    launched, message = app_module._launch_existing_automation_run(run["id"])
+
+    assert launched is True
+    assert message == ""
+    assert spawn_calls == [(run["id"], {"resume_from_checkpoint": True})]
+
+
+def test_resume_phase2_sku_continuation_reconciles_active_worker(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    job = app_module.db_manager.save_automation_job(
+        {
+            "name": "Phase 2 reconcile test",
+            "scraper_key": "standard",
+            "category_query": "iphones",
+            "root_url": "https://www.mobilesentrix.com/",
+            "interval_minutes": 1440,
+            "enabled": True,
+        },
+        targets=[{"label": "One", "url": "https://www.mobilesentrix.com/one", "active": True}],
+    )
+    run = app_module.db_manager.create_automation_run(
+        job["id"],
+        trigger_type="phase2_sku_backfill",
+        target_urls=["https://www.mobilesentrix.com/one"],
+    )
+    app_module.db_manager.recover_running_automation_runs()
+    monkeypatch.setattr(app_module, "_resume_worker_is_locked", lambda _run_id: True)
+
+    launched, message = app_module._launch_existing_automation_run(run["id"])
+    restored = app_module.db_manager.get_automation_run(run["id"])
+
+    assert launched is False
+    assert message == "This automation run is already running."
+    assert restored["status"] == "running"
+    assert restored["summary"]["worker_reconciled"] is True
+
+
+def test_spawn_automation_run_worker_selects_sku_backfill_script(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_module, "APP_ROOT", tmp_path)
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    backfill_script = scripts_dir / "enrich_completed_runs.py"
+    backfill_script.write_text("# backfill worker", encoding="utf-8")
+    standard_script = scripts_dir / "resume_automation_run.py"
+    standard_script.write_text("# standard worker", encoding="utf-8")
+
+    job = app_module.db_manager.save_automation_job(
+        {
+            "name": "Script selection test 1",
+            "scraper_key": "standard",
+            "category_query": "iphones",
+            "root_url": "https://www.mobilesentrix.com/",
+            "interval_minutes": 1440,
+            "enabled": True,
+        },
+        targets=[{"label": "One", "url": "https://www.mobilesentrix.com/one", "active": True}],
+    )
+    job2 = app_module.db_manager.save_automation_job(
+        {
+            "name": "Script selection test 2",
+            "scraper_key": "standard",
+            "category_query": "iphones",
+            "root_url": "https://www.mobilesentrix.com/",
+            "interval_minutes": 1440,
+            "enabled": True,
+        },
+        targets=[{"label": "One", "url": "https://www.mobilesentrix.com/one", "active": True}],
+    )
+    phase2_run = app_module.db_manager.create_automation_run(
+        job["id"],
+        trigger_type="phase2_sku_backfill",
+        target_urls=["https://www.mobilesentrix.com/one"],
+    )
+    standard_run = app_module.db_manager.create_automation_run(
+        job2["id"],
+        trigger_type="manual",
+        target_urls=["https://www.mobilesentrix.com/one"],
+    )
+
+    popen_cmds = []
+
+    class DummyProc:
+        pid = 9999
+
+        def poll(self):
+            return None
+
+        def wait(self, timeout=None):
+            return 0
+
+    def dummy_popen(cmd, **_kwargs):
+        popen_cmds.append(cmd)
+        return DummyProc()
+
+    import subprocess
+    monkeypatch.setattr(subprocess, "Popen", dummy_popen)
+    monkeypatch.setattr(app_module, "_write_resume_worker_lock", lambda *_a: None)
+
+    success_p2, _ = app_module._spawn_automation_run_worker(phase2_run["id"], resume_from_checkpoint=True)
+    assert success_p2 is True
+    assert str(backfill_script) in popen_cmds[0]
+    assert str(phase2_run["id"]) in popen_cmds[0]
+
+    success_std, _ = app_module._spawn_automation_run_worker(standard_run["id"], resume_from_checkpoint=True)
+    assert success_std is True
+    assert str(standard_script) in popen_cmds[1]
+    assert str(standard_run["id"]) in popen_cmds[1]

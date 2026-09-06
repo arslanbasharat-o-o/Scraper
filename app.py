@@ -26,6 +26,7 @@ from copy import copy
 from functools import wraps
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from bs4 import BeautifulSoup
 import mimetypes
 import pytz
 import threading
@@ -40,7 +41,7 @@ from flask_login import current_user, login_user, logout_user
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.4.12'
+APP_VERSION = '8.4.13'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -71,7 +72,12 @@ load_local_env_file()
 from scrapers.scraper_engine import (
     Item, build_session, scrape_url,
     parse_price_number,
-    enrich_item_details as enrich_standard_item_details
+    enrich_item_details as enrich_standard_item_details,
+    extract_product_detail_snapshot,
+    apply_rules,
+    fmt_price,
+    host_currency,
+    PARSER,
 )
 
 # Import XCellParts specialized scraper
@@ -85,7 +91,7 @@ from scrapers import parts4cells_scraper_engine
 
 # Import PhoneLCDParts and GadgetFix specialized scrapers
 from scrapers import phonelcdparts_scraper_engine, gadgetfix_scraper_engine
-from scrapers.browser_fetcher import browser_fetch_mode
+from scrapers.browser_fetcher import browser_fetch_mode, fetch_html_many, fetch_product_details_many
 
 SCRAPER_MODULES = {
     'standard': None,
@@ -709,6 +715,34 @@ def hydrate_items_from_previous_history(items, previous_history: Dict | None) ->
     return hydrated
 
 
+def _truthy_env(name: str, default: str = '') -> bool:
+    return str(os.getenv(name, default) or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _detail_browser_batch_size() -> int:
+    raw_value = os.getenv('SCRAPER_BOTASAURUS_BATCH_SIZE') or os.getenv('SCRAPER_DETAIL_BROWSER_BATCH_SIZE') or '64'
+    try:
+        return max(1, min(160, int(raw_value)))
+    except (TypeError, ValueError):
+        return 64
+
+
+def _detail_browser_batch_timeout() -> int:
+    raw_value = os.getenv('SCRAPER_DETAIL_BROWSER_TIMEOUT') or '18'
+    try:
+        return max(3, min(45, int(float(raw_value))))
+    except (TypeError, ValueError):
+        return 18
+
+
+def _detail_browser_batch_enabled() -> bool:
+    return _truthy_env('SCRAPER_DETAIL_BROWSER_BATCH', '1')
+
+
+def _is_mobilesentrix_detail_engine(engine_type: str) -> bool:
+    return str(engine_type or '').strip().lower() in {'standard', 'mobilesentrix_canada'}
+
+
 def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use_curl: bool, enrich_details: bool = True, logger=None, use_browser: bool = False, progress_callback=None, stop_check=None, session_cookies_by_engine=None):
     """Open each unique product detail page and merge richer metadata into scrape results."""
     if not enrich_details or not items:
@@ -717,6 +751,8 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
     browser_fallback_setting = str(os.getenv('SCRAPER_LOCAL_BROWSER_FALLBACK') or '').strip().lower()
     browser_fallback_enabled = bool(use_browser) or browser_fallback_setting in {'1', 'true', 'yes', 'on'}
     browser_fallback_engines = set(SCRAPER_MODULES)
+    browser_batch_enabled = browser_fallback_enabled and _detail_browser_batch_enabled()
+    browser_batch_size = _detail_browser_batch_size()
     url_to_indexes: Dict[str, List[int]] = {}
     for idx, item in enumerate(items):
         item_sku = str(getattr(item, 'sku', '') or '').strip()
@@ -822,7 +858,8 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         # detail response is blocked, transient, or omits the SKU, retry the
         # same URL in a bounded browser slot. A confirmed 404/410 is treated
         # as unavailable and is never turned into a fabricated identifier.
-        if browser_fallback_enabled and engine_type in browser_fallback_engines:
+        per_url_browser_fallback = not (browser_batch_enabled and _is_mobilesentrix_detail_engine(engine_type))
+        if browser_fallback_enabled and per_url_browser_fallback and engine_type in browser_fallback_engines:
             try:
                 detail_session = get_thread_session(engine_type)
             except Exception:
@@ -946,6 +983,264 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         except Exception:
             pass
 
+    browser_batch_pending = []
+
+    def _should_retry_with_browser_batch(item_url: str, enriched_data: Dict[str, object] | None) -> bool:
+        if not browser_batch_enabled or not enriched_data:
+            return False
+        engine_type, _ = get_scraper_for_url(item_url)
+        if not _is_mobilesentrix_detail_engine(engine_type):
+            return False
+        extra = enriched_data.get('extra') if isinstance(enriched_data.get('extra'), dict) else {}
+        sku = normalize_compare_text(enriched_data.get('sku') or extra.get('sku'))
+        status = normalize_compare_text(extra.get('sku_status')).lower()
+        return not sku and status == 'unresolved'
+
+    def _browser_batch_failure_data(item_url: str, first_pass_data: Dict[str, object], error: str) -> Dict[str, object]:
+        failed = dict(first_pass_data or {})
+        extra = dict(failed.get('extra') if isinstance(failed.get('extra'), dict) else {})
+        extra.update({
+            'sku_status': 'unresolved',
+            'sku_error': error or 'batched browser fetch did not produce a SKU',
+            'sku_browser_fallback': True,
+            'sku_browser_batch': True,
+        })
+        failed['extra'] = extra
+        return failed
+
+    def _enrich_mobilesentrix_from_detail_result(item_url: str, item, result) -> Dict[str, object]:
+        error = str(getattr(result, 'error', '') or '').strip()
+        status_code = int(getattr(result, 'status_code', 0) or 0)
+        detail = getattr(result, 'detail', None) or {}
+        if status_code in {404, 410}:
+            unavailable = dict(asdict(item))
+            extra = dict(unavailable.get('extra') if isinstance(unavailable.get('extra'), dict) else {})
+            extra.update({
+                'sku_status': 'unavailable',
+                'sku_error': f'HTTP {status_code}',
+                'sku_browser_fallback': True,
+                'sku_browser_batch': True,
+            })
+            unavailable['extra'] = extra
+            return unavailable
+        if error or not detail:
+            return _browser_batch_failure_data(item_url, asdict(item), error or 'empty batched browser detail response')
+
+        enriched = copy(item)
+        enriched.extra = dict(getattr(item, 'extra', {}) or {})
+        final_url = str(getattr(result, 'final_url', '') or detail.get('url') or item_url)
+        host = urlparse(final_url).hostname or getattr(item, 'site', '') or ''
+
+        if detail.get('url'):
+            enriched.url = detail['url']
+        else:
+            enriched.url = final_url
+        if host:
+            enriched.site = host
+        if detail.get('title'):
+            enriched.title = detail['title']
+        if detail.get('image_url'):
+            enriched.image_url = detail['image_url']
+        if detail.get('sku'):
+            enriched.sku = detail['sku']
+        if detail.get('stock_status'):
+            enriched.stock_status = detail['stock_status']
+        if detail.get('description'):
+            enriched.description = detail['description']
+
+        price_val = parse_price_number(str(detail.get('price_text') or ''))
+        if price_val is not None:
+            percent_off = float((rules or {}).get('percent_off') or 0.0)
+            absolute_off = float((rules or {}).get('absolute_off') or 0.0)
+            add_percent = float((rules or {}).get('add_percent') or 0.0)
+            final_price = apply_rules(price_val, percent_off, absolute_off, add_percent)
+            enriched.price_value = price_val
+            enriched.price_currency = detail.get('price_currency') or enriched.price_currency or host_currency(enriched.site)
+            enriched.price_text = detail.get('price_text', '') or ''
+            enriched.discounted_value = final_price
+            enriched.discounted_formatted = fmt_price(final_price, enriched.price_currency, enriched.site) if final_price is not None else ''
+            enriched.original_formatted = fmt_price(price_val, enriched.price_currency, enriched.site)
+
+        final_sku = str(getattr(enriched, 'sku', '') or '').strip()
+        enriched.extra.update({
+            'sku': final_sku,
+            'stock_status': getattr(enriched, 'stock_status', '') or '',
+            'description': getattr(enriched, 'description', '') or '',
+            'sku_browser_fallback': True,
+            'sku_browser_batch': True,
+            'sku_browser_detail_batch': True,
+        })
+        if final_sku:
+            enriched.extra.update({'sku_status': 'found', 'sku_source': 'product_detail'})
+        elif status_code == 200 or detail.get('title'):
+            enriched.extra.update({'sku_status': 'not_published'})
+        else:
+            enriched.extra.update({
+                'sku_status': 'unresolved',
+                'sku_error': f'batched browser detail returned HTTP {status_code or "unknown"} without product detail',
+            })
+        return asdict(enriched)
+
+    def _enrich_mobilesentrix_from_batched_html(item_url: str, item, result) -> Dict[str, object]:
+        error = str(getattr(result, 'error', '') or '').strip()
+        status_code = int(getattr(result, 'status_code', 0) or 0)
+        html_text = getattr(result, 'html', '') or ''
+        if status_code in {404, 410}:
+            unavailable = dict(asdict(item))
+            extra = dict(unavailable.get('extra') if isinstance(unavailable.get('extra'), dict) else {})
+            extra.update({
+                'sku_status': 'unavailable',
+                'sku_error': f'HTTP {status_code}',
+                'sku_browser_fallback': True,
+                'sku_browser_batch': True,
+            })
+            unavailable['extra'] = extra
+            return unavailable
+        if error or not html_text:
+            return _browser_batch_failure_data(item_url, asdict(item), error or 'empty batched browser response')
+
+        enriched = copy(item)
+        enriched.extra = dict(getattr(item, 'extra', {}) or {})
+        soup = BeautifulSoup(html_text, PARSER)
+        detail = extract_product_detail_snapshot(soup, getattr(result, 'final_url', '') or item_url)
+
+        if detail.get('url'):
+            enriched.url = detail['url']
+        if detail.get('site'):
+            enriched.site = detail['site']
+        if detail.get('title'):
+            enriched.title = detail['title']
+        if detail.get('image_url'):
+            enriched.image_url = detail['image_url']
+        if detail.get('sku'):
+            enriched.sku = detail['sku']
+        if detail.get('stock_status'):
+            enriched.stock_status = detail['stock_status']
+        if detail.get('description'):
+            enriched.description = detail['description']
+
+        price_val = detail.get('price_value')
+        if price_val is not None:
+            percent_off = float((rules or {}).get('percent_off') or 0.0)
+            absolute_off = float((rules or {}).get('absolute_off') or 0.0)
+            add_percent = float((rules or {}).get('add_percent') or 0.0)
+            final_price = apply_rules(price_val, percent_off, absolute_off, add_percent)
+            enriched.price_value = price_val
+            enriched.price_currency = detail.get('price_currency') or enriched.price_currency or host_currency(enriched.site)
+            enriched.price_text = detail.get('price_text', '') or ''
+            enriched.discounted_value = final_price
+            enriched.discounted_formatted = fmt_price(final_price, enriched.price_currency, enriched.site) if final_price is not None else ''
+            enriched.original_formatted = fmt_price(price_val, enriched.price_currency, enriched.site)
+
+        final_sku = str(getattr(enriched, 'sku', '') or '').strip()
+        enriched.extra.update({
+            'sku': final_sku,
+            'stock_status': getattr(enriched, 'stock_status', '') or '',
+            'description': getattr(enriched, 'description', '') or '',
+            'sku_browser_fallback': True,
+            'sku_browser_batch': True,
+        })
+        if final_sku:
+            enriched.extra.update({'sku_status': 'found', 'sku_source': 'product_detail'})
+        elif status_code == 200 or detail.get('title'):
+            enriched.extra.update({'sku_status': 'not_published'})
+        else:
+            enriched.extra.update({
+                'sku_status': 'unresolved',
+                'sku_error': f'batched browser fetch returned HTTP {status_code or "unknown"} without product detail',
+            })
+        return asdict(enriched)
+
+    def _run_browser_batch_retries(max_chunks: int | None = None) -> None:
+        nonlocal enriched_count
+        if not browser_batch_pending:
+            return
+        chunks_processed = 0
+        while browser_batch_pending and (max_chunks is None or chunks_processed < max_chunks):
+            _check_stop()
+            chunk = browser_batch_pending[:browser_batch_size]
+            del browser_batch_pending[:len(chunk)]
+            chunk_urls = [entry[0] for entry in chunk]
+            result_mode = 'detail'
+            batch_timeout = _detail_browser_batch_timeout()
+            if logger:
+                logger.info(
+                    '[detail] Retrying %s MobileSentrix detail URL(s) with Botasaurus batch size %s (%s pending)',
+                    len(chunk),
+                    browser_batch_size,
+                    len(browser_batch_pending),
+                )
+            try:
+                batch_results = fetch_product_details_many(
+                    chunk_urls,
+                    timeout=batch_timeout,
+                    logger=logger,
+                )
+            except Exception as exc:
+                if logger:
+                    logger.warning('[detail] Compact Botasaurus detail batch failed; falling back to raw HTML batch: %s', exc)
+                result_mode = 'html'
+                try:
+                    batch_results = fetch_html_many(
+                        chunk_urls,
+                        timeout=batch_timeout,
+                        logger=logger,
+                    )
+                except Exception as html_exc:
+                    if logger:
+                        logger.warning('[detail] Botasaurus raw HTML batch retry failed: %s', html_exc)
+                    batch_results = [
+                        type('BatchFailure', (), {
+                            'request_url': url,
+                            'final_url': url,
+                            'html': '',
+                            'status_code': 0,
+                            'detail': None,
+                            'error': str(html_exc),
+                        })()
+                        for url in chunk_urls
+                    ]
+
+            for (item_url, indexes, first_pass_data), batch_result in zip(chunk, batch_results):
+                _check_stop()
+                try:
+                    if result_mode == 'detail':
+                        enriched_data = _enrich_mobilesentrix_from_detail_result(
+                            item_url,
+                            items[indexes[0]],
+                            batch_result,
+                        )
+                    else:
+                        enriched_data = _enrich_mobilesentrix_from_batched_html(
+                            item_url,
+                            items[indexes[0]],
+                            batch_result,
+                        )
+                except Exception as exc:
+                    if logger:
+                        logger.warning('[detail] Failed to parse batched browser detail %s: %s', item_url, exc)
+                    enriched_data = _browser_batch_failure_data(item_url, first_pass_data, str(exc))
+
+                for idx in indexes:
+                    apply_enriched_item_data(items[idx], enriched_data)
+                enriched_count += 1
+                if progress_callback:
+                    try:
+                        progress_callback({
+                            'phase': 2,
+                            'phase_name': 'Phase 2: Product SKU & Detail Scan',
+                            'phase2_completed': enriched_count,
+                            'phase2_total': total_to_enrich,
+                            'current_items': len(items),
+                            'last_item_url': item_url,
+                            'enriched_item': enriched_data,
+                        })
+                    except AutomationRunPaused:
+                        raise
+                    except Exception:
+                        pass
+            chunks_processed += 1
+
     try:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {}
@@ -974,6 +1269,12 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 else:
                     for idx in url_to_indexes[item_url]:
                         apply_enriched_item_data(items[idx], enriched_data)
+                if _should_retry_with_browser_batch(item_url, enriched_data):
+                    browser_batch_pending.append((item_url, url_to_indexes[item_url], enriched_data))
+                    if len(browser_batch_pending) >= browser_batch_size:
+                        _run_browser_batch_retries(max_chunks=1)
+                    continue
+
                 enriched_count += 1
 
                 if progress_callback:
@@ -994,6 +1295,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                         raise
                     except Exception:
                         pass
+        _run_browser_batch_retries()
     finally:
         for session in created_sessions:
             if session and hasattr(session, 'close'):
@@ -3152,7 +3454,10 @@ def _stop_resume_worker(run_id: int, *, grace_seconds: float = 3.0) -> bool:
 def _spawn_automation_run_worker(run_id: int, *, resume_from_checkpoint: bool) -> Tuple[bool, str]:
     """Launch an automation workflow outside the web process."""
     normalized_run_id = int(run_id)
-    script_path = APP_ROOT / 'scripts' / 'resume_automation_run.py'
+    run = db_manager.get_automation_run(normalized_run_id) or {}
+    is_phase2 = str(run.get('trigger_type') or '').strip().lower() == 'phase2_sku_backfill'
+    script_name = 'enrich_completed_runs.py' if is_phase2 else 'resume_automation_run.py'
+    script_path = APP_ROOT / 'scripts' / script_name
     if not script_path.exists():
         return False, 'Automation worker script is missing.'
 
@@ -3164,7 +3469,6 @@ def _spawn_automation_run_worker(run_id: int, *, resume_from_checkpoint: bool) -
     env['RESUME_FROM_CHECKPOINT'] = '1' if resume_from_checkpoint else '0'
     env.setdefault('AUTOMATION_SCHEDULER_DISABLED', '1')
     env.setdefault('AUTOMATION_RECOVER_RUNNING', '0')
-    run = db_manager.get_automation_run(normalized_run_id) or {}
     if str(run.get('scraper_key') or '').strip().lower() == 'xcell':
         env.setdefault('XCELL_MAX_WORKERS', '24')
         env.setdefault('SCRAPER_XCELL_DETAIL_WORKERS', '64')
@@ -3206,8 +3510,6 @@ def _launch_existing_automation_run(run_id: int) -> Tuple[bool, str]:
         return False, 'Automation run not found.'
 
     status = str(run.get('status') or '').strip().lower()
-    if str(run.get('trigger_type') or '').strip().lower() == 'phase2_sku_backfill':
-        return False, 'Phase-2 SKU continuations must be resumed by the SKU backfill worker.'
     worker_locked = _resume_worker_is_locked(normalized_run_id)
     if worker_locked and status == 'interrupted':
         # A server restart can mark the DB row interrupted while the detached
