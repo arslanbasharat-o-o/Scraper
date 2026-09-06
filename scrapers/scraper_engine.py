@@ -13,6 +13,7 @@ This module handles:
 """
 
 from bs4 import BeautifulSoup
+import os
 import importlib.util
 import requests
 import re
@@ -697,7 +698,16 @@ def enrich_item_details(sess, item: Item, rules: Optional[Dict] = None, logger=N
         # The caller controls the fetch mode. Automation starts with the fast
         # Safari HTTP path and may explicitly retry this method in a browser
         # context when the supplier blocks or omits dynamic SKU markup.
-        final_url, html = get_html(sess, item.url, timeout=5)
+        # Detail pages can legitimately take several seconds to finish
+        # streaming.  Keep the connect phase short, but allow a configurable
+        # read timeout so a valid HTTP response is not needlessly retried in
+        # Chrome.  The local profile starts at 12 seconds; deployments can
+        # tune it without a code change.
+        try:
+            detail_timeout = max(3.0, float(os.getenv('SCRAPER_DETAIL_HTTP_TIMEOUT', '12')))
+        except (TypeError, ValueError):
+            detail_timeout = 12.0
+        final_url, html = get_html(sess, item.url, timeout=detail_timeout)
         soup = BeautifulSoup(html, PARSER)
         detail = extract_product_detail_snapshot(soup, final_url)
 

@@ -135,7 +135,12 @@ def _run_one(source_run: dict, continuation: dict | None = None) -> None:
     def progress_callback(progress: dict) -> None:
         enriched = progress.get("enriched_item")
         if isinstance(enriched, dict):
-            db_manager.save_automation_run_product_detail(continuation_id, enriched)
+            # Persist under the original queued URL as well as any canonical
+            # URL returned by the supplier.  Resume overlays by the queued
+            # URL, so redirects must not cause a completed item to be fetched
+            # again after a restart.
+            checkpoint_url = str(progress.get("last_item_url") or "").strip()
+            db_manager.save_automation_run_product_detail(continuation_id, enriched, checkpoint_url=checkpoint_url)
         completed = initial_done + int(progress.get("phase2_completed") or 0)
         phase_total = max(total, int(progress.get("phase2_total") or 0))
         db_manager.update_automation_run_progress(

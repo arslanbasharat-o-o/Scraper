@@ -1,5 +1,8 @@
 # Changelog
 
+## [8.4.8] - 2026-09-06
+- Skip terminal SKU outcomes during detail enrichment and make HTTP detail timeout configurable for faster, safer phase-2 resumes.
+
 ## [8.4.7] - 2026-09-06
 
 - Avoid launching rendered browser fallback for successful detail pages that explicitly omit a SKU; retain fallback for blocked and transient responses.

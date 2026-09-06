@@ -1744,7 +1744,7 @@ class DatabaseManager:
             print(f"Error getting completed automation targets: {e}")
             return []
 
-    def save_automation_run_product_detail(self, run_id: int, item: Dict[str, Any]) -> bool:
+    def save_automation_run_product_detail(self, run_id: int, item: Dict[str, Any], checkpoint_url: str | None = None) -> bool:
         """Checkpoint one enriched product so phase 2 can resume after a crash."""
         if not isinstance(item, dict):
             return False
@@ -1752,7 +1752,9 @@ class DatabaseManager:
             normalized_run_id = int(run_id)
         except (TypeError, ValueError):
             return False
-        product_url = str(item.get('url') or '').strip()
+        # Use the originally queued URL as the durable key when supplied;
+        # scrapers may canonicalize/redirect the item URL during enrichment.
+        product_url = str(checkpoint_url or item.get('url') or '').strip()
         product_url_key = self._normalize_automation_url(product_url)
         if not product_url_key:
             return False

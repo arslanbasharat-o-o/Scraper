@@ -40,7 +40,7 @@ from flask_login import current_user, login_user, logout_user
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.4.7'
+APP_VERSION = '8.4.8'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -723,6 +723,13 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         if item_sku:
             if hasattr(item, 'extra') and isinstance(item.extra, dict):
                 item.extra.setdefault('sku_status', 'found')
+            continue
+        # Checkpointed terminal outcomes are complete work.  In particular,
+        # phase-2 resume workers must not enqueue products already confirmed
+        # unavailable or not published; doing so both wastes requests and
+        # makes the displayed completion count drift on every resume.
+        item_status = str((getattr(item, 'extra', {}) or {}).get('sku_status') or '').strip().lower()
+        if item_status in {'not_published', 'unavailable'}:
             continue
         item_url = normalize_compare_text(getattr(item, 'url', ''))
         if item_url:
