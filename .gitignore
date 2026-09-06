@@ -85,6 +85,10 @@ storage/error_logs/*
 !storage/error_logs/.gitkeep
 storage/temp/*
 !storage/temp/.gitkeep
+storage/image_cache/*
+!storage/image_cache/.gitkeep
+storage/run_cache/*
+!storage/run_cache/.gitkeep
 logs/*
 !logs/.gitkeep
 

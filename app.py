@@ -1,15 +1,18 @@
-from flask import Flask, request, jsonify, render_template, send_file, url_for, Response, session as flask_session, redirect
+from flask import Flask, request, jsonify, render_template, send_file, url_for, Response, session as flask_session, redirect, make_response
 import atexit
 import csv
 import datetime
+import hashlib
 import html
 import io
 import ipaddress
 import json
 import logging
+import math
 import os
 import re
 import requests
+from requests.adapters import HTTPAdapter
 import shutil
 import signal
 import socket
@@ -219,8 +222,14 @@ def configure_app_file_logging() -> None:
 
 configure_app_file_logging()
 
-PROXIED_IMAGE_TTL_SECONDS = 15 * 60
-MAX_PROXIED_IMAGE_CACHE_ITEMS = 512
+IMAGE_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'storage', 'image_cache')
+os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
+RUN_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'storage', 'run_cache')
+os.makedirs(RUN_CACHE_DIR, exist_ok=True)
+
+PROXIED_IMAGE_TTL_SECONDS = 30 * 86400
+PROXIED_IMAGE_DISK_TTL_SECONDS = 30 * 86400
+MAX_PROXIED_IMAGE_CACHE_ITEMS = 1000
 MAX_PROXIED_IMAGE_BYTES = max(
     1,
     int(os.getenv('MAX_PROXIED_IMAGE_MB', '15') or 15),
@@ -234,6 +243,18 @@ SUPPLIER_REMOTE_HOSTS = tuple(sorted({
 DESTRUCTIVE_CONFIRMATION_VALUE = 'permanently-delete'
 PROXIED_IMAGE_CACHE: Dict[str, Dict[str, object]] = {}
 PROXIED_IMAGE_CACHE_LOCK = threading.Lock()
+
+_IMAGE_PROXY_SESSION = requests.Session()
+_image_adapter = HTTPAdapter(pool_connections=30, pool_maxsize=60, max_retries=1)
+_IMAGE_PROXY_SESSION.mount('http://', _image_adapter)
+_IMAGE_PROXY_SESSION.mount('https://', _image_adapter)
+
+_IMAGE_FETCH_LOCKS: Dict[str, threading.Lock] = {}
+_IMAGE_FETCH_LOCKS_LOCK = threading.Lock()
+
+_RUN_PRODUCTS_CACHE: Dict[int, List[Dict[str, object]]] = {}
+_HISTORY_DETAIL_CACHE: Dict[str, Dict] = {}
+_DEDUP_ITEMS_CACHE: Dict[str, List[Dict[str, object]]] = {}
 AUTO_DETAIL_SCAN_MAX_ITEMS = 20
 AUTOMATION_POLL_INTERVAL_SECONDS = 45
 AUTOMATION_SCHEDULER_LOCK = threading.Lock()
@@ -3861,6 +3882,24 @@ def supplier_host_allowed(hostname: str) -> bool:
     )
 
 
+@lru_cache(maxsize=512)
+def _validate_host_ip_is_global(hostname: str, port: int) -> bool:
+    try:
+        addresses = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except (socket.gaierror, OSError):
+        return False
+    if not addresses:
+        return False
+    for address in addresses:
+        try:
+            ip_value = ipaddress.ip_address(str(address[4][0]).split('%', 1)[0])
+            if not ip_value.is_global:
+                return False
+        except (ValueError, IndexError):
+            return False
+    return True
+
+
 def validate_supplier_remote_url(
     raw_url: str,
     *,
@@ -3885,20 +3924,21 @@ def validate_supplier_remote_url(
 
     if checked_hosts is not None and normalized_hostname in checked_hosts:
         return parsed._replace(fragment='').geturl()
-    try:
-        addresses = socket.getaddrinfo(
-            parsed.hostname,
-            parsed.port or (443 if parsed.scheme == 'https' else 80),
-            type=socket.SOCK_STREAM,
-        )
-    except socket.gaierror as exc:
-        raise ValueError(f'Could not resolve supplier host: {parsed.hostname}') from exc
-    if not addresses:
+
+    port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+    if not _validate_host_ip_is_global(normalized_hostname, port):
+        try:
+            addresses = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise ValueError(f'Could not resolve supplier host: {parsed.hostname}') from exc
+        if not addresses:
+            raise ValueError(f'Could not resolve supplier host: {parsed.hostname}')
+        for address in addresses:
+            ip_value = ipaddress.ip_address(str(address[4][0]).split('%', 1)[0])
+            if not ip_value.is_global:
+                raise ValueError('Private, loopback, and link-local network addresses are not allowed.')
         raise ValueError(f'Could not resolve supplier host: {parsed.hostname}')
-    for address in addresses:
-        ip_value = ipaddress.ip_address(str(address[4][0]).split('%', 1)[0])
-        if not ip_value.is_global:
-            raise ValueError('Private, loopback, and link-local network addresses are not allowed.')
+
     if checked_hosts is not None:
         checked_hosts.add(normalized_hostname)
 
@@ -3920,73 +3960,161 @@ def validate_supplier_remote_urls(raw_urls, scraper_key: str = '') -> List[str]:
 
 
 def fetch_proxied_image(image_url: str) -> Dict[str, object]:
-    """Fetch and cache a remote image so the browser can load it from same-origin."""
+    """Fetch and cache a remote image with persistent disk storage and in-flight coalescing."""
     image_url = validate_supplier_remote_url(image_url)
     cleanup_proxied_image_cache()
+
+    # 1. Memory cache check
     with PROXIED_IMAGE_CACHE_LOCK:
         cached = PROXIED_IMAGE_CACHE.get(image_url)
         if cached:
             return cached
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'image/avif,image/webp,image/apng,image/png,image/jpeg,image/*;q=0.8',
-        'Referer': request.host_url.rstrip('/') + '/',
-    }
-    response = None
-    current_url = image_url
-    for redirect_count in range(6):
-        current_url = validate_supplier_remote_url(current_url)
-        response = requests.get(
-            current_url,
-            timeout=30,
-            headers=headers,
-            allow_redirects=False,
-            stream=True,
-        )
-        if 300 <= response.status_code < 400 and response.headers.get('location'):
-            if redirect_count >= 5:
+    url_hash = hashlib.sha256(image_url.encode('utf-8')).hexdigest()
+    disk_data_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}.bin")
+    disk_meta_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}.meta.json")
+
+    # 2. Disk cache check
+    if os.path.isfile(disk_data_path) and os.path.isfile(disk_meta_path):
+        try:
+            mtime = os.path.getmtime(disk_data_path)
+            if (time.time() - mtime) < PROXIED_IMAGE_DISK_TTL_SECONDS:
+                with open(disk_meta_path, 'r', encoding='utf-8') as mf:
+                    meta = json.load(mf)
+                with open(disk_data_path, 'rb') as df:
+                    data = df.read()
+                entry = {
+                    'data': data,
+                    'mime_type': meta.get('mime_type') or 'image/jpeg',
+                    'etag': meta.get('etag') or hashlib.sha256(data).hexdigest(),
+                    'created_at': meta.get('created_at', mtime),
+                }
+                with PROXIED_IMAGE_CACHE_LOCK:
+                    PROXIED_IMAGE_CACHE[image_url] = entry
+                return entry
+        except Exception:
+            pass
+
+    # 3. Coalesce in-flight requests for the exact same URL
+    with _IMAGE_FETCH_LOCKS_LOCK:
+        if image_url not in _IMAGE_FETCH_LOCKS:
+            _IMAGE_FETCH_LOCKS[image_url] = threading.Lock()
+        fetch_lock = _IMAGE_FETCH_LOCKS[image_url]
+
+    with fetch_lock:
+        with PROXIED_IMAGE_CACHE_LOCK:
+            cached = PROXIED_IMAGE_CACHE.get(image_url)
+            if cached:
+                return cached
+
+        if os.path.isfile(disk_data_path) and os.path.isfile(disk_meta_path):
+            try:
+                mtime = os.path.getmtime(disk_data_path)
+                if (time.time() - mtime) < PROXIED_IMAGE_DISK_TTL_SECONDS:
+                    with open(disk_meta_path, 'r', encoding='utf-8') as mf:
+                        meta = json.load(mf)
+                    with open(disk_data_path, 'rb') as df:
+                        data = df.read()
+                    entry = {
+                        'data': data,
+                        'mime_type': meta.get('mime_type') or 'image/jpeg',
+                        'etag': meta.get('etag') or hashlib.sha256(data).hexdigest(),
+                        'created_at': meta.get('created_at', mtime),
+                    }
+                    with PROXIED_IMAGE_CACHE_LOCK:
+                        PROXIED_IMAGE_CACHE[image_url] = entry
+                    return entry
+            except Exception:
+                pass
+
+        parsed = urlparse(image_url)
+        supplier_referer = f"{parsed.scheme}://{parsed.netloc}/"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/png,image/jpeg,image/*;q=0.8',
+            'Referer': supplier_referer,
+        }
+        response = None
+        current_url = image_url
+        for redirect_count in range(6):
+            current_url = validate_supplier_remote_url(current_url)
+            response = _IMAGE_PROXY_SESSION.get(
+                current_url,
+                timeout=20,
+                headers=headers,
+                allow_redirects=False,
+                stream=True,
+            )
+            if 300 <= response.status_code < 400 and response.headers.get('location'):
+                if redirect_count >= 5:
+                    response.close()
+                    raise ValueError('Remote image exceeded the redirect limit.')
+                next_url = urljoin(current_url, response.headers['location'])
                 response.close()
-                raise ValueError('Remote image exceeded the redirect limit.')
-            next_url = urljoin(current_url, response.headers['location'])
+                current_url = next_url
+                continue
+            break
+        if response is None:
+            raise ValueError('Remote image request failed.')
+        response.raise_for_status()
+
+        mime_type = (response.headers.get('content-type') or '').split(';', 1)[0].strip()
+        if not mime_type or mime_type == 'application/octet-stream':
+            mime_type = mimetypes.guess_type(urlparse(image_url).path)[0] or 'application/octet-stream'
+        if not mime_type.startswith('image/') or mime_type == 'image/svg+xml':
             response.close()
-            current_url = next_url
-            continue
-        break
-    if response is None:
-        raise ValueError('Remote image request failed.')
-    response.raise_for_status()
+            raise ValueError('Remote URL did not return a supported raster image.')
 
-    mime_type = (response.headers.get('content-type') or '').split(';', 1)[0].strip()
-    if not mime_type or mime_type == 'application/octet-stream':
-        mime_type = mimetypes.guess_type(urlparse(image_url).path)[0] or 'application/octet-stream'
-    if not mime_type.startswith('image/') or mime_type == 'image/svg+xml':
-        response.close()
-        raise ValueError('Remote URL did not return a supported raster image.')
-
-    declared_length = int(response.headers.get('content-length') or 0)
-    if declared_length > MAX_PROXIED_IMAGE_BYTES:
-        response.close()
-        raise ValueError('Remote image exceeds the configured size limit.')
-    chunks = []
-    received = 0
-    for chunk in response.iter_content(chunk_size=64 * 1024):
-        if not chunk:
-            continue
-        received += len(chunk)
-        if received > MAX_PROXIED_IMAGE_BYTES:
+        declared_length = int(response.headers.get('content-length') or 0)
+        if declared_length > MAX_PROXIED_IMAGE_BYTES:
             response.close()
             raise ValueError('Remote image exceeds the configured size limit.')
-        chunks.append(chunk)
-    response.close()
+        chunks = []
+        received = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            received += len(chunk)
+            if received > MAX_PROXIED_IMAGE_BYTES:
+                response.close()
+                raise ValueError('Remote image exceeds the configured size limit.')
+            chunks.append(chunk)
+        response.close()
 
-    entry = {
-        'data': b''.join(chunks),
-        'mime_type': mime_type,
-        'created_at': time.time(),
-    }
-    with PROXIED_IMAGE_CACHE_LOCK:
-        PROXIED_IMAGE_CACHE[image_url] = entry
+        data_bytes = b''.join(chunks)
+        etag = hashlib.sha256(data_bytes).hexdigest()
+        now_ts = time.time()
+        entry = {
+            'data': data_bytes,
+            'mime_type': mime_type,
+            'etag': etag,
+            'created_at': now_ts,
+        }
+
+        try:
+            tmp_data_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}_{uuid.uuid4().hex}.tmp")
+            tmp_meta_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}_{uuid.uuid4().hex}.meta.tmp")
+            with open(tmp_data_path, 'wb') as tf:
+                tf.write(data_bytes)
+            with open(tmp_meta_path, 'w', encoding='utf-8') as mf:
+                json.dump({
+                    'mime_type': mime_type,
+                    'etag': etag,
+                    'created_at': now_ts,
+                    'url': image_url,
+                }, mf)
+            os.replace(tmp_data_path, disk_data_path)
+            os.replace(tmp_meta_path, disk_meta_path)
+        except Exception as write_err:
+            app.logger.warning(f"[image-proxy] Failed writing disk cache: {write_err}")
+
+        with PROXIED_IMAGE_CACHE_LOCK:
+            PROXIED_IMAGE_CACHE[image_url] = entry
+
+        with _IMAGE_FETCH_LOCKS_LOCK:
+            _IMAGE_FETCH_LOCKS.pop(image_url, None)
+
+        return entry
     return entry
 
 
@@ -5137,14 +5265,37 @@ _RUN_DETAIL_CACHE = {}
 
 
 def invalidate_run_detail_cache(run_id: int = None) -> None:
-    global _RUN_DETAIL_CACHE
+    global _RUN_DETAIL_CACHE, _RUN_PRODUCTS_CACHE, _HISTORY_DETAIL_CACHE, _DEDUP_ITEMS_CACHE
     if run_id is None:
         _RUN_DETAIL_CACHE.clear()
+        _RUN_PRODUCTS_CACHE.clear()
+        _HISTORY_DETAIL_CACHE.clear()
+        _DEDUP_ITEMS_CACHE.clear()
+        try:
+            for f in os.listdir(RUN_CACHE_DIR):
+                if f.endswith('.json'):
+                    try:
+                        os.remove(os.path.join(RUN_CACHE_DIR, f))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
     else:
         target_id = int(run_id)
         keys_to_remove = [k for k in _RUN_DETAIL_CACHE if (k == target_id or (isinstance(k, tuple) and k[0] == target_id))]
         for k in keys_to_remove:
             _RUN_DETAIL_CACHE.pop(k, None)
+        _RUN_PRODUCTS_CACHE.pop(target_id, None)
+        try:
+            prefix = f"run_{target_id}_"
+            for f in os.listdir(RUN_CACHE_DIR):
+                if f.startswith(prefix) and f.endswith('.json'):
+                    try:
+                        os.remove(os.path.join(RUN_CACHE_DIR, f))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
 
 @app.delete('/api/automation/runs/<int:run_id>')
@@ -5224,6 +5375,18 @@ def api_automation_run_detail(run_id):
         if cached_payload is not None:
             return jsonify(cached_payload)
 
+        safe_inc = 'noitems' if include_items_arg in {'0', 'false', 'no'} else 'items'
+        safe_lim = f"lim_{items_limit_arg}" if items_limit_arg else "nolim"
+        run_meta_file = os.path.join(RUN_CACHE_DIR, f"run_{run_id}_detail_{safe_inc}_{safe_lim}.json")
+        if os.path.isfile(run_meta_file):
+            try:
+                with open(run_meta_file, 'r', encoding='utf-8') as rf:
+                    disk_payload = json.load(rf)
+                _RUN_DETAIL_CACHE[cache_key] = disk_payload
+                return jsonify(disk_payload)
+            except Exception:
+                pass
+
         run = db_manager.get_automation_run(run_id)
         if not run:
             return jsonify({'error': 'Automation run not found.'}), 404
@@ -5231,13 +5394,30 @@ def api_automation_run_detail(run_id):
         if str(run.get('status') or '').strip().lower() == 'interrupted' and _resume_worker_is_locked(run_id):
             run = db_manager.restore_automation_run_for_active_worker(run_id) or run
 
-        current_history = db_manager.get_history_detail(run.get('current_history_id')) if run.get('current_history_id') else None
-        previous_history = db_manager.get_history_detail(run.get('previous_history_id')) if run.get('previous_history_id') else None
+        curr_hid = str(run.get('current_history_id') or '')
+        prev_hid = str(run.get('previous_history_id') or '')
+
+        current_history = None
+        if curr_hid:
+            if curr_hid in _HISTORY_DETAIL_CACHE:
+                current_history = _HISTORY_DETAIL_CACHE[curr_hid]
+            else:
+                current_history = db_manager.get_history_detail(curr_hid)
+                if current_history and len(_HISTORY_DETAIL_CACHE) < 20:
+                    _HISTORY_DETAIL_CACHE[curr_hid] = current_history
+
+        previous_history = None
+        if prev_hid:
+            if prev_hid in _HISTORY_DETAIL_CACHE:
+                previous_history = _HISTORY_DETAIL_CACHE[prev_hid]
+            else:
+                previous_history = db_manager.get_history_detail(prev_hid)
+                if previous_history and len(_HISTORY_DETAIL_CACHE) < 20:
+                    _HISTORY_DETAIL_CACHE[prev_hid] = previous_history
+
         live_preview_items = []
         if not current_history:
             run_summary = run.get('summary') if isinstance(run.get('summary'), dict) else {}
-            # Populate live_preview_items from the in-progress run summary so that
-            # running automation runs expose their current products to the frontend.
             persisted_preview = db_manager.get_automation_run_items(run_id, limit=AUTOMATION_LIVE_DETAIL_ITEM_LIMIT)
             if persisted_preview:
                 live_preview_items = [item for item in persisted_preview if isinstance(item, dict)]
@@ -5247,9 +5427,13 @@ def api_automation_run_detail(run_id):
                     live_preview_items = [item for item in raw_preview if isinstance(item, dict)]
 
         current_history_items = (current_history or {}).get('items', [])
-        current_product_items = deduplicate_comparable_items(current_history_items)
-        curr_hid = str(run.get('current_history_id') or '')
-        prev_hid = str(run.get('previous_history_id') or '')
+        if curr_hid and curr_hid in _DEDUP_ITEMS_CACHE:
+            current_product_items = _DEDUP_ITEMS_CACHE[curr_hid]
+        else:
+            current_product_items = deduplicate_comparable_items(current_history_items)
+            if curr_hid and len(_DEDUP_ITEMS_CACHE) < 20:
+                _DEDUP_ITEMS_CACHE[curr_hid] = current_product_items
+
         comparison_cache_key = f"{curr_hid}:{prev_hid}"
 
         global _COMPARISON_CACHE
@@ -5326,27 +5510,28 @@ def api_automation_run_detail(run_id):
             public_run['items_count'] = comparison_summary.get('current_items', len(current_product_items))
         public_run['summary'] = public_summary
 
-        duplicate_items = [
-            {
-                'title': i.get('title') or '',
-                'url': i.get('url') or '',
-                'sku': i.get('sku') or '',
-                'category': i.get('category') or (i.get('extra') or {}).get('model_label') or (i.get('extra') or {}).get('target_label') or '',
-                'model_label': (i.get('extra') or {}).get('model_label') or '',
-                'target_label': (i.get('extra') or {}).get('target_label') or '',
-                'duplicate_categories': i.get('duplicate_categories') or [],
-                'duplicate_count': i.get('duplicate_count', 1),
-                'is_duplicate': bool(i.get('is_duplicate')),
-                'stock_status': i.get('stock_status') or 'In Stock',
-                'original_formatted': i.get('original_formatted') or '',
-                'discounted_formatted': i.get('discounted_formatted') or '',
-                'description': (i.get('description') or '')[:160],
-                'source': i.get('site') or i.get('source') or (str(curr_hid).split(':')[0] if ':' in str(curr_hid) else 'parts4cells'),
-            }
-            for i in current_product_items
-            if i.get('is_duplicate') or (i.get('duplicate_categories') and len(i.get('duplicate_categories')) > 1)
-        ]
-        duplicate_count = len(duplicate_items)
+        duplicate_count = 0
+        duplicate_items = []
+        for i in current_product_items:
+            if i.get('is_duplicate') or (i.get('duplicate_categories') and len(i.get('duplicate_categories')) > 1):
+                duplicate_count += 1
+                if len(duplicate_items) < 100:
+                    duplicate_items.append({
+                        'title': i.get('title') or '',
+                        'url': i.get('url') or '',
+                        'sku': i.get('sku') or '',
+                        'category': i.get('category') or (i.get('extra') or {}).get('model_label') or (i.get('extra') or {}).get('target_label') or '',
+                        'model_label': (i.get('extra') or {}).get('model_label') or '',
+                        'target_label': (i.get('extra') or {}).get('target_label') or '',
+                        'duplicate_categories': i.get('duplicate_categories') or [],
+                        'duplicate_count': i.get('duplicate_count', 1),
+                        'is_duplicate': bool(i.get('is_duplicate')),
+                        'stock_status': i.get('stock_status') or 'In Stock',
+                        'original_formatted': i.get('original_formatted') or '',
+                        'discounted_formatted': i.get('discounted_formatted') or '',
+                        'description': (i.get('description') or '')[:160],
+                        'source': i.get('site') or i.get('source') or (str(curr_hid).split(':')[0] if ':' in str(curr_hid) else 'parts4cells'),
+                    })
 
         if include_items_arg in {'0', 'false', 'no'}:
             returned_items = []
@@ -5462,6 +5647,13 @@ def api_automation_run_detail(run_id):
             if len(_RUN_DETAIL_CACHE) > 50:
                 _RUN_DETAIL_CACHE.pop(next(iter(_RUN_DETAIL_CACHE)))
             _RUN_DETAIL_CACHE[cache_key] = response_payload
+            try:
+                tmp_rm = f"{run_meta_file}.tmp_{uuid.uuid4().hex}"
+                with open(tmp_rm, 'w', encoding='utf-8') as rf:
+                    json.dump(response_payload, rf)
+                os.replace(tmp_rm, run_meta_file)
+            except Exception as ex:
+                app.logger.warning(f"Failed writing run detail disk cache: {ex}")
 
         return jsonify(response_payload)
     except Exception as e:
@@ -5489,32 +5681,83 @@ def api_automation_run_products(run_id):
                 'total': len(items),
             })
 
-        current_history = db_manager.get_history_detail(current_history_id)
-        raw_items = (current_history or {}).get('items', [])
-        product_items = deduplicate_comparable_items(raw_items)
+        compact = _RUN_PRODUCTS_CACHE.get(run_id)
+        products_cache_file = os.path.join(RUN_CACHE_DIR, f"run_{run_id}_products.json")
 
-        curr_hid = str(current_history_id or '')
-        compact = [
-            {
-                'title': i.get('title') or '',
-                'url': i.get('url') or '',
-                'image_url': i.get('image_url') or '',
-                'original_formatted': i.get('original_formatted') or '',
-                'discounted_formatted': i.get('discounted_formatted') or '',
-                'sku': i.get('sku') or '',
-                'category': i.get('category') or (i.get('extra') or {}).get('model_label') or (i.get('extra') or {}).get('target_label') or '',
-                'model_label': (i.get('extra') or {}).get('model_label') or '',
-                'target_label': (i.get('extra') or {}).get('target_label') or '',
-                'duplicate_categories': i.get('duplicate_categories') or [],
-                'duplicate_count': i.get('duplicate_count', 1),
-                'is_duplicate': bool(i.get('is_duplicate')),
-                'stock_status': i.get('stock_status') or 'In Stock',
-                'description': (i.get('description') or '')[:160],
-                'source': i.get('site') or i.get('source') or (curr_hid.split(':')[0] if ':' in curr_hid else 'parts4cells'),
-                'extra': {},
-            }
-            for i in product_items
-        ]
+        if compact is None and os.path.isfile(products_cache_file):
+            try:
+                with open(products_cache_file, 'r', encoding='utf-8') as pf:
+                    compact = json.load(pf)
+                _RUN_PRODUCTS_CACHE[run_id] = compact
+            except Exception:
+                compact = None
+
+        if compact is None:
+            curr_hid = str(current_history_id or '')
+            if curr_hid in _DEDUP_ITEMS_CACHE:
+                product_items = _DEDUP_ITEMS_CACHE[curr_hid]
+            else:
+                if curr_hid in _HISTORY_DETAIL_CACHE:
+                    current_history = _HISTORY_DETAIL_CACHE[curr_hid]
+                else:
+                    current_history = db_manager.get_history_detail(current_history_id)
+                    if current_history and len(_HISTORY_DETAIL_CACHE) < 20:
+                        _HISTORY_DETAIL_CACHE[curr_hid] = current_history
+                raw_items = (current_history or {}).get('items', [])
+                product_items = deduplicate_comparable_items(raw_items)
+                if curr_hid and len(_DEDUP_ITEMS_CACHE) < 20:
+                    _DEDUP_ITEMS_CACHE[curr_hid] = product_items
+
+            compact = [
+                {
+                    'title': i.get('title') or '',
+                    'url': i.get('url') or '',
+                    'image_url': i.get('image_url') or '',
+                    'original_formatted': i.get('original_formatted') or '',
+                    'discounted_formatted': i.get('discounted_formatted') or '',
+                    'sku': i.get('sku') or '',
+                    'category': i.get('category') or (i.get('extra') or {}).get('model_label') or (i.get('extra') or {}).get('target_label') or '',
+                    'model_label': (i.get('extra') or {}).get('model_label') or '',
+                    'target_label': (i.get('extra') or {}).get('target_label') or '',
+                    'duplicate_categories': i.get('duplicate_categories') or [],
+                    'duplicate_count': i.get('duplicate_count', 1),
+                    'is_duplicate': bool(i.get('is_duplicate')),
+                    'stock_status': i.get('stock_status') or 'In Stock',
+                    'description': (i.get('description') or '')[:160],
+                    'source': i.get('site') or i.get('source') or (curr_hid.split(':')[0] if ':' in curr_hid else 'parts4cells'),
+                    'extra': {},
+                }
+                for i in product_items
+            ]
+
+            is_done = str(run.get('status') or '').strip().lower() in {'completed', 'failed', 'cancelled'}
+            if is_done:
+                if len(_RUN_PRODUCTS_CACHE) > 30:
+                    _RUN_PRODUCTS_CACHE.pop(next(iter(_RUN_PRODUCTS_CACHE)), None)
+                _RUN_PRODUCTS_CACHE[run_id] = compact
+                try:
+                    tmp_p = f"{products_cache_file}.tmp_{uuid.uuid4().hex}"
+                    with open(tmp_p, 'w', encoding='utf-8') as pf:
+                        json.dump(compact, pf)
+                    os.replace(tmp_p, products_cache_file)
+                except Exception as ex:
+                    app.logger.warning(f"Failed writing run products cache: {ex}")
+
+        page_arg = request.args.get('page')
+        if page_arg is not None:
+            page = coerce_int(page_arg, default=1, min_value=1)
+            page_size = coerce_int(request.args.get('page_size', 100), default=100, min_value=1, max_value=500)
+            total = len(compact)
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+            paginated_items = compact[start_idx:end_idx]
+            return jsonify({
+                'items': paginated_items,
+                'total': total,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': math.ceil(total / page_size) if page_size > 0 else 1
+            })
 
         return jsonify({
             'items': compact,
@@ -5703,11 +5946,23 @@ def proxy_remote_image():
         app.logger.warning(f"[image-proxy] Failed to fetch {image_url}: {exc}")
         return jsonify({'error': f'Failed to load image: {exc}'}), 502
 
-    return send_file(
-        io.BytesIO(entry['data']),
-        mimetype=entry['mime_type'],
-        max_age=PROXIED_IMAGE_TTL_SECONDS,
-    )
+    etag = entry.get('etag')
+    if not etag:
+        etag = hashlib.sha256(entry['data']).hexdigest()
+        entry['etag'] = etag
+
+    if_none_match = (request.headers.get('If-None-Match') or '').strip()
+    if if_none_match and (if_none_match == f'"{etag}"' or if_none_match.strip('"') == etag):
+        res = Response(status=304)
+        res.headers['ETag'] = f'"{etag}"'
+        res.headers['Cache-Control'] = 'public, max-age=2592000, immutable'
+        return res
+
+    res = make_response(entry['data'])
+    res.headers['Content-Type'] = entry['mime_type']
+    res.headers['ETag'] = f'"{etag}"'
+    res.headers['Cache-Control'] = 'public, max-age=2592000, immutable'
+    return res
 
 @app.post('/api/scrape')
 @require_login
@@ -5803,7 +6058,10 @@ def export_xlsx():
     bio = io.BytesIO()
     wb.save(bio)
     bio.seek(0)
-    return send_file(bio, as_attachment=True, download_name="export.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    download_name = (data.get('filename') or 'export.xlsx').strip()
+    if not download_name.lower().endswith('.xlsx'):
+        download_name = f"{download_name}.xlsx"
+    return send_file(bio, as_attachment=True, download_name=download_name, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.post('/api/comparison/upload')

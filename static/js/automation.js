@@ -1633,7 +1633,9 @@
     { key: 'description', label: 'Description', sortable: true },
     { key: 'original', label: 'Price', sortable: true },
     { key: 'url', label: 'URL', sortable: false },
-    { key: 'source', label: 'Source', sortable: true }
+    { key: 'source', label: 'Source', sortable: true },
+  ];
+
   const AUTOMATION_EXPORT_HEADERS = [
     'Title',
     'Price',
@@ -1973,7 +1975,7 @@
                 <tr>
                   <td class="automation-product-table__image">
                     ${image
-                      ? `<img data-product-image src="${escapeHtml(image)}" alt="" title="${escapeHtml(title)}" loading="lazy">${productImageFallback(true)}`
+                      ? `<img data-product-image src="${escapeHtml(image)}" alt="" title="${escapeHtml(title)}" loading="lazy" decoding="async" onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.hidden = false;">${productImageFallback(true)}`
                       : productImageFallback()}
                   </td>
                   <td class="automation-product-table__title">${escapeHtml(title)}</td>
@@ -2040,8 +2042,69 @@
     URL.revokeObjectURL(url);
   }
 
-  function exportTimestamp() {
-    return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  function sanitizeFilenamePart(text) {
+    return String(text || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  function getExportFilename(extension = 'xlsx') {
+    const ext = extension.replace(/^\./, '');
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const timeStr = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const timestamp = `${dateStr}_${timeStr}`;
+
+    const parts = [];
+
+    // 1. Supplier / Site
+    const site = sanitizeFilenamePart(
+      state.runDetail?.run?.scraper_key ||
+      state.runDetail?.job?.scraper_key ||
+      state.activeSite ||
+      ''
+    );
+    if (site) parts.push(site);
+
+    // 2. Job name if available
+    const jobName = sanitizeFilenamePart(
+      state.runDetail?.job?.name ||
+      state.runDetail?.run?.job_name ||
+      state.selectedCategoryName ||
+      ''
+    );
+    if (jobName && jobName !== site) {
+      parts.push(jobName);
+    }
+
+    // 3. Run number
+    const runId = state.runDetail?.run?.id || state.selectedRunId;
+    if (runId) {
+      parts.push(`run-${runId}`);
+    }
+
+    // 4. View / Filter details
+    const changeView = state.selectedChangeView;
+    const modelFilter = sanitizeFilenamePart(elements.automationModelFilter?.value || '');
+
+    if (changeView && changeView !== 'all') {
+      parts.push(sanitizeFilenamePart(changeView));
+    } else if (modelFilter) {
+      parts.push(modelFilter);
+    } else if (!jobName) {
+      parts.push('products');
+    }
+
+    if (!parts.length) {
+      parts.push('products');
+    }
+
+    parts.push(timestamp);
+
+    return `${parts.join('_')}.${ext}`;
   }
 
   async function exportProductsCsv() {
@@ -2049,12 +2112,13 @@
       showAlert('warn', 'No products to export.');
       return;
     }
+    const filename = getExportFilename('csv');
     const csvContent = '\uFEFF' + rowsToCsv(state.productExportRows);
     downloadBlob(
       new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }),
-      `automation_products_${exportTimestamp()}.csv`
+      filename
     );
-    showAlert('success', `Exported ${state.productExportRows.length} products as CSV.`);
+    showAlert('success', `Exported ${state.productExportRows.length} products as ${filename}.`);
   }
 
   async function exportProductsXlsx() {
@@ -2064,6 +2128,7 @@
     }
     const button = elements.automationProductsXlsxBtn;
     const oldText = button?.textContent || 'XLSX';
+    const filename = getExportFilename('xlsx');
     try {
       if (button) {
         button.disabled = true;
@@ -2074,7 +2139,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rows: state.productExportRows,
-          headers: AUTOMATION_EXPORT_HEADERS
+          headers: AUTOMATION_EXPORT_HEADERS,
+          filename: filename
         })
       });
       if (!response.ok) {
@@ -2082,8 +2148,8 @@
         throw new Error(payload.error || `Export failed (${response.status})`);
       }
       const blob = await response.blob();
-      downloadBlob(blob, `automation_products_${exportTimestamp()}.xlsx`);
-      showAlert('success', `Exported ${state.productExportRows.length} products as XLSX.`);
+      downloadBlob(blob, filename);
+      showAlert('success', `Exported ${state.productExportRows.length} products as ${filename}.`);
     } catch (err) {
       showAlert('error', err.message || 'XLSX export failed.');
     } finally {
