@@ -222,7 +222,11 @@ def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
         status_code = int(getattr(r, 'status_code', 0) or 0)
         final_url = str(getattr(r, 'url', '') or url)
         html = getattr(r, 'text', '') or ''
-        blocked = _looks_like_antibot_challenge(status_code, html)
+        response_headers = getattr(r, 'headers', {}) or {}
+        # Cloudflare documents cf-mitigated: challenge as a definitive signal
+        # even when the challenge body is returned with HTTP 200.
+        cf_challenge = str(response_headers.get('cf-mitigated') or '').strip().lower() == 'challenge'
+        blocked = cf_challenge or _looks_like_antibot_challenge(status_code, html)
         _set_fetch_metadata(sess, status_code=status_code, final_url=final_url, blocked=blocked)
         if blocked:
             if should_use_browser_fetch():

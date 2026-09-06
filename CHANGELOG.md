@@ -1,5 +1,8 @@
 # Changelog
 
+## [8.4.12] - 2026-09-06
+- Detect Cloudflare challenge responses via the documented `cf-mitigated` header, including HTTP 200 challenge pages.
+
 ## [8.4.11] - 2026-09-06
 - Verified reusable browser fallback syntax and pooled-driver lifecycle handling.
 
