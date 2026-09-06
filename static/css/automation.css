@@ -752,6 +752,7 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--border-2) transparent;
   overflow-anchor: none;
+  contain: layout style;
 }
 
 .automation-run-detail--empty {
@@ -942,6 +943,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: .55rem;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 500px;
 }
 
 .automation-change {

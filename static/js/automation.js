@@ -134,28 +134,32 @@
   };
 
   function preserveLiveScroll(callback) {
-    const pageScroll = {
-      left: window.scrollX,
-      top: window.scrollY
-    };
-    const trackedScroll = [
-      elements.automationRuns,
-      elements.automationScrapedProducts,
-      elements.automationRunDetail
-    ].filter(Boolean).map(element => ({
-      element,
-      left: element.scrollLeft,
-      top: element.scrollTop
-    }));
+    const pageX = window.scrollX || 0;
+    const pageY = window.scrollY || 0;
+    const tracked = [];
+    const runList = elements.automationRuns;
+    if (runList && (runList.scrollTop > 0 || runList.scrollLeft > 0)) {
+      tracked.push({ el: runList, top: runList.scrollTop, left: runList.scrollLeft });
+    }
+    const products = elements.automationScrapedProducts;
+    if (products && (products.scrollTop > 0 || products.scrollLeft > 0)) {
+      tracked.push({ el: products, top: products.scrollTop, left: products.scrollLeft });
+    }
+    const detail = elements.automationRunDetail;
+    if (detail && (detail.scrollTop > 0 || detail.scrollLeft > 0)) {
+      tracked.push({ el: detail, top: detail.scrollTop, left: detail.scrollLeft });
+    }
 
     const result = callback();
 
-    trackedScroll.forEach(({ element, left, top }) => {
-      element.scrollLeft = left;
-      element.scrollTop = top;
-    });
-    if (window.scrollX !== pageScroll.left || window.scrollY !== pageScroll.top) {
-      window.scrollTo(pageScroll.left, pageScroll.top);
+    if (tracked.length > 0) {
+      tracked.forEach(({ el, top, left }) => {
+        el.scrollTop = top;
+        el.scrollLeft = left;
+      });
+    }
+    if (pageY > 0 || pageX > 0) {
+      window.scrollTo(pageX, pageY);
     }
     return result;
   }
@@ -382,8 +386,18 @@
     return data;
   }
 
-  let _pkDateTimeFormatter = null;
   const _dateTimeCache = new Map();
+  const _MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const _KARACHI_OFFSET_MS = 5 * 60 * 60 * 1000;
+
+  function parseUtcTimestamp(value) {
+    if (typeof value === 'number') return value;
+    if (!value) return NaN;
+    let s = String(value).trim();
+    if (s.includes(' ') && !s.includes('T')) s = s.replace(' ', 'T');
+    if (!s.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(s)) s += 'Z';
+    return Date.parse(s);
+  }
 
   function formatDateTime(value) {
     if (!value) return 'Never';
@@ -391,40 +405,38 @@
     const cached = _dateTimeCache.get(key);
     if (cached !== undefined) return cached;
 
-    try {
-      if (!_pkDateTimeFormatter) {
-        _pkDateTimeFormatter = new Intl.DateTimeFormat('en-PK', {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-          timeZone: 'Asia/Karachi'
-        });
-      }
-      const formatted = _pkDateTimeFormatter.format(new Date(value));
-      if (_dateTimeCache.size > 500) _dateTimeCache.clear();
-      _dateTimeCache.set(key, formatted);
-      return formatted;
-    } catch {
-      return key;
-    }
+    const time = parseUtcTimestamp(value);
+    if (Number.isNaN(time)) return key;
+
+    const d = new Date(time + _KARACHI_OFFSET_MS);
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const mon = _MONTH_NAMES[d.getUTCMonth()];
+    const year = d.getUTCFullYear();
+    let h = d.getUTCHours();
+    const period = h >= 12 ? 'pm' : 'am';
+    h = h % 12 || 12;
+    const min = String(d.getUTCMinutes()).padStart(2, '0');
+    const formatted = `${day}-${mon}-${year}, ${h}:${min} ${period}`;
+
+    if (_dateTimeCache.size > 500) _dateTimeCache.clear();
+    _dateTimeCache.set(key, formatted);
+    return formatted;
   }
 
   function relativeTime(value) {
     if (!value) return 'Pending';
-    try {
-      const now = Date.now();
-      const then = new Date(value).getTime();
-      const isFuture = then >= now;
-      const diffMs = Math.abs(then - now);
-      const suffix = isFuture ? 'from now' : 'ago';
-      const diffMin = Math.max(1, Math.floor(diffMs / 60000));
-      if (diffMin < 60) return `${diffMin} min${diffMin === 1 ? '' : 's'} ${suffix}`;
-      const diffHours = Math.max(1, Math.floor(diffMs / 3600000));
-      if (diffHours < 48) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ${suffix}`;
-      const diffDays = Math.max(1, Math.floor(diffMs / 86400000));
-      return `${diffDays} day${diffDays === 1 ? '' : 's'} ${suffix}`;
-    } catch {
-      return '';
-    }
+    const then = parseUtcTimestamp(value);
+    if (Number.isNaN(then)) return '';
+    const now = Date.now();
+    const isFuture = then >= now;
+    const diffMs = Math.abs(then - now);
+    const suffix = isFuture ? 'from now' : 'ago';
+    const diffMin = Math.max(1, Math.floor(diffMs / 60000));
+    if (diffMin < 60) return `${diffMin} min${diffMin === 1 ? '' : 's'} ${suffix}`;
+    const diffHours = Math.max(1, Math.floor(diffMs / 3600000));
+    if (diffHours < 48) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ${suffix}`;
+    const diffDays = Math.max(1, Math.floor(diffMs / 86400000));
+    return `${diffDays} day${diffDays === 1 ? '' : 's'} ${suffix}`;
   }
 
   function formatDuration(ms) {
