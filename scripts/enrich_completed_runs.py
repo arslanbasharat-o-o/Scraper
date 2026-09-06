@@ -160,36 +160,48 @@ def _run_one(source_run: dict, continuation: dict | None = None) -> None:
 
     automation_stop_check = make_automation_run_stop_checker(continuation_id)
 
+    pending_checkpoints: list[tuple[dict, str]] = []
+    last_checkpoint_flush = [time.time()]
+    last_progress_flush = [time.time()]
+
+    def _flush_checkpoints(force: bool = False) -> None:
+        now = time.time()
+        if pending_checkpoints and (force or len(pending_checkpoints) >= 20 or now - last_checkpoint_flush[0] >= 1.5):
+            batch = list(pending_checkpoints)
+            pending_checkpoints.clear()
+            last_checkpoint_flush[0] = now
+            db_manager.save_automation_run_product_details_batch(continuation_id, batch)
+
     def progress_callback(progress: dict) -> None:
         if automation_stop_check:
             automation_stop_check()
         enriched = progress.get("enriched_item")
         if isinstance(enriched, dict):
-            # Persist under the original queued URL as well as any canonical
-            # URL returned by the supplier.  Resume overlays by the queued
-            # URL, so redirects must not cause a completed item to be fetched
-            # again after a restart.
             checkpoint_url = str(progress.get("last_item_url") or "").strip()
-            db_manager.save_automation_run_product_detail(continuation_id, enriched, checkpoint_url=checkpoint_url)
+            pending_checkpoints.append((enriched, checkpoint_url))
+            _flush_checkpoints(force=False)
         completed = initial_done + int(progress.get("phase2_completed") or 0)
         phase_total = max(total, int(progress.get("phase2_total") or 0))
-        db_manager.update_automation_run_progress(
-            continuation_id,
-            items_count=len(items),
-            summary={
-                "phase": 2,
-                "phase_name": "Phase 2: Product SKU & Detail Scan",
-                "phase2_completed": completed,
-                "phase2_total": phase_total,
-                "target_count": len(target_urls),
-                "total_targets": len(target_urls),
-                "completed_targets": len(target_urls),
-                "current_items": len(items),
-                "source_run_id": source_id,
-                "source_history_id": source_history_id,
-                "status_message": f"Recovered {completed:,} of {phase_total:,} product detail URLs.",
-            },
-        )
+        now = time.time()
+        if now - last_progress_flush[0] >= 1.5 or completed >= phase_total:
+            last_progress_flush[0] = now
+            db_manager.update_automation_run_progress(
+                continuation_id,
+                items_count=len(items),
+                summary={
+                    "phase": 2,
+                    "phase_name": "Phase 2: Product SKU & Detail Scan",
+                    "phase2_completed": completed,
+                    "phase2_total": phase_total,
+                    "target_count": len(target_urls),
+                    "total_targets": len(target_urls),
+                    "completed_targets": len(target_urls),
+                    "current_items": len(items),
+                    "source_run_id": source_id,
+                    "source_history_id": source_history_id,
+                    "status_message": f"Recovered {completed:,} of {phase_total:,} product detail URLs.",
+                },
+            )
 
     try:
         with app.app_context():
@@ -205,6 +217,7 @@ def _run_one(source_run: dict, continuation: dict | None = None) -> None:
                 progress_callback=progress_callback,
                 stop_check=automation_stop_check,
             )
+            _flush_checkpoints(force=True)
             summary = summarize_sku_resolution(enriched_items)
             raw_history_id = str(int(time.time() * 1000))
             scraper_key = str(source_run.get("scraper_key") or history.get("scraper_key") or "standard")

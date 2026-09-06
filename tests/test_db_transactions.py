@@ -86,3 +86,32 @@ def test_schema_version_table_exists(tmp_path):
     assert row[0] == 1
     assert "baseline" in row[1].lower()
     conn.close()
+
+def test_save_automation_run_product_details_batch(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    db = DatabaseManager(db_path)
+    job = db.save_automation_job({
+        "name": "Batch Test Job",
+        "category_query": "screens",
+        "scraper_key": "standard",
+        "interval_minutes": 1440,
+        "enabled": True,
+    })
+    assert job is not None
+    run = db.create_automation_run(job["id"], target_urls=["https://example.com/target"])
+    assert run is not None
+    run_id = run["id"]
+
+    batch_data = [
+        ({"url": f"https://example.com/product-{i}", "sku": f"SKU-{i}", "title": f"Product {i}"}, f"https://example.com/product-{i}")
+        for i in range(10)
+    ]
+    saved_count = db.save_automation_run_product_details_batch(run_id, batch_data)
+    assert saved_count == 10
+
+    checkpoints = db.get_automation_run_product_details(run_id)
+    assert len(checkpoints) == 10
+    for i in range(10):
+        key = db._normalize_automation_url(f"https://example.com/product-{i}")
+        assert key in checkpoints
+        assert checkpoints[key].get("sku") == f"SKU-{i}"

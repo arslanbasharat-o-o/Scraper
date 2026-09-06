@@ -657,10 +657,12 @@ const extractDetail = (text, finalUrl) => {
     '.price'
   ]);
   const description = clean(String(product.description || '')) || firstText(doc, [
-    'meta[name="description"]',
     '.product.attribute.description .value',
     '#description',
-    '.description'
+    '.product.attribute.overview .value',
+    '[itemprop="description"]',
+    '.description',
+    'meta[name="description"]'
   ]);
   const availability = offerValue(offers, 'availability') || firstText(doc, [
     '.product-info-stock-sku .stock',
@@ -680,26 +682,46 @@ const extractDetail = (text, finalUrl) => {
     image_url: pickImage(product, doc, finalUrl),
   };
 };
-return Promise.all(args.links.map(async url => {
-  try {
-    const response = await fetch(url, {
-      headers: args.headers || {},
-      referrer: args.referrer,
-      referrerPolicy: 'strict-origin-when-cross-origin',
-      method: 'GET',
-      mode: 'cors',
-      credentials: 'include',
-      signal: AbortSignal.timeout(args.timeout * 1000),
+
+const links = args.links || [];
+const results = new Array(links.length);
+const concurrency = Math.max(1, Math.min(args.concurrency || 6, links.length || 1));
+const staggerMs = args.stagger_ms !== undefined ? args.stagger_ms : 25;
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function fetchOne(url) {
+  return window.fetch(url, {
+    headers: {
+      'priority': 'u=0, i',
+      'sec-fetch-dest': 'document',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-site': 'same-origin',
+      'sec-fetch-user': '?1',
+      'upgrade-insecure-requests': '1',
+      ...(args.headers || {}),
+    },
+    referrer: args.referrer,
+    referrerPolicy: 'strict-origin-when-cross-origin',
+    method: 'GET',
+    mode: 'cors',
+    credentials: 'include',
+    signal: AbortSignal.timeout((args.timeout || 12) * 1000),
+  })
+  .then(response => {
+    return response.text().then(text => {
+      return {
+        request_url: url,
+        final_url: response.url || url,
+        status_code: response.status,
+        detail: extractDetail(text, response.url || url),
+        error: '',
+      };
     });
-    const text = await response.text();
-    return {
-      request_url: url,
-      final_url: response.url || url,
-      status_code: response.status,
-      detail: extractDetail(text, response.url || url),
-      error: '',
-    };
-  } catch (error) {
+  })
+  .catch(error => {
     return {
       request_url: url,
       final_url: url,
@@ -707,8 +729,30 @@ return Promise.all(args.links.map(async url => {
       detail: null,
       error: String(error),
     };
-  }
-}));
+  });
+}
+
+let index = 0;
+function nextWorker(workerId) {
+  const startDelay = workerId > 0 && staggerMs > 0 ? delay(workerId * staggerMs) : Promise.resolve();
+  return startDelay.then(() => {
+    function runNext() {
+      if (index >= links.length) return Promise.resolve();
+      const cur = index++;
+      return fetchOne(links[cur]).then(res => {
+        results[cur] = res;
+        return staggerMs > 0 ? delay(staggerMs).then(runNext) : runNext();
+      });
+    }
+    return runNext();
+  });
+}
+
+const workers = [];
+for (let w = 0; w < concurrency; w++) {
+  workers.push(nextWorker(w));
+}
+return Promise.all(workers).then(() => results);
 """
 
 
@@ -781,14 +825,17 @@ def fetch_product_details_many(
                 if data.get("wait_seconds", wait_time) > 0:
                     driver.sleep(data.get("wait_seconds", wait_time))
                 _dismiss_canada_prompt(driver.run_js, driver.sleep, url=seed_url, logger=logger, attempts=1)
+                concurrency = int(data.get("concurrency") or os.getenv("SCRAPER_MOBILESENTRIX_BATCH_CONCURRENCY") or 6)
+                stagger_ms = int(data.get("stagger_ms") or os.getenv("SCRAPER_MOBILESENTRIX_BATCH_STAGGER_MS") or 25)
                 return driver.run_js(
                     _PRODUCT_DETAIL_BATCH_JS,
                     args={
                         "links": links,
                         "timeout": data.get("request_timeout", timeout),
                         "referrer": seed_url,
+                        "concurrency": concurrency,
+                        "stagger_ms": stagger_ms,
                     },
-                    timeout=max(20, int(data.get("request_timeout", timeout)) + 20),
                 )
             finally:
                 pass

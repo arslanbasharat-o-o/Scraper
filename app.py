@@ -720,11 +720,16 @@ def _truthy_env(name: str, default: str = '') -> bool:
 
 
 def _detail_browser_batch_size() -> int:
-    raw_value = os.getenv('SCRAPER_BOTASAURUS_BATCH_SIZE') or os.getenv('SCRAPER_DETAIL_BROWSER_BATCH_SIZE') or '64'
+    raw_value = (
+        os.getenv('SCRAPER_MOBILESENTRIX_BROWSER_BATCH_SIZE')
+        or os.getenv('SCRAPER_BOTASAURUS_BATCH_SIZE')
+        or os.getenv('SCRAPER_DETAIL_BROWSER_BATCH_SIZE')
+        or '24'
+    )
     try:
         return max(1, min(160, int(raw_value)))
     except (TypeError, ValueError):
-        return 64
+        return 24
 
 
 def _detail_browser_batch_timeout() -> int:
@@ -741,6 +746,22 @@ def _detail_browser_batch_enabled() -> bool:
 
 def _is_mobilesentrix_detail_engine(engine_type: str) -> bool:
     return str(engine_type or '').strip().lower() in {'standard', 'mobilesentrix_canada'}
+
+
+def _is_cloudflare_or_error_title(title: str | None) -> bool:
+    if not title:
+        return False
+    t = str(title).strip().lower()
+    return any(marker in t for marker in (
+        'error 1015',
+        'just a moment',
+        'attention required',
+        'cloudflare',
+        'access denied',
+        'rate limited',
+        '403 forbidden',
+        '503 service',
+    ))
 
 
 def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use_curl: bool, enrich_details: bool = True, logger=None, use_browser: bool = False, progress_callback=None, stop_check=None, session_cookies_by_engine=None):
@@ -843,16 +864,18 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         browser_succeeded = False
         status_code = 0
         detail_session = None
-        try:
-            _check_stop()
-            candidate = _do_enrich(False)
-            if candidate:
-                enriched = candidate
-        except Exception as http_exc:
-            http_error = http_exc
-            if logger:
-                logger.debug(f"[detail] HTTP enrichment skipped for {item_url}: {http_exc}")
-            enriched = item
+        direct_batch = browser_batch_enabled and _is_mobilesentrix_detail_engine(engine_type)
+        if not direct_batch:
+            try:
+                _check_stop()
+                candidate = _do_enrich(False)
+                if candidate:
+                    enriched = candidate
+            except Exception as http_exc:
+                http_error = http_exc
+                if logger:
+                    logger.debug(f"[detail] HTTP enrichment skipped for {item_url}: {http_exc}")
+                enriched = item
 
         # Every supplier keeps the fast Safari HTTP request primary. If the
         # detail response is blocked, transient, or omits the SKU, retry the
@@ -1037,7 +1060,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             enriched.url = final_url
         if host:
             enriched.site = host
-        if detail.get('title'):
+        if detail.get('title') and not _is_cloudflare_or_error_title(detail.get('title')):
             enriched.title = detail['title']
         if detail.get('image_url'):
             enriched.image_url = detail['image_url']
@@ -1070,14 +1093,15 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             'sku_browser_batch': True,
             'sku_browser_detail_batch': True,
         })
+        is_cf_block = status_code in {403, 429, 503} or _is_cloudflare_or_error_title(detail.get('title'))
         if final_sku:
-            enriched.extra.update({'sku_status': 'found', 'sku_source': 'product_detail'})
-        elif status_code == 200 or detail.get('title'):
+            enriched.extra.update({'sku': final_sku, 'sku_status': 'found', 'sku_source': 'product_detail'})
+        elif not is_cf_block and status_code == 200 and detail.get('title'):
             enriched.extra.update({'sku_status': 'not_published'})
         else:
             enriched.extra.update({
                 'sku_status': 'unresolved',
-                'sku_error': f'batched browser detail returned HTTP {status_code or "unknown"} without product detail',
+                'sku_error': f'HTTP {status_code}: {detail.get("title") or "blocked or rate limited"}' if is_cf_block else f'batched browser detail returned HTTP {status_code or "unknown"} without product detail',
             })
         return asdict(enriched)
 
@@ -1108,7 +1132,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             enriched.url = detail['url']
         if detail.get('site'):
             enriched.site = detail['site']
-        if detail.get('title'):
+        if detail.get('title') and not _is_cloudflare_or_error_title(detail.get('title')):
             enriched.title = detail['title']
         if detail.get('image_url'):
             enriched.image_url = detail['image_url']
@@ -1140,14 +1164,15 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             'sku_browser_fallback': True,
             'sku_browser_batch': True,
         })
+        is_cf_block = status_code in {403, 429, 503} or _is_cloudflare_or_error_title(detail.get('title'))
         if final_sku:
-            enriched.extra.update({'sku_status': 'found', 'sku_source': 'product_detail'})
-        elif status_code == 200 or detail.get('title'):
+            enriched.extra.update({'sku': final_sku, 'sku_status': 'found', 'sku_source': 'product_detail'})
+        elif not is_cf_block and status_code == 200 and detail.get('title'):
             enriched.extra.update({'sku_status': 'not_published'})
         else:
             enriched.extra.update({
                 'sku_status': 'unresolved',
-                'sku_error': f'batched browser fetch returned HTTP {status_code or "unknown"} without product detail',
+                'sku_error': f'HTTP {status_code}: {detail.get("title") or "blocked or rate limited"}' if is_cf_block else f'batched browser fetch returned HTTP {status_code or "unknown"} without product detail',
             })
         return asdict(enriched)
 

@@ -150,11 +150,24 @@ def resume_run(run_id: int) -> int:
     progress_write_state: Dict[str, object] = {}
     progress_summary_cache: Dict[str, object] = dict(original_summary)
 
+    pending_checkpoints: list[tuple[dict, str]] = []
+    last_checkpoint_flush = [time.time()]
+
+    def _flush_checkpoints(force: bool = False) -> None:
+        now = time.time()
+        if pending_checkpoints and (force or len(pending_checkpoints) >= 20 or now - last_checkpoint_flush[0] >= 1.5):
+            batch = list(pending_checkpoints)
+            pending_checkpoints.clear()
+            last_checkpoint_flush[0] = now
+            db_manager.save_automation_run_product_details_batch(run_id, batch)
+
     def progress_callback(progress: Dict[str, object]):
         automation_stop_check()
         enriched_checkpoint = progress.get("enriched_item")
         if isinstance(enriched_checkpoint, dict):
-            db_manager.save_automation_run_product_detail(run_id, enriched_checkpoint)
+            checkpoint_url = str(progress.get("last_item_url") or "").strip()
+            pending_checkpoints.append((enriched_checkpoint, checkpoint_url))
+            _flush_checkpoints(force=False)
         now = time.time()
         current_phase = int(progress.get("phase") or (2 if progress.get("phase2_total") else 1))
         total_targets_local = max(1, total_target_count)
@@ -296,11 +309,14 @@ def resume_run(run_id: int) -> int:
             initial_items=base_preview_items if resume_from_checkpoint else None,
             skip_target_urls=completed_target_urls if resume_from_checkpoint else None,
         )
+        _flush_checkpoints(force=True)
     except AutomationRunPaused as exc:
+        _flush_checkpoints(force=True)
         db_manager.pause_automation_run(run_id, reason=str(exc) or "Automation run paused.")
         db_manager.close_connection()
         return 0
     except Exception as exc:
+        _flush_checkpoints(force=True)
         error_text = str(exc) or "Automation run failed before completion."
         partial_history_id, partial_count, partial_summary = save_automation_partial_history(
             run_id,

@@ -38,6 +38,7 @@ env/
 *.sqlite
 *.sqlite3
 mobilesentrix.db
+data/backup_*.json
 
 # IDE
 .vscode/

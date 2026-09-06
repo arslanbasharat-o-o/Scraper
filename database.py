@@ -1782,6 +1782,68 @@ class DatabaseManager:
             print(f"Error saving automation product detail checkpoint: {e}")
             return False
 
+    def save_automation_run_product_details_batch(
+        self,
+        run_id: int,
+        items_with_urls: list[tuple[Dict[str, Any], str | None]] | list[Dict[str, Any]],
+    ) -> int:
+        """Checkpoint a batch of enriched products in a single SQLite transaction."""
+        if not items_with_urls:
+            return 0
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return 0
+
+        rows = []
+        now_str = get_pakistan_time().isoformat()
+        for entry in items_with_urls:
+            if isinstance(entry, tuple):
+                item = entry[0]
+                checkpoint_url = entry[1] if len(entry) > 1 else None
+            elif isinstance(entry, dict):
+                item = entry
+                checkpoint_url = None
+            else:
+                continue
+
+            if not isinstance(item, dict):
+                continue
+
+            product_url = str(checkpoint_url or item.get('url') or '').strip()
+            product_url_key = self._normalize_automation_url(product_url)
+            if not product_url_key:
+                continue
+
+            rows.append((
+                normalized_run_id,
+                product_url,
+                product_url_key,
+                json.dumps(item, ensure_ascii=True, separators=(',', ':')),
+                now_str,
+            ))
+
+        if not rows:
+            return 0
+
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.executemany('''
+                INSERT INTO automation_run_product_details (
+                    run_id, product_url, product_url_key, item_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(run_id, product_url_key) DO UPDATE SET
+                    product_url = excluded.product_url,
+                    item_json = excluded.item_json,
+                    updated_at = excluded.updated_at
+            ''', rows)
+            conn.commit()
+            return len(rows)
+        except Exception as e:
+            print(f"Error saving automation product detail checkpoint batch: {e}")
+            return 0
+
     def get_automation_run_product_details(self, run_id: int) -> Dict[str, Dict[str, Any]]:
         """Return detail checkpoints keyed by normalized product URL."""
         try:
