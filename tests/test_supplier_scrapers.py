@@ -4,14 +4,22 @@ from types import SimpleNamespace
 from scrapers import gadgetfix_scraper_engine, phonelcdparts_scraper_engine, txparts_scraper_engine
 from scrapers.gadgetfix_scraper_engine import (
     extract_items_from_soup as extract_gadgetfix_items,
+    parse_gadgetfix_product_detail_fast,
     scrape_product_page as scrape_gadgetfix_product_page,
 )
-from scrapers.phonelcdparts_scraper_engine import extract_items_from_soup as extract_phonelcd_items
+from scrapers.phonelcdparts_scraper_engine import (
+    extract_items_from_soup as extract_phonelcd_items,
+    parse_phonelcd_product_detail_fast,
+)
 from scrapers.phonelcdparts_scraper_engine import _looks_like_block_page as phonelcd_looks_blocked
 from scrapers.phonelcdparts_scraper_engine import is_category_page as is_phonelcd_category_page
 from scrapers.phonelcdparts_scraper_engine import is_product_page as is_phonelcd_product_page
 from scrapers.phonelcdparts_scraper_engine import scrape_product_page as scrape_phonelcd_product_page
-from scrapers.txparts_scraper_engine import _looks_like_block_page as txparts_looks_blocked
+from scrapers.txparts_scraper_engine import (
+    _looks_like_block_page as txparts_looks_blocked,
+    parse_txparts_product_detail_fast,
+)
+from scrapers.parts4cells_scraper_engine import parse_parts4cells_product_detail_fast
 from scrapers.xcell_scraper_engine import (
     extract_items_from_category_soup as extract_xcell_items,
     parse_xcell_product_detail_fast,
@@ -238,6 +246,98 @@ def test_xcellparts_fast_detail_parser_extracts_required_metadata_without_dom():
     assert item.stock_status == "12 in stock"
     assert item.description == "Bright OLED panel with frame."
     assert item.image_url.endswith("/uploads/iphone-15.jpg")
+
+
+def test_txparts_fast_detail_parser_extracts_required_metadata_without_dom():
+    html = """
+    <html><head>
+      <link rel="canonical" href="https://txparts.com/product/iphone-13-screen">
+      <meta property="og:image" content="https://admin.txparts.com/assets/products/screen.jpg">
+    </head><body>
+      <h1 class="product_title">iPhone 13 Screen Replacement</h1>
+      <div class="badge-sku"><span>SKU:</span><span>TX-IP13-SCR</span></div>
+      <div class="price-box" data-default-price='{"price":"45.50"}'></div>
+      <span class="stock">In Stock</span>
+      <div class="product-detail-desc-content"><p>Crisp OLED panel.</p></div>
+    </body></html>
+    """
+    item = parse_txparts_product_detail_fast(html, "https://txparts.com/product/iphone-13-screen", {})
+    assert item is not None
+    assert item.title == "iPhone 13 Screen Replacement"
+    assert item.sku == "TX-IP13-SCR"
+    assert item.original == 45.50
+    assert item.stock_status == "In Stock"
+    assert item.description == "Crisp OLED panel."
+    assert item.image_url.endswith("/screen.jpg")
+
+
+def test_parts4cells_fast_detail_parser_extracts_required_metadata_without_dom():
+    html = """
+    <html><head>
+      <link rel="canonical" href="https://parts4cells.com/products/iphone-14-battery.html">
+      <meta property="og:image" content="https://parts4cells.com/media/catalog/product/bat.jpg">
+    </head><body>
+      <h1 class="page-title"><span class="base">iPhone 14 High Capacity Battery</span></h1>
+      <div class="product attribute sku"><div class="value">P4C-IP14-BAT</div></div>
+      <span class="price-final_price" data-price-amount="18.75"></span>
+      <div class="product-info-stock-sku"><span class="stock">In Stock</span></div>
+      <div id="description">High cycle life replacement battery.</div>
+    </body></html>
+    """
+    item = parse_parts4cells_product_detail_fast(html, "https://parts4cells.com/products/iphone-14-battery.html", {})
+    assert item is not None
+    assert item.title == "iPhone 14 High Capacity Battery"
+    assert item.sku == "P4C-IP14-BAT"
+    assert item.original == 18.75
+    assert item.stock_status == "In Stock"
+    assert item.description == "High cycle life replacement battery."
+    assert item.image_url.endswith("/bat.jpg")
+
+
+def test_phonelcdparts_fast_detail_parser_extracts_required_metadata_without_dom():
+    html = """
+    <html><head>
+      <link rel="canonical" href="https://www.phonelcdparts.com/iphone-15-screen">
+      <meta property="product:price:amount" content="29.99">
+      <meta property="og:image" content="https://www.phonelcdparts.com/media/screen.jpg">
+    </head><body>
+      <h1 class="page-title"><span class="base">iPhone 15 Display Glass</span></h1>
+      <form id="product_addtocart_form" data-sku="PLCD-IP15-GLS"></form>
+      <div class="product-info-stock-sku"><span class="stock">In Stock</span></div>
+      <div id="description">Scratch-resistant front glass replacement.</div>
+    </body></html>
+    """
+    item = parse_phonelcd_product_detail_fast(html, "https://www.phonelcdparts.com/iphone-15-screen", {})
+    assert item is not None
+    assert item.title == "iPhone 15 Display Glass"
+    assert item.sku == "PLCD-IP15-GLS"
+    assert item.original == 29.99
+    assert item.stock_status == "In Stock"
+    assert item.description == "Scratch-resistant front glass replacement."
+    assert item.image_url.endswith("/screen.jpg")
+
+
+def test_gadgetfix_fast_detail_parser_extracts_required_metadata_without_dom():
+    html = """
+    <html><head>
+      <link rel="canonical" href="https://gadgetfix.com/charge-port-889.html">
+      <meta property="og:image" content="https://gadgetfix.com/images/port.jpg">
+    </head><body>
+      <h1>OEM Charging Port Flex for iPhone 12</h1>
+      <p>Item: GF-IP12-PORT Condition: New Availability: In Stock Brand: Apple</p>
+      <p>Price: $5.99</p>
+      <p>Compatible with: iPhone 12</p>
+      <p>What you get: 1 x charging flex</p>
+    </body></html>
+    """
+    item = parse_gadgetfix_product_detail_fast(html, "https://gadgetfix.com/charge-port-889.html", {})
+    assert item is not None
+    assert item.title == "OEM Charging Port Flex for iPhone 12"
+    assert item.sku == "GF-IP12-PORT"
+    assert item.original == 5.99
+    assert item.stock_status == "In Stock"
+    assert item.image_url.endswith("/port.jpg")
+    assert "Compatible with: iPhone 12" in item.description
 
 
 def test_phonelcdparts_hyva_listing_card_extracts_product_fields():

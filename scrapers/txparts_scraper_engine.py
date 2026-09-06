@@ -10,6 +10,7 @@ Author: Arslan
 Created for: TXParts
 """
 
+import html as html_lib
 import requests
 import re
 import json
@@ -308,11 +309,168 @@ def extract_canonical_url(soup: BeautifulSoup, fallback: str) -> str:
     return fallback
 
 
+def parse_txparts_product_detail_fast(html: str, url: str, rules: dict | None = None) -> Optional[Item]:
+    """Extract TXParts detail fields without building a full 5MB DOM."""
+    if not html:
+        return None
+
+    def text_from_fragment(fragment: str) -> str:
+        return clean_text(html_lib.unescape(re.sub(r'<[^>]+>', ' ', fragment or '')))
+
+    def first_match(patterns, *, flags=re.I | re.S) -> str:
+        for pattern in patterns:
+            match = re.search(pattern, html, flags)
+            if match and match.group(1):
+                return clean_text(html_lib.unescape(match.group(1)))
+        return ''
+
+    # 1. Title
+    title_fragment = first_match([
+        r'<h1[^>]*class=["\'][^"\']*(?:product_title|entry-title)[^"\']*["\'][^>]*>(.*?)</h1>',
+        r'<h1[^>]*>(.*?)</h1>',
+    ])
+    title = text_from_fragment(title_fragment)
+    if not title:
+        title = first_match([r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']'])
+    if not title:
+        return None
+
+    # 2. SKU
+    sku = ''
+    badge_match = re.search(r'class=["\'][^"\']*badge-sku[^"\']*["\'][^>]*>(.*?)</div>', html, re.I | re.S)
+    if badge_match:
+        spans = re.findall(r'<span[^>]*>(.*?)</span>', badge_match.group(1), re.I | re.S)
+        if spans:
+            sku = clean_sku(text_from_fragment(spans[-1]))
+    if not sku:
+        sku = first_match([
+            r'class=["\'][^"\']*(?:product_meta.*?sku_wrapper.*?sku|sku)[^"\']*["\'][^>]*>(.*?)<',
+            r'[itemprop=["\']sku["\'][^>]*content=["\']([^"\']+)["\']',
+            r'[itemprop=["\']sku["\'][^>]*>(.*?)<',
+            r'data-product-sku=["\']([^"\']+)["\']',
+            r'data-product_sku=["\']([^"\']+)["\']',
+        ])
+        sku = clean_sku(sku)
+    if not sku:
+        jsonld_matches = re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.I | re.S)
+        for blob in jsonld_matches:
+            try:
+                data = json.loads(blob.strip())
+                items_to_check = []
+                if isinstance(data, dict):
+                    if '@graph' in data and isinstance(data['@graph'], list):
+                        items_to_check.extend(data['@graph'])
+                    else:
+                        items_to_check.append(data)
+                elif isinstance(data, list):
+                    items_to_check.extend(data)
+                for obj in items_to_check:
+                    if isinstance(obj, dict) and obj.get('sku'):
+                        sku = clean_sku(str(obj['sku']))
+                        if sku:
+                            break
+            except Exception:
+                pass
+            if sku:
+                break
+    if not sku:
+        sku_txt_match = re.search(r'\bSKU\b\s*[:#-]?\s*([A-Za-z0-9._/-]{3,})', html, re.I)
+        if sku_txt_match:
+            sku = clean_sku(sku_txt_match.group(1))
+
+    canonical = first_match([
+        r'<link[^>]+rel=["\'][^"\']*canonical[^"\']*["\'][^>]+href=["\']([^"\']+)["\']',
+        r'<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\'][^"\']*canonical[^"\']*["\']',
+        r'<meta[^>]+property=["\']og:url["\'][^>]+content=["\']([^"\']+)["\']',
+    ]) or url
+
+    site = "txpartscanada.ca" if "txpartscanada.ca" in url.lower() else "txparts.com"
+    item = Item(site=site, url=canonical, title=title, sku=sku)
+
+    # 3. Price
+    price_box_match = re.search(r'data-default-price=(["\'])(.*?)\1', html, re.S)
+    price_val = 0.0
+    if price_box_match:
+        try:
+            raw = price_box_match.group(2).replace('&quot;', '"')
+            parsed = json.loads(raw)
+            price_val = parse_price_number(str(parsed.get('price') or ''))
+        except Exception:
+            pass
+    if price_val <= 0:
+        price_val = parse_price_number(first_match([
+            r'data-price-amount=["\']([^"\']+)["\']',
+            r'class=["\'][^"\']*getFormattedPrice[^"\']*["\'][^>]*>(.*?)<',
+            r'class=["\'][^"\']*woocommerce-Price-amount[^"\']*["\'][^>]*>(.*?)<',
+        ]))
+    if price_val <= 0:
+        price_bdi = first_match([r'<bdi[^>]*>(.*?)</bdi>'])
+        price_val = parse_price_number(text_from_fragment(price_bdi))
+
+    if price_val > 0:
+        item.original = price_val
+        item.discounted = price_val
+        item.original_formatted = fmt_price(price_val)
+        item.discounted_formatted = fmt_price(price_val)
+
+    # 4. Image
+    item.image_url = first_match([
+        r'data-zoom=["\']([^"\']+)["\']',
+        r'class=["\'][^"\']*wp-post-image[^"\']*["\'][^>]+(?:src|data-src)=["\']([^"\']+)["\']',
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'class=["\'][^"\']*product-detail-gallery[^"\']*["\'][^>]*>.*?<img[^>]+src=["\']([^"\']+)["\']',
+    ])
+    if item.image_url:
+        item.image_url = urljoin(url, item.image_url)
+
+    # 5. Stock status
+    stock_fragment = first_match([
+        r'class=["\'][^"\']*stock[^"\']*["\'][^>]*>(.*?)</(?:p|div|span)>',
+        r'class=["\'][^"\']*availability[^"\']*["\'][^>]*>(.*?)</(?:p|div|span)>',
+    ])
+    stock_text = text_from_fragment(stock_fragment)
+    if stock_text:
+        item.stock_status = stock_text
+    elif 'out-stock-btn' in html or 'outofstock' in html.lower() or 'out-of-stock' in html.lower():
+        item.stock_status = 'Out of Stock'
+
+    # 6. Description
+    desc_fragment = first_match([
+        r'class=["\'][^"\']*product-detail-desc-content[^"\']*["\'][^>]*>(.*?)</div>',
+        r'class=["\'][^"\']*woocommerce-product-details__short-description[^"\']*["\'][^>]*>(.*?)</div>',
+        r'id=["\']tab-description["\'][^>]*>(.*?)</(?:div|section)>',
+    ])
+    item.description = text_from_fragment(desc_fragment)
+    if not item.description:
+        item.description = first_match([
+            r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']',
+        ])
+
+    adjusted_price = apply_price_rules(item.original, rules or {})
+    if adjusted_price != round(float(item.original or 0.0), 2):
+        item.discounted = adjusted_price
+        item.discounted_formatted = fmt_price(adjusted_price)
+
+    item.extra.update({
+        'sku': item.sku,
+        'stock_status': item.stock_status,
+        'description': item.description,
+    })
+    return item
+
+
 def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional[Item]:
     """Scrape a TXParts product detail page."""
     html = get_html(session, url)
     if not html:
         return None
+
+    fast_item = parse_txparts_product_detail_fast(html, url, rules)
+    if fast_item and fast_item.title and fast_item.sku:
+        if logger:
+            logger.debug(f"[txparts] Fast enriched detail page: {fast_item.url}")
+        return fast_item
 
     soup = BeautifulSoup(html, 'lxml')
     item = Item(site="txparts.com", url=extract_canonical_url(soup, url))

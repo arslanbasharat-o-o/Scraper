@@ -4,6 +4,8 @@ from __future__ import annotations
 import threading
 _CURL_LOCK = threading.Lock()
 
+import html as html_lib
+import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -349,10 +351,134 @@ def scrape_category_all_pages(session, url: str, rules: dict, max_pages: int = 2
     return list(items_by_url.values())
 
 
+def parse_gadgetfix_product_detail_fast(html: str, url: str, rules: dict | None = None) -> Optional[Item]:
+    """Extract GadgetFix product detail metadata without BeautifulSoup."""
+    if not html:
+        return None
+
+    def text_from_fragment(fragment: str) -> str:
+        return clean_text(html_lib.unescape(re.sub(r'<[^>]+>', ' ', fragment or '')))
+
+    def first_match(patterns, *, flags=re.I | re.S) -> str:
+        for pattern in patterns:
+            match = re.search(pattern, html, flags)
+            if match and match.group(1):
+                return clean_text(html_lib.unescape(match.group(1)))
+        return ''
+
+    # 1. Title
+    title = ''
+    h1_matches = re.findall(r'<h1[^>]*>(.*?)</h1>', html, re.I | re.S)
+    for h1 in h1_matches:
+        t = text_from_fragment(h1)
+        if t:
+            title = t
+            break
+    if not title:
+        title = first_match([r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']'])
+    if not title:
+        h2_matches = re.findall(r'<h2[^>]*>(.*?)</h2>', html, re.I | re.S)
+        for h2 in h2_matches:
+            t = text_from_fragment(h2)
+            if t:
+                title = t
+                break
+    if not title:
+        return None
+
+    canonical = first_match([
+        r'<link[^>]+rel=["\'][^"\']*canonical[^"\']*["\'][^>]+href=["\']([^"\']+)["\']',
+        r'<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\'][^"\']*canonical[^"\']*["\']',
+        r'<meta[^>]+property=["\']og:url["\'][^>]+content=["\']([^"\']+)["\']',
+    ]) or url
+
+    item = Item(title=title, url=normalize_gadgetfix_url(canonical))
+
+    # 2. Image
+    item.image_url = first_match([
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'class=["\'][^"\']*product[^"\']*["\'][^>]*>.*?<img[^>]+src=["\']([^"\']+)["\']',
+        r'<img[^>]+itemprop=["\']image["\'][^>]+src=["\']([^"\']+)["\']',
+        r'<img[^>]+src=["\']([^"\']+)["\']',
+    ])
+    if item.image_url:
+        item.image_url = urljoin(url, item.image_url)
+
+    # 3. Price
+    price_val = parse_price_number(first_match([
+        r'itemprop=["\']price["\'][^>]+content=["\']([^"\']+)["\']',
+        r'class=["\'][^"\']*price[^"\']*["\'][^>]*>(.*?)<',
+        r'Price:\s*(\$?\s*[0-9]+(?:\.[0-9]{1,2})?)',
+    ]))
+    if price_val > 0:
+        item.original = price_val
+        item.discounted = apply_price_rules(price_val, rules)
+        item.original_formatted = fmt_price(price_val)
+        item.discounted_formatted = fmt_price(item.discounted)
+
+    # 4. SKU & Stock & Description
+    page_text = text_from_fragment(html)
+    sku_match = re.search(r'\bItem:\s*([A-Za-z0-9._/-]+)', page_text, re.I)
+    if sku_match:
+        item.sku = clean_sku(sku_match.group(1))
+    if not item.sku:
+        jsonld_matches = re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.I | re.S)
+        for blob in jsonld_matches:
+            try:
+                data = json.loads(blob.strip())
+                items_to_check = []
+                if isinstance(data, dict):
+                    if '@graph' in data and isinstance(data['@graph'], list):
+                        items_to_check.extend(data['@graph'])
+                    else:
+                        items_to_check.append(data)
+                elif isinstance(data, list):
+                    items_to_check.extend(data)
+                for obj in items_to_check:
+                    if isinstance(obj, dict) and obj.get('sku'):
+                        item.sku = clean_sku(str(obj['sku']))
+                        if item.sku:
+                            break
+            except Exception:
+                pass
+            if item.sku:
+                break
+
+    stock_match = re.search(r'\bAvailability:\s*([^:]+?)(?:\s+Brand:|\s+Compatible with:|\s+What you get:|$)', page_text, re.I)
+    if stock_match:
+        item.stock_status = clean_text(stock_match.group(1))
+    elif 'out of stock' in page_text.lower():
+        item.stock_status = 'Out of Stock'
+
+    description_parts = []
+    for label in ('Compatible with:', 'What you get:'):
+        idx = page_text.lower().find(label.lower())
+        if idx >= 0:
+            description_parts.append(page_text[idx:idx + 300])
+    meta_desc = first_match([r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']'])
+    if meta_desc:
+        description_parts.append(strip_markup(meta_desc))
+    item.description = clean_text(' '.join(dict.fromkeys(description_parts)))
+
+    item.extra.update({
+        'sku': item.sku,
+        'stock_status': item.stock_status,
+        'description': item.description,
+    })
+    return item
+
+
 def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional[Item]:
     html = get_html(session, url, logger)
     if not html:
         return None
+
+    fast_item = parse_gadgetfix_product_detail_fast(html, url, rules)
+    if fast_item and fast_item.title and fast_item.sku:
+        if logger:
+            logger.debug(f"[gadgetfix] Fast enriched detail page: {fast_item.url}")
+        return fast_item
+
     soup = BeautifulSoup(html, 'html.parser')
 
     title = ''

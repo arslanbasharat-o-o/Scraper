@@ -4,6 +4,8 @@ from __future__ import annotations
 import threading
 _CURL_LOCK = threading.Lock()
 
+import html as html_lib
+import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -409,10 +411,149 @@ def scrape_category_all_pages(session, url: str, rules: dict, max_pages: int = 2
     return list(items_by_url.values())
 
 
+def parse_phonelcd_product_detail_fast(html: str, url: str, rules: dict | None = None) -> Optional[Item]:
+    """Extract PhoneLCDParts detail metadata via fast regex without DOM parsing."""
+    if not html:
+        return None
+
+    def text_from_fragment(fragment: str) -> str:
+        return clean_text(html_lib.unescape(re.sub(r'<[^>]+>', ' ', fragment or '')))
+
+    def first_match(patterns, *, flags=re.I | re.S) -> str:
+        for pattern in patterns:
+            match = re.search(pattern, html, flags)
+            if match and match.group(1):
+                return clean_text(html_lib.unescape(match.group(1)))
+        return ''
+
+    # 1. Title
+    title_fragment = first_match([
+        r'<h1[^>]*class=["\'][^"\']*page-title[^"\']*["\'][^>]*>\s*<span[^>]*class=["\'][^"\']*base[^"\']*["\'][^>]*>(.*?)</span>\s*</h1>',
+        r'<span[^>]*data-ui-id=["\']page-title-wrapper["\'][^>]*>(.*?)</span>',
+        r'<h1[^>]*class=["\'][^"\']*page-title[^"\']*["\'][^>]*>(.*?)</h1>',
+        r'<h1[^>]*>(.*?)</h1>',
+    ])
+    title = text_from_fragment(title_fragment)
+    if not title:
+        title = first_match([r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']'])
+    if not title:
+        return None
+
+    # 2. SKU
+    sku = first_match([
+        r'<form[^>]*id=["\']product_addtocart_form["\'][^>]*data-sku=["\']([^"\']+)["\']',
+        r'<form[^>]*data-sku=["\']([^"\']+)["\'][^>]*id=["\']product_addtocart_form["\']',
+        r'<dt[^>]*class=["\'][^"\']*product-detail-label[^"\']*["\'][^>]*>\s*SKU\s*:?\s*</dt>\s*<dd[^>]*class=["\'][^"\']*product-detail-value[^"\']*["\'][^>]*>(.*?)</dd>',
+        r'class=["\'][^"\']*product\s+attribute\s+sku[^"\']*["\'][^>]*>.*?class=["\'][^"\']*value[^"\']*["\'][^>]*>(.*?)<',
+        r'class=["\'][^"\']*product-info-stock-sku[^"\']*["\'][^>]*>.*?class=["\'][^"\']*sku[^"\']*["\'][^>]*>.*?class=["\'][^"\']*value[^"\']*["\'][^>]*>(.*?)<',
+        r'[itemprop=["\']sku["\'][^>]*content=["\']([^"\']+)["\']',
+        r'[itemprop=["\']sku["\'][^>]*>(.*?)<',
+    ])
+    sku = clean_sku(sku)
+    if not sku:
+        jsonld_matches = re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.I | re.S)
+        for blob in jsonld_matches:
+            try:
+                data = json.loads(blob.strip())
+                items_to_check = []
+                if isinstance(data, dict):
+                    if '@graph' in data and isinstance(data['@graph'], list):
+                        items_to_check.extend(data['@graph'])
+                    else:
+                        items_to_check.append(data)
+                elif isinstance(data, list):
+                    items_to_check.extend(data)
+                for obj in items_to_check:
+                    if isinstance(obj, dict) and obj.get('sku'):
+                        sku = clean_sku(str(obj['sku']))
+                        if sku:
+                            break
+            except Exception:
+                pass
+            if sku:
+                break
+    if not sku:
+        sku_holder = first_match([
+            r'<form[^>]*data-sku=["\']([^"\']+)["\'](?![^>]*class=["\'][^"\']*product-item)',
+        ])
+        if sku_holder:
+            sku = clean_sku(sku_holder)
+
+    canonical = first_match([
+        r'<link[^>]+rel=["\'][^"\']*canonical[^"\']*["\'][^>]+href=["\']([^"\']+)["\']',
+        r'<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\'][^"\']*canonical[^"\']*["\']',
+        r'<meta[^>]+property=["\']og:url["\'][^>]+content=["\']([^"\']+)["\']',
+    ]) or url
+
+    item = Item(site='phonelcdparts.com', url=canonical, title=title, sku=sku)
+
+    # 3. Price
+    price_val = parse_price(first_match([
+        r'<meta[^>]+property=["\']product:price:amount["\'][^>]+content=["\']([^"\']+)["\']',
+        r'data-price-type=["\']finalPrice["\'][^>]*data-price-amount=["\']([^"\']+)["\']',
+        r'data-price-amount=["\']([^"\']+)["\']',
+    ]))
+    if price_val <= 0:
+        price_bdi = first_match([r'<span[^>]*class=["\'][^"\']*price[^"\']*["\'][^>]*>(.*?)</span>'])
+        price_val = parse_price(text_from_fragment(price_bdi))
+
+    if price_val > 0:
+        item.original = price_val
+        item.discounted = apply_price_rules(price_val, rules)
+        item.original_formatted = fmt_price(price_val)
+        item.discounted_formatted = fmt_price(item.discounted)
+
+    # 4. Image
+    item.image_url = first_match([
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'class=["\'][^"\']*gallery-placeholder[^"\']*["\'][^>]*>.*?<img[^>]+src=["\']([^"\']+)["\']',
+        r'class=["\'][^"\']*product\s+media[^"\']*["\'][^>]*>.*?<img[^>]+src=["\']([^"\']+)["\']',
+    ])
+    if item.image_url:
+        item.image_url = urljoin(url, item.image_url)
+
+    # 5. Stock
+    stock_fragment = first_match([
+        r'class=["\'][^"\']*product-info-stock-sku[^"\']*["\'][^>]*>.*?class=["\'][^"\']*stock[^"\']*["\'][^>]*>(.*?)</(?:p|div|span)>',
+        r'class=["\'][^"\']*stock\s+(?:available|unavailable)[^"\']*["\'][^>]*>(.*?)</(?:p|div|span)>',
+    ])
+    stock_text = text_from_fragment(stock_fragment)
+    if stock_text:
+        item.stock_status = stock_text
+    elif 'outofstock' in html.lower() or 'out-of-stock' in html.lower():
+        item.stock_status = 'Out of Stock'
+
+    # 6. Description
+    desc_fragment = first_match([
+        r'id=["\']description["\'][^>]*>(.*?)</div>',
+        r'class=["\'][^"\']*product\s+attribute\s+description[^"\']*["\'][^>]*>.*?class=["\'][^"\']*value[^"\']*["\'][^>]*>(.*?)</div>',
+        r'class=["\'][^"\']*product\s+attribute\s+overview[^"\']*["\'][^>]*>.*?class=["\'][^"\']*value[^"\']*["\'][^>]*>(.*?)</div>',
+    ])
+    item.description = text_from_fragment(desc_fragment)
+    if not item.description:
+        item.description = first_match([
+            r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
+        ])
+
+    item.extra.update({
+        'sku': item.sku,
+        'stock_status': item.stock_status,
+        'description': item.description,
+    })
+    return item
+
+
 def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional[Item]:
     html = get_html(session, url, logger)
     if not html:
         return None
+
+    fast_item = parse_phonelcd_product_detail_fast(html, url, rules)
+    if fast_item and fast_item.title and fast_item.sku:
+        if logger:
+            logger.debug(f"[phonelcdparts] Fast enriched detail page: {fast_item.url}")
+        return fast_item
+
     soup = BeautifulSoup(html, 'html.parser')
     item = Item(url=extract_canonical_url(soup, url))
 

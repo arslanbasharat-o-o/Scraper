@@ -117,7 +117,7 @@ SCRAPER_PHASE1_WORKER_DEFAULTS = {
 }
 SCRAPER_DETAIL_WORKER_DEFAULTS = {
     'xcell': 64,
-    'txparts': 16,
+    'txparts': 32,
     'parts4cells': 32,
     'phonelcdparts': 40,
     'gadgetfix': 24,
@@ -870,9 +870,6 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             stop_check()
 
     def get_thread_session(engine_type: str):
-        if engine_type == 'parts4cells':
-            return None
-
         sessions = getattr(thread_state, 'sessions', None)
         if sessions is None:
             sessions = {}
@@ -885,6 +882,8 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             session, _ = xcell_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
         elif engine_type == 'txparts':
             session, _ = txparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
+        elif engine_type == 'parts4cells':
+            session, _ = parts4cells_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
         elif engine_type == 'phonelcdparts':
             session, _ = phonelcdparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
         elif engine_type == 'gadgetfix':
@@ -913,7 +912,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 elif engine_type == 'txparts':
                     return txparts_scraper_engine.enrich_item_details(get_thread_session(engine_type), item, rules, logger)
                 elif engine_type == 'parts4cells':
-                    return parts4cells_scraper_engine.enrich_item_details(None, item, rules, logger)
+                    return parts4cells_scraper_engine.enrich_item_details(get_thread_session(engine_type), item, rules, logger)
                 elif engine_type == 'phonelcdparts':
                     return phonelcdparts_scraper_engine.enrich_item_details(get_thread_session(engine_type), item, rules, logger)
                 elif engine_type == 'gadgetfix':
@@ -5364,35 +5363,41 @@ def api_resume_automation_run(run_id):
 @require_login
 def api_automation_run_detail(run_id):
     try:
-        include_items_arg = request.args.get('include_items')
-        items_limit_arg = request.args.get('limit') or request.args.get('items_limit')
-        cache_key = (run_id, include_items_arg, items_limit_arg)
-
-        global _RUN_DETAIL_CACHE
-        if '_RUN_DETAIL_CACHE' not in globals():
-            _RUN_DETAIL_CACHE = {}
-        cached_payload = _RUN_DETAIL_CACHE.get(cache_key)
-        if cached_payload is not None:
-            return jsonify(cached_payload)
-
-        safe_inc = 'noitems' if include_items_arg in {'0', 'false', 'no'} else 'items'
-        safe_lim = f"lim_{items_limit_arg}" if items_limit_arg else "nolim"
-        run_meta_file = os.path.join(RUN_CACHE_DIR, f"run_{run_id}_detail_{safe_inc}_{safe_lim}.json")
-        if os.path.isfile(run_meta_file):
-            try:
-                with open(run_meta_file, 'r', encoding='utf-8') as rf:
-                    disk_payload = json.load(rf)
-                _RUN_DETAIL_CACHE[cache_key] = disk_payload
-                return jsonify(disk_payload)
-            except Exception:
-                pass
-
         run = db_manager.get_automation_run(run_id)
         if not run:
             return jsonify({'error': 'Automation run not found.'}), 404
 
         if str(run.get('status') or '').strip().lower() == 'interrupted' and _resume_worker_is_locked(run_id):
             run = db_manager.restore_automation_run_for_active_worker(run_id) or run
+
+        include_items_arg = request.args.get('include_items')
+        items_limit_arg = request.args.get('limit') or request.args.get('items_limit')
+        cache_key = (run_id, str(run.get('current_history_id') or ''), str(run.get('ended_at') or ''), include_items_arg, items_limit_arg)
+
+        is_terminal = str(run.get('status') or '').strip().lower() in {'completed', 'failed', 'cancelled'}
+        global _RUN_DETAIL_CACHE
+        if '_RUN_DETAIL_CACHE' not in globals():
+            _RUN_DETAIL_CACHE = {}
+
+        safe_inc = 'noitems' if include_items_arg in {'0', 'false', 'no'} else 'items'
+        safe_lim = f"lim_{items_limit_arg}" if items_limit_arg else "nolim"
+        run_meta_file = os.path.join(RUN_CACHE_DIR, f"run_{run_id}_detail_{safe_inc}_{safe_lim}.json")
+
+        if is_terminal:
+            cached_payload = _RUN_DETAIL_CACHE.get(cache_key)
+            if cached_payload is not None:
+                return jsonify(cached_payload)
+
+            if os.path.isfile(run_meta_file):
+                try:
+                    with open(run_meta_file, 'r', encoding='utf-8') as rf:
+                        disk_payload = json.load(rf)
+                    cached_run = disk_payload.get('run', {})
+                    if str(cached_run.get('current_history_id') or '') == str(run.get('current_history_id') or '') and str(cached_run.get('ended_at') or '') == str(run.get('ended_at') or ''):
+                        _RUN_DETAIL_CACHE[cache_key] = disk_payload
+                        return jsonify(disk_payload)
+                except Exception:
+                    pass
 
         curr_hid = str(run.get('current_history_id') or '')
         prev_hid = str(run.get('previous_history_id') or '')

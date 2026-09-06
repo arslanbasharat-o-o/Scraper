@@ -10,7 +10,10 @@ Strategy:
   - Detect loops via seen product-URL deduplication
 """
 
+import html as html_lib
+import json
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -18,6 +21,8 @@ from urllib.parse import urljoin, urlparse, urlencode, parse_qs, urlunparse
 from .browser_fetcher import fetch_html as fetch_html_with_browser
 from .browser_fetcher import should_use_browser_fetch
 from .sku_utils import extract_jsonld_sku, clean_sku
+
+_CURL_LOCK = threading.Lock()
 
 try:
     from curl_cffi import requests as curl_req
@@ -84,8 +89,19 @@ _PLACEHOLDERS = ('placeholder', 'magento-menu-logo', 'no_selection', 'no-image',
 # ── Session / HTTP ────────────────────────────────────────────────────────────
 
 def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = True, **kwargs):
-    """Return (session_or_None, using_curl_cffi: bool)."""
-    return None, _HAS_CURL   # we use curl_cffi per-request (stateless)
+    """Return (session, using_curl_cffi: bool)."""
+    if use_curl and _HAS_CURL:
+        try:
+            with _CURL_LOCK:
+                session = curl_req.Session(impersonate="safari15_5")
+            session.verify = verify_ssl
+            return session, True
+        except Exception:
+            pass
+    import requests
+    session = requests.Session()
+    session.verify = verify_ssl
+    return session, False
 
 
 def _looks_like_block_page(html: str) -> bool:
@@ -106,7 +122,7 @@ def _looks_like_block_page(html: str) -> bool:
     ))
 
 
-def _fetch(url: str, logger=None) -> Optional[str]:
+def _fetch(url: str, session=None, logger=None) -> Optional[str]:
     """Fetch Parts4Cells HTTP-first, with the bounded browser fallback."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
@@ -116,7 +132,9 @@ def _fetch(url: str, logger=None) -> Optional[str]:
     }
     for attempt in range(3):
         try:
-            if _HAS_CURL:
+            if session is not None:
+                resp = session.get(url, headers=headers, timeout=12)
+            elif _HAS_CURL:
                 resp = curl_req.get(url, impersonate="safari15_5", headers=headers, timeout=12)
             else:
                 resp = curl_req.get(url, headers=headers, timeout=12)
@@ -178,15 +196,152 @@ def _is_product_page(soup: BeautifulSoup) -> bool:
     )
 
 
+def parse_parts4cells_product_detail_fast(html: str, url: str, rules: dict | None = None) -> Optional[Item]:
+    """Extract Parts4Cells Magento detail fields without full DOM parsing."""
+    if not html:
+        return None
+
+    def text_from_fragment(fragment: str) -> str:
+        return clean_text(html_lib.unescape(re.sub(r'<[^>]+>', ' ', fragment or '')))
+
+    def first_match(patterns, *, flags=re.I | re.S) -> str:
+        for pattern in patterns:
+            match = re.search(pattern, html, flags)
+            if match and match.group(1):
+                return clean_text(html_lib.unescape(match.group(1)))
+        return ''
+
+    # 1. Title
+    title_fragment = first_match([
+        r'<h1[^>]*class=["\'][^"\']*page-title[^"\']*["\'][^>]*>\s*<span[^>]*class=["\'][^"\']*base[^"\']*["\'][^>]*>(.*?)</span>\s*</h1>',
+        r'<span[^>]*data-ui-id=["\']page-title-wrapper["\'][^>]*>(.*?)</span>',
+        r'<h1[^>]*class=["\'][^"\']*page-title[^"\']*["\'][^>]*>(.*?)</h1>',
+        r'<h1[^>]*>(.*?)</h1>',
+    ])
+    title = text_from_fragment(title_fragment)
+    if not title:
+        title = first_match([r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']'])
+    if not title:
+        return None
+
+    # 2. SKU
+    sku = first_match([
+        r'class=["\'][^"\']*product\s+attribute\s+sku[^"\']*["\'][^>]*>.*?class=["\'][^"\']*value[^"\']*["\'][^>]*>(.*?)<',
+        r'class=["\'][^"\']*product-info-stock-sku[^"\']*["\'][^>]*>.*?class=["\'][^"\']*sku[^"\']*["\'][^>]*>.*?class=["\'][^"\']*value[^"\']*["\'][^>]*>(.*?)<',
+        r'[itemprop=["\']sku["\'][^>]*content=["\']([^"\']+)["\']',
+        r'[itemprop=["\']sku["\'][^>]*>(.*?)<',
+        r'data-product-sku=["\']([^"\']+)["\']',
+        r'data-product_sku=["\']([^"\']+)["\']',
+    ])
+    sku = clean_sku(sku)
+    if not sku:
+        jsonld_matches = re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.I | re.S)
+        for blob in jsonld_matches:
+            try:
+                data = json.loads(blob.strip())
+                items_to_check = []
+                if isinstance(data, dict):
+                    if '@graph' in data and isinstance(data['@graph'], list):
+                        items_to_check.extend(data['@graph'])
+                    else:
+                        items_to_check.append(data)
+                elif isinstance(data, list):
+                    items_to_check.extend(data)
+                for obj in items_to_check:
+                    if isinstance(obj, dict) and obj.get('sku'):
+                        sku = clean_sku(str(obj['sku']))
+                        if sku:
+                            break
+            except Exception:
+                pass
+            if sku:
+                break
+    if not sku:
+        sku_match = re.search(r'\bSKU\b\s*[:#-]?\s*([A-Za-z0-9._/-]{3,})', html, re.I)
+        if sku_match:
+            sku = clean_sku(sku_match.group(1))
+
+    canonical = first_match([
+        r'<link[^>]+rel=["\'][^"\']*canonical[^"\']*["\'][^>]+href=["\']([^"\']+)["\']',
+        r'<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\'][^"\']*canonical[^"\']*["\']',
+        r'<meta[^>]+property=["\']og:url["\'][^>]+content=["\']([^"\']+)["\']',
+    ]) or url
+
+    item = Item(site='parts4cells.com', url=canonical, title=title, sku=sku)
+
+    # 3. Price
+    price_val = parse_price(first_match([
+        r'data-price-amount=["\']([^"\']+)["\']',
+        r'class=["\'][^"\']*price-final_price[^"\']*["\'][^>]*>.*?class=["\'][^"\']*price[^"\']*["\'][^>]*>(.*?)<',
+        r'class=["\'][^"\']*price-box[^"\']*["\'][^>]*>.*?class=["\'][^"\']*price[^"\']*["\'][^>]*>(.*?)<',
+    ]))
+    if price_val <= 0:
+        price_bdi = first_match([r'<span[^>]*class=["\'][^"\']*price[^"\']*["\'][^>]*>(.*?)</span>'])
+        price_val = parse_price(text_from_fragment(price_bdi))
+
+    if price_val > 0:
+        item.original = price_val
+        item.discounted = price_val
+        item.original_formatted = fmt_price(price_val)
+        item.discounted_formatted = fmt_price(price_val)
+
+    # 4. Image
+    item.image_url = first_match([
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'class=["\'][^"\']*gallery-placeholder[^"\']*["\'][^>]*>.*?<img[^>]+src=["\']([^"\']+)["\']',
+        r'class=["\'][^"\']*fotorama__stage[^"\']*["\'][^>]*>.*?<img[^>]+src=["\']([^"\']+)["\']',
+    ])
+    if item.image_url:
+        item.image_url = urljoin(url, item.image_url)
+
+    # 5. Stock
+    stock_fragment = first_match([
+        r'class=["\'][^"\']*product-info-stock-sku[^"\']*["\'][^>]*>.*?class=["\'][^"\']*stock[^"\']*["\'][^>]*>(.*?)</(?:p|div|span)>',
+        r'class=["\'][^"\']*stock\s+(?:available|unavailable)[^"\']*["\'][^>]*>(.*?)</(?:p|div|span)>',
+    ])
+    stock_text = text_from_fragment(stock_fragment)
+    if stock_text:
+        item.stock_status = stock_text
+    elif 'outofstock' in html.lower() or 'out-of-stock' in html.lower():
+        item.stock_status = 'Out of Stock'
+
+    # 6. Description
+    desc_fragment = first_match([
+        r'id=["\']description["\'][^>]*>(.*?)</div>',
+        r'class=["\'][^"\']*product\s+attribute\s+description[^"\']*["\'][^>]*>.*?class=["\'][^"\']*value[^"\']*["\'][^>]*>(.*?)</div>',
+        r'class=["\'][^"\']*product\s+attribute\s+overview[^"\']*["\'][^>]*>.*?class=["\'][^"\']*value[^"\']*["\'][^>]*>(.*?)</div>',
+    ])
+    item.description = text_from_fragment(desc_fragment)
+    if not item.description:
+        item.description = first_match([
+            r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']',
+        ])
+
+    _apply_rules(item, rules or {})
+    item.extra.update({
+        'sku': item.sku,
+        'stock_status': item.stock_status,
+        'description': item.description,
+    })
+    return item
+
+
 def scrape_product_page(url: str, rules: dict, logger=None,
                         html: Optional[str] = None,
-                        soup: Optional[BeautifulSoup] = None) -> Optional[Item]:
+                        soup: Optional[BeautifulSoup] = None,
+                        session=None) -> Optional[Item]:
     """Scrape a Magento product detail page for richer metadata."""
     if soup is None:
         if html is None:
-            html = _fetch(url, logger)
+            html = _fetch(url, session=session, logger=logger)
         if not html:
             return None
+        fast_item = parse_parts4cells_product_detail_fast(html, url, rules)
+        if fast_item and fast_item.title and fast_item.sku:
+            if logger:
+                logger.debug(f"[parts4cells] Fast enriched detail page: {fast_item.url}")
+            return fast_item
         soup = BeautifulSoup(html, 'html.parser')
     item = Item(site="parts4cells.com", url=_extract_canonical_url(soup, url))
 
@@ -278,7 +433,7 @@ def enrich_item_details(session, item: Item, rules: dict | None = None, logger=N
         return item
     if getattr(item, 'sku', '') and getattr(item, 'stock_status', '') and getattr(item, 'original', 0) > 0:
         return item
-    detail = scrape_product_page(item.url, rules or {}, logger)
+    detail = scrape_product_page(item.url, rules or {}, logger, session=session)
     if not detail:
         return item
 
@@ -449,14 +604,15 @@ def _page_url(base_url: str, page_num: int) -> str:
 
 def _scrape_one_page(url: str, rules: dict, logger=None,
                      html: Optional[str] = None,
-                     soup: Optional[BeautifulSoup] = None) -> tuple:
+                     soup: Optional[BeautifulSoup] = None,
+                     session=None) -> tuple:
     """
     Scrape one page. Returns (items, soup | None).
     soup is returned so the caller can parse pagination without a second request.
     """
     if soup is None:
         if html is None:
-            html = _fetch(url, logger)
+            html = _fetch(url, session=session, logger=logger)
         if not html:
             return [], None
         soup = BeautifulSoup(html, 'html.parser')
@@ -481,7 +637,8 @@ def _scrape_all_pages(base_url: str, rules: dict,
                       max_pages: int = 20, delay_ms: int = 300,
                       logger=None,
                       first_page_html: Optional[str] = None,
-                      first_page_soup: Optional[BeautifulSoup] = None) -> List[Item]:
+                      first_page_soup: Optional[BeautifulSoup] = None,
+                      session=None) -> List[Item]:
     all_items_by_url: dict = {}   # product_url -> Item (dedup)
 
     # Page 1 — fetch from clean base URL (no ?p= param)
@@ -492,6 +649,7 @@ def _scrape_all_pages(base_url: str, rules: dict,
         logger,
         html=first_page_html,
         soup=first_page_soup,
+        session=session,
     )
 
     if not items:
@@ -519,7 +677,7 @@ def _scrape_all_pages(base_url: str, rules: dict,
             time.sleep(delay_ms / 1000.0)
 
         purl = _page_url(canonical_listing_url, p)
-        page_items, _ = _scrape_one_page(purl, rules, logger)
+        page_items, _ = _scrape_one_page(purl, rules, logger, session=session)
 
         if not page_items:
             if logger:
@@ -563,13 +721,13 @@ def scrape_url(session, url: str, rules: dict,
     page_is_product = False
 
     if parsed_path.endswith('.html'):
-        initial_html = _fetch(url, logger)
+        initial_html = _fetch(url, session=session, logger=logger)
         if initial_html:
             initial_soup = BeautifulSoup(initial_html, 'html.parser')
             page_is_listing = _is_listing_page(initial_soup)
             page_is_product = _is_product_page(initial_soup)
             if page_is_product and not page_is_listing:
-                product = scrape_product_page(url, rules, logger, html=initial_html, soup=initial_soup)
+                product = scrape_product_page(url, rules, logger, html=initial_html, soup=initial_soup, session=session)
                 return [product] if product else []
 
     if crawl_pagination:
@@ -581,6 +739,7 @@ def scrape_url(session, url: str, rules: dict,
             logger,
             first_page_html=initial_html if page_is_listing else None,
             first_page_soup=initial_soup if page_is_listing else None,
+            session=session,
         )
         if items:
             return items
@@ -591,9 +750,10 @@ def scrape_url(session, url: str, rules: dict,
             logger,
             html=initial_html if page_is_listing else None,
             soup=initial_soup if page_is_listing else None,
+            session=session,
         )
         if items:
             return items
 
-    product = scrape_product_page(url, rules, logger, html=initial_html, soup=initial_soup)
+    product = scrape_product_page(url, rules, logger, html=initial_html, soup=initial_soup, session=session)
     return [product] if product else []
