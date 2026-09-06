@@ -1634,21 +1634,36 @@
     { key: 'original', label: 'Price', sortable: true },
     { key: 'url', label: 'URL', sortable: false },
     { key: 'source', label: 'Source', sortable: true }
+  const AUTOMATION_EXPORT_HEADERS = [
+    'Title',
+    'Price',
+    'SKU',
+    'Description',
+    'Image',
+    'URL',
+    'Source Name',
+    'Change Details'
   ];
 
   function productExportRow(item, group = null) {
+    const title = item?.title || '';
+    const price = formatOriginalPrice(item) || formatFinalPrice(item) || String(item?.price || item?.original || '').trim();
+    const sku = String(item?.sku || (item?.extra || {}).sku || '').trim();
+    const description = String(item?.description || (item?.extra || {}).description || '').trim();
+    const image = String(item?.image_url || item?.image || (item?.extra || {}).image_url || '').trim();
+    const url = String(item?.url || item?.link || (item?.extra || {}).url || '').trim();
+    const sourceName = String(group?.site || item?.source || item?.site || productSource(item) || '').trim();
+    const changeDetails = String(item?._changeDetails || item?.change_details || '').trim();
+
     return {
-      image: item?.image_url || '',
-      title: item?.title || '',
-      sku: item?.sku || '',
-      description: item?.description || '',
-      original: formatOriginalPrice(item),
-      url: item?.url || '',
-      source: productSource(item),
-      website: group?.site || productSource(item),
-      category: group?.child || getModelLabel(item),
-      change_type: item?._changeLabel || '',
-      change_details: item?._changeDetails || ''
+      'Title': title,
+      'Price': price,
+      'SKU': sku,
+      'Description': description,
+      'Image': image,
+      'URL': url,
+      'Source Name': sourceName,
+      'Change Details': changeDetails
     };
   }
 
@@ -1998,10 +2013,19 @@
   }
 
   function rowsToCsv(rows) {
-    const headers = ['image', 'title', 'sku', 'description', 'original', 'url', 'source', 'website', 'category', 'change_type', 'change_details'];
+    const headers = AUTOMATION_EXPORT_HEADERS;
     return [
       headers.join(','),
-      ...rows.map(row => headers.map(header => csvEscape(row[header])).join(','))
+      ...rows.map(row => headers.map(header => {
+        const val = row[header] !== undefined
+          ? row[header]
+          : (row[header.toLowerCase()] !== undefined
+              ? row[header.toLowerCase()]
+              : (header === 'Price' ? (row.original || row.price) :
+                 header === 'Source Name' ? (row.source || row.website || row.site) :
+                 header === 'Change Details' ? (row.change_details || row._changeDetails) : ''));
+        return csvEscape(val);
+      }).join(','))
     ].join('\r\n');
   }
 
@@ -2025,8 +2049,9 @@
       showAlert('warn', 'No products to export.');
       return;
     }
+    const csvContent = '\uFEFF' + rowsToCsv(state.productExportRows);
     downloadBlob(
-      new Blob([rowsToCsv(state.productExportRows)], { type: 'text/csv;charset=utf-8;' }),
+      new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }),
       `automation_products_${exportTimestamp()}.csv`
     );
     showAlert('success', `Exported ${state.productExportRows.length} products as CSV.`);
@@ -2047,7 +2072,10 @@
       const response = await fetch('/api/export/xlsx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: state.productExportRows })
+        body: JSON.stringify({
+          rows: state.productExportRows,
+          headers: AUTOMATION_EXPORT_HEADERS
+        })
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));

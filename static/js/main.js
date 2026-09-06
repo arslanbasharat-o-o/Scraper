@@ -995,7 +995,26 @@ function buildDisplayRow(item, pricingRules = getRealtimePricingRules()) {
 }
 
 function buildResultExportRows(displayRows) {
-  const exportRows = displayRows.map(r => ({ title: r.title, price: r.original, url: r.url }));
+  const exportRows = displayRows.map(r => ({
+    'Title': r.title || '',
+    'Price': r.original || '',
+    'SKU': r.sku || r.raw_item?.sku || '',
+    'Description': r.description || r.raw_item?.description || '',
+    'Image': r.image_url || r.raw_item?.image_url || '',
+    'URL': r.url || '',
+    'Source Name': formatSource(r.site).label || r.site || '',
+    'Change Details': ''
+  }));
+  exportRows._headers = [
+    'Title',
+    'Price',
+    'SKU',
+    'Description',
+    'Image',
+    'URL',
+    'Source Name',
+    'Change Details'
+  ];
   exportRows._hasAdjustedPrice = false;
   return exportRows;
 }
@@ -1505,13 +1524,21 @@ function renderComparison(comparison) {
 // ── Export helpers ────────────────────────────────────────────────────────────
 function toCSV(rowsArr) {
   const customHeaders = Array.isArray(rowsArr?._headers) ? rowsArr._headers : null;
-  const header = customHeaders || ['title', 'price', 'url'];
+  const header = customHeaders || ['Title', 'Price', 'SKU', 'Description', 'Image', 'URL', 'Source Name', 'Change Details'];
   const lines = [header.join(',')];
   for (const r of rowsArr) {
-    const cells = header.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`);
+    const cells = header.map(h => {
+      const val = r[h] !== undefined
+        ? r[h]
+        : (r[h.toLowerCase()] !== undefined
+            ? r[h.toLowerCase()]
+            : (h === 'Price' ? (r.original || r.price) :
+               h === 'Source Name' ? (r.site || r.source) : ''));
+      return `"${String(val ?? '').replace(/"/g, '""')}"`;
+    });
     lines.push(cells.join(','));
   }
-  return lines.join('\n');
+  return '\uFEFF' + lines.join('\n');
 }
 
 function downloadBlob(blob, filename) {
@@ -1841,7 +1868,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       const res = await fetch('/api/export/xlsx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: lastExportRows }),
+        body: JSON.stringify({
+          rows: lastExportRows,
+          headers: lastExportRows._headers || Object.keys(lastExportRows[0] || {})
+        }),
       });
       if (!res.ok) throw new Error(`Server ${res.status}`);
       const blob = await res.blob();

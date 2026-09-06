@@ -5767,23 +5767,39 @@ def export_xlsx():
     ws = wb.active
     ws.title = "Extract"
     headers = []
-    # dynamic headers from keys (preserve a friendly order if present)
-    preferred = ["image_url","title","price","original","percent_off","absolute_off","url","source","model"]
+    custom_headers = data.get('headers')
     excluded_export_fields = {"adjusted_price", "final"}
-    if rows:
+
+    if isinstance(custom_headers, list) and custom_headers:
+        headers = [str(h) for h in custom_headers if h not in excluded_export_fields]
+    elif rows and isinstance(rows[0], dict):
         keys = list(rows[0].keys())
-        for k in preferred:
-            if k in keys and k not in headers and k not in excluded_export_fields:
-                headers.append(k)
+        preferred = ["image_url", "title", "price", "original", "percent_off", "absolute_off", "url", "source", "model"]
+        has_preferred = any(k in keys for k in preferred)
+        if has_preferred:
+            for k in preferred:
+                if k in keys and k not in headers and k not in excluded_export_fields:
+                    headers.append(k)
         for k in keys:
             if k not in headers and k not in excluded_export_fields:
                 headers.append(k)
     else:
-        headers = preferred
+        headers = ["Title", "Price", "SKU", "Description", "Image", "URL", "Source Name", "Change Details"]
+
     ws.append([k for k in headers])
     for r in rows:
         row_data = r if isinstance(r, dict) else {}
         ws.append([clean_excel_cell(row_data.get(k, "")) for k in headers])
+
+    ws.freeze_panes = "A2"
+    for column_cells in ws.columns:
+        max_length = 0
+        column_letter = column_cells[0].column_letter
+        for cell in column_cells:
+            val_str = str(cell.value or '')
+            max_length = max(max_length, len(val_str))
+        ws.column_dimensions[column_letter].width = min(max(max_length + 3, 12), 65)
+
     bio = io.BytesIO()
     wb.save(bio)
     bio.seek(0)
@@ -5810,7 +5826,7 @@ def upload_comparison_file():
 
     title_fields = ('title', 'name', 'product', 'product_name', 'clean_title', 'model')
     price_fields = ('final', 'price', 'compare_price', 'original', 'cost', 'amount', 'my_price', 'list_price', 'sale_price')
-    site_fields = ('site', 'source', 'store', 'market', 'domain')
+    site_fields = ('site', 'source', 'source name', 'source_name', 'store', 'market', 'domain')
     url_fields = ('url', 'product_url', 'link')
 
     def extract_row(row: Dict[str, object]) -> Dict[str, object] | None:

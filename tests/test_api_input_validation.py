@@ -244,3 +244,40 @@ def test_history_xlsx_export_sanitizes_illegal_cell_characters(tmp_path, monkeyp
     ws = wb.active
     assert ws["A2"].value == "BadHistory"
     assert ws["E2"].value == "Descriptionwith control"
+
+
+def test_export_xlsx_standardized_headers_and_format(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    headers = ["Title", "Price", "SKU", "Description", "Image", "URL", "Source Name", "Change Details"]
+    row_data = {
+        "Title": "LCD Assembly For iPhone 17e",
+        "Price": "CA$23.91",
+        "SKU": "107082127854",
+        "Description": "LCD Assembly replacement part",
+        "Image": "https://static.mobilesentrix.com/img.jpg",
+        "URL": "https://www.mobilesentrix.ca/item",
+        "Source Name": "www.mobilesentrix.ca",
+        "Change Details": "Price: CA$20.00 -> CA$23.91",
+    }
+
+    with app_module.app.test_client() as client:
+        response = client.post("/api/export/xlsx", json={
+            "rows": [row_data],
+            "headers": headers,
+        })
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    wb = load_workbook(BytesIO(response.data))
+    ws = wb.active
+    assert ws.title == "Extract"
+    assert ws.freeze_panes == "A2"
+
+    exported_headers = [cell.value for cell in ws[1]]
+    assert exported_headers == headers
+
+    exported_row = [cell.value for cell in ws[2]]
+    assert exported_row == [row_data[h] for h in headers]
+
