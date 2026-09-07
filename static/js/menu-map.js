@@ -189,7 +189,10 @@ function showAlert(type, message) {
   elements.alert.textContent = message;
   elements.alert.classList.remove('d-none');
   window.clearTimeout(elements.alert._timer);
-  elements.alert._timer = window.setTimeout(() => elements.alert.classList.add('d-none'), 7000);
+  elements.alert._timer = window.setTimeout(() => {
+    elements.alert.classList.add('d-none');
+    elements.alert.textContent = '';
+  }, 3500);
 }
 
 function ensureExclusionUi() {

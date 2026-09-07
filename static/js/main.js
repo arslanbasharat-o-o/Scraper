@@ -148,7 +148,7 @@ const _NOTIF_CLS = {
 };
 const _NOTIF_ICONS = { success: 'OK', error: 'ERR', danger: 'ERR', warn: 'WARN', warning: 'WARN', info: 'INFO' };
 
-function showToast(type, msg, duration = 6000) {
+function showToast(type, msg, duration = 3500) {
   if (!alertBox) return;
   alertBox.className = `alert-banner ${_NOTIF_CLS[type] || 'alert-info'}`;
   alertBox.innerHTML =

@@ -964,6 +964,7 @@ select.field-input {
   position: fixed;
   top: 1rem;
   right: 1rem;
+  left: auto;
   z-index: 10000;
   width: min(380px, calc(100vw - 2rem));
   display: flex;
@@ -978,7 +979,21 @@ select.field-input {
   margin: 0;
   box-shadow: 0 12px 30px rgba(0, 0, 0, .22);
   line-height: 1.4;
+  animation: toast-in .18s ease-out both;
   transition: opacity .2s;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 520px) {
+  .alert-banner {
+    top: .75rem;
+    right: .75rem;
+    width: calc(100vw - 1.5rem);
+  }
 }
 
 .alert-banner.alert-success {
