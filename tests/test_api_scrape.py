@@ -151,6 +151,38 @@ def test_scrape_reports_browser_used_when_browser_requested(tmp_path, monkeypatc
     assert result["count"] == 1
 
 
+def test_mobilesentrix_http_listing_falls_back_to_botasaurus_when_configured(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
+    scraper = importlib.import_module("scrapers.scraper_engine")
+    calls = []
+
+    class Response:
+        status_code = 403
+        url = "https://www.mobilesentrix.com/replacement-parts/apple/iphone-parts"
+        text = "Access denied"
+        headers = {}
+
+        def raise_for_status(self):
+            raise RuntimeError("blocked")
+
+    class Session:
+        def get(self, *_args, **_kwargs):
+            return Response()
+
+    class BrowserResult:
+        final_url = Response.url
+        html = "<html><body><main>rendered</main></body></html>"
+
+    monkeypatch.setattr(scraper, "fetch_html_with_browser", lambda *_args, **_kwargs: (calls.append(True) or BrowserResult()))
+
+    final_url, html = scraper.get_html(Session(), Response.url)
+
+    assert calls == [True]
+    assert final_url == Response.url
+    assert "rendered" in html
+
+
 def test_extractor_locks_botasaurus_rendering_on(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
 

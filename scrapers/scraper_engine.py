@@ -209,6 +209,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def _browser_fallback_enabled() -> bool:
+    value = str(os.getenv('SCRAPER_LOCAL_BROWSER_FALLBACK') or '').strip().lower()
+    return value in {'1', 'true', 'yes', 'on'}
+
 def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
     """Fetch HTML from URL. Returns (final_url, html_content)"""
     _set_fetch_metadata(sess, status_code=None, final_url=url)
@@ -229,7 +233,7 @@ def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
         blocked = cf_challenge or _looks_like_antibot_challenge(status_code, html)
         _set_fetch_metadata(sess, status_code=status_code, final_url=final_url, blocked=blocked)
         if blocked:
-            if should_use_browser_fetch():
+            if should_use_browser_fetch() or _browser_fallback_enabled():
                 logger.info(f"[fetch] HTTP {status_code} blocked on {url} - falling back to browser")
                 result = fetch_html_with_browser(url, timeout=max(timeout, 60))
                 _set_fetch_metadata(sess, status_code=200, final_url=result.final_url, blocked=False)
@@ -239,7 +243,7 @@ def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
         r.raise_for_status()
         return (final_url, html)
     except Exception as exc:
-        if should_use_browser_fetch() and not isinstance(exc, (KeyboardInterrupt, SystemExit)):
+        if (should_use_browser_fetch() or _browser_fallback_enabled()) and not isinstance(exc, (KeyboardInterrupt, SystemExit)):
             logger.info(f"[fetch] HTTP error ({type(exc).__name__}) on {url} - falling back to browser")
             try:
                 result = fetch_html_with_browser(url, timeout=max(timeout, 60))
