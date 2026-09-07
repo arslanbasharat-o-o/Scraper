@@ -283,8 +283,113 @@ def _fill_lazy_menu_children(hierarchy, logger):
     return hierarchy
 
 
+def extract_hierarchy_from_http(logger=None) -> list[dict]:
+    """Extract full Phone LCD Parts menu tree via HTTP API without browser."""
+    from curl_cffi import requests as curl_requests
+
+    try:
+        response = curl_requests.post(
+            "https://www.phonelcdparts.com/swpninjamenu/index/menu",
+            impersonate="safari15_5",
+            data={"screenSize": "1920"},
+            headers={"X-Requested-With": "XMLHttpRequest", "Referer": "https://www.phonelcdparts.com/"},
+            timeout=30,
+        )
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, "html.parser")
+        clean = lambda s: re.sub(r"\s+", " ", s or "").replace("NEW", "").strip()
+        valid_href = lambda href: bool(href and not href.startswith(("javascript:", "#")) and "#tab-" not in href)
+
+        top_parents = soup.select("#ninjamenus4 > .magezon-builder > .nav-item")
+        hierarchy = []
+        for pidx, nav in enumerate(top_parents):
+            pa = nav.select_one(":scope > a")
+            parent_name = clean(pa.select_one(".title").get_text(" ", strip=True) if pa and pa.select_one(".title") else (pa.get_text(" ", strip=True) if pa else ""))
+            if not parent_name:
+                continue
+            parent_url = pa.get("href", "") if pa and valid_href(pa.get("href", "")) else ""
+            parent = {
+                "order": pidx + 1,
+                "name": parent_name,
+                "url": parent_url,
+                "selector": "#ninjamenus4",
+                "method": "http-menu-api",
+                "sub_children": [],
+            }
+            tabs = nav.select(".mgz-tabs-nav .mgz-tabs-tab-title")
+            for tidx, tab in enumerate(tabs):
+                ta = tab.select_one(":scope > a[href]")
+                sub_name = clean(ta.get_text(" ", strip=True) if ta else "")
+                if not sub_name:
+                    continue
+                sub_url = ta.get("href", "") if ta and valid_href(ta.get("href", "")) else ""
+                hash_val = (ta.get("href", "") or "").split("#")[-1] if ta else ""
+                panel = nav.select_one(f"#{hash_val}, .{hash_val}") if hash_val else None
+                if not panel:
+                    panels = nav.select(".mgz-tabs-content > .mgz-tabs-tab-content, .mgz-tabs-content > div")
+                    panel = panels[tidx] if tidx < len(panels) else None
+                sub = {
+                    "order": tidx + 1,
+                    "name": sub_name,
+                    "url": sub_url,
+                    "selector": "",
+                    "method": "http-menu-api",
+                    "children": [],
+                }
+                links = panel.select(".nav-item a[href], a[href]") if panel else []
+                for a in links:
+                    child_name = clean(a.select_one(".title").get_text(" ", strip=True) if a.select_one(".title") else a.get_text(" ", strip=True))
+                    if not child_name:
+                        img = a.select_one("img[alt], img[title]")
+                        child_name = clean((img.get("alt") or img.get("title")) if img else "")
+                    href = a.get("href", "")
+                    if not child_name or not valid_href(href):
+                        continue
+                    full_url = urljoin("https://www.phonelcdparts.com/", href)
+                    sub["children"].append({
+                        "order": len(sub["children"]) + 1,
+                        "name": child_name,
+                        "url": full_url,
+                        "column": 1,
+                        "row": len(sub["children"]) + 1,
+                        "selector": "",
+                        "method": "http-menu-api",
+                    })
+                parent["sub_children"].append(sub)
+            hierarchy.append(parent)
+
+        if logger:
+            logger.info("Extracted %d parents via Phone LCD HTTP menu API", len(hierarchy))
+        hierarchy = _fill_lazy_menu_children(hierarchy, logger)
+        return hierarchy
+    except Exception as exc:
+        if logger:
+            logger.warning("HTTP menu extraction failed: %s", exc)
+        return []
+
+
+def http_fallback_extractor(config: SiteConfig, output_dir: Path, logger) -> list:
+    hierarchy = extract_hierarchy_from_http(logger)
+    if hierarchy:
+        return records_from_hierarchy(config, hierarchy)
+    return []
+
+
+CONFIG.http_fallback_extractor = http_fallback_extractor
+
+
 async def extract(page, config, args, output_dir, logger):
-    count = await page.locator(config.parent_item_selector).count()
+    count = 0
+    try:
+        count = await page.locator(config.parent_item_selector).count()
+    except Exception:
+        pass
+    if count == 0:
+        logger.warning("No top-level nav anchors found in browser; switching to HTTP menu extraction")
+        hierarchy = await asyncio.to_thread(extract_hierarchy_from_http, logger)
+        if hierarchy:
+            return records_from_hierarchy(config, hierarchy)
+
     logger.info("Detected %s top-level nav anchors", count)
     hierarchy = []
     for i in range(count):
@@ -301,6 +406,9 @@ async def extract(page, config, args, output_dir, logger):
         except Exception as exc:
             logger.warning("Parent activation failed index=%s error=%s", i, exc)
     hierarchy = await asyncio.to_thread(_fill_lazy_menu_children, hierarchy, logger)
+    if not hierarchy:
+        logger.warning("Browser produced empty hierarchy; falling back to HTTP extraction")
+        hierarchy = await asyncio.to_thread(extract_hierarchy_from_http, logger)
     logger.info("Extracted hierarchy parent_count=%s", len(hierarchy))
     return records_from_hierarchy(config, hierarchy)
 
@@ -308,7 +416,25 @@ async def extract(page, config, args, output_dir, logger):
 def main() -> None:
     parser = build_arg_parser(CONFIG.output_slug)
     args = parser.parse_args()
-    asyncio.run(run_site(CONFIG, args, extract))
+    try:
+        asyncio.run(run_site(CONFIG, args, extract))
+    except Exception as exc:
+        import logging
+        from pathlib import Path
+        from .common import ScrapeResult, export_outputs, mark_duplicates
+
+        logger = logging.getLogger("phonelcdparts_fallback")
+        logger.warning("run_site failed (%s); running direct HTTP extraction fallback", exc)
+        output_dir = Path(args.output_dir) / CONFIG.output_slug
+        output_dir.mkdir(parents=True, exist_ok=True)
+        records = http_fallback_extractor(CONFIG, output_dir, logger)
+        if records:
+            res = ScrapeResult()
+            res.records = records
+            export_outputs(CONFIG, output_dir, res, headless=True, duplicates=mark_duplicates(records))
+            logger.info("Successfully exported %d records via HTTP fallback", len(records))
+        else:
+            raise
 
 
 if __name__ == "__main__":

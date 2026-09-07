@@ -6,6 +6,7 @@ import csv
 import html
 import json
 import logging
+import os
 import re
 import time
 from collections import Counter, defaultdict
@@ -70,6 +71,7 @@ class SiteConfig:
     mobile_menu_selector: str
     parent_open_method: str = "click"
     sub_child_activation_method: str = "dom-inspection"
+    http_fallback_extractor: Any = None
 
 
 @dataclass(slots=True)
@@ -1033,6 +1035,20 @@ async def run_site(
                             logger.warning("Could not dismiss Canada location prompt: %s", exc)
                             break
                         await page.wait_for_timeout(500)
+                # Wait for Cloudflare or access verification challenges to clear if present
+                challenge_wait = float(os.getenv("SCRAPER_LOCAL_BROWSER_CHALLENGE_WAIT_SECONDS", "15"))
+                challenge_deadline = time.monotonic() + challenge_wait
+                while time.monotonic() < challenge_deadline:
+                    try:
+                        curr_title = (await page.title()) or ""
+                    except Exception:
+                        curr_title = ""
+                    lowered_title = curr_title.lower()
+                    if "just a moment" not in lowered_title and "cloudflare" not in lowered_title and "attention required" not in lowered_title:
+                        break
+                    logger.info("Waiting for access verification challenge to clear... (title: %s)", curr_title)
+                    await page.wait_for_timeout(2000)
+
                 inspect_selectors = [
                     config.parent_nav_selector,
                     config.parent_item_selector,
@@ -1048,13 +1064,36 @@ async def run_site(
                 ]
                 result.inspection = await collect_dom_inspection(page, inspect_selectors)
                 write_inspection(output_dir, result.inspection)
-                if not result.inspection or "Just a moment" in (await page.title()):
-                    raise RuntimeError("Site returned an access verification page or no menu DOM was available.")
-                if not args.inspect_only:
+
+                current_title = ""
+                try:
+                    current_title = (await page.title()) or ""
+                except Exception:
+                    pass
+                is_challenge = any(marker in current_title.lower() for marker in ("just a moment", "cloudflare", "attention required"))
+
+                if not result.inspection or is_challenge:
+                    fallback_fn = getattr(config, "http_fallback_extractor", None)
+                    if fallback_fn and not args.inspect_only:
+                        logger.warning("Browser hit verification page or empty DOM; activating HTTP menu fallback...")
+                        result.records = await asyncio.to_thread(fallback_fn, config, output_dir, logger)
+                    if not result.records:
+                        raise RuntimeError("Site returned an access verification page or no menu DOM was available.")
+                elif not args.inspect_only:
                     result.records = await adaptively_extract_menu(page, config, args, output_dir, logger, extractor)
             except Exception as exc:
-                await record_error(result.errors, page, output_dir, config.website, "site_scrape", exc)
-                logger.exception("Site scrape failed")
+                fallback_fn = getattr(config, "http_fallback_extractor", None)
+                if fallback_fn and not args.inspect_only and not result.records:
+                    try:
+                        logger.warning("Browser extraction failed (%s); activating HTTP menu fallback...", exc)
+                        result.records = await asyncio.to_thread(fallback_fn, config, output_dir, logger)
+                    except Exception as fb_exc:
+                        logger.exception("HTTP fallback also failed: %s", fb_exc)
+                if not result.records:
+                    await record_error(result.errors, page, output_dir, config.website, "site_scrape", exc)
+                    logger.exception("Site scrape failed")
+                else:
+                    logger.info("HTTP fallback successfully recovered %d records for %s", len(result.records), config.website)
             finally:
                 if not args.inspect_only:
                     try:
