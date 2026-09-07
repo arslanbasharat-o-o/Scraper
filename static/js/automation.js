@@ -1191,7 +1191,6 @@
                   ? '<div class="automation-card-kind">Active run</div>'
                   : '<div class="automation-card-kind">Run snapshot</div>'}
                 <div class="automation-run__title">${escapeHtml(displayName)}</div>
-                <div class="automation-run__subtitle">${escapeHtml(run.trigger_type)} - ${escapeHtml(formatDateTime(run.started_at))}</div>
               </div>
               <div class="automation-run__status">${statusChip(run.status)}</div>
             </div>
