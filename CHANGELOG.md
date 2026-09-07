@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.4.15] - 2026-09-07
+- Add automatic Cloudflare access challenge waiting in Menu Map runner.
+- Add direct HTTP NinjaMenus extraction fallback for Phone LCD Parts (`/swpninjamenu/index/menu`) to bypass datacenter IP verification hurdles.
+- Remove redundant manual timestamp subtitle from automation run cards to avoid UI duplication with the run detail panel.
+
 ## [8.4.14] - 2026-09-07
 - Consolidate repeated product URLs across scrape responses, saved histories, live automation previews, and product tables.
 - Keep valid same-name products and multi-category occurrences from being treated as duplicate products.
