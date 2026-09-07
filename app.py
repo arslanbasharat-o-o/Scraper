@@ -4263,6 +4263,18 @@ def count_csv_rows(path: Path) -> int:
         return 0
 
 
+def menu_map_expected_missing_url(site_slug: str, row: Dict[str, object]) -> bool:
+    """Supplier-locked menu labels intentionally rendered without an href."""
+    parent = str(row.get('parent_name') or '').strip().casefold()
+    sub = str(row.get('sub_child_name') or '').strip().casefold()
+    child = str(row.get('child_name') or '').strip().casefold()
+    if site_slug in {'mobilesentrix', 'mobilesentrix_canada'}:
+        return parent == 'pre-owned devices' and not sub and not child
+    if site_slug == 'phonelcdparts':
+        return parent == "what's" and sub == "what's" and not child
+    return False
+
+
 def summarize_hierarchy(tree: List[Dict[str, object]]) -> Dict[str, int]:
     parent_count = len(tree)
     sub_count = 0
@@ -4313,7 +4325,7 @@ def read_menu_map_site(slug: str, include_tree: bool = False) -> Dict[str, objec
         try:
             with categories_csv.open('r', encoding='utf-8-sig', newline='') as handle:
                 for row in csv.DictReader(handle):
-                    if parse_boolish(row.get('url_missing')):
+                    if parse_boolish(row.get('url_missing')) and not menu_map_expected_missing_url(slug, row):
                         missing_urls += 1
         except Exception:
             missing_urls = 0

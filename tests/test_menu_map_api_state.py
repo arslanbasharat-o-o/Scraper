@@ -1,3 +1,4 @@
+import csv
 import json
 
 import app as app_module
@@ -30,6 +31,24 @@ def test_menu_map_site_reports_valid_empty_output(tmp_path, monkeypatch):
     assert site["output_valid"] is True
     assert site["output_empty"] is True
     assert site["parse_error"] == ""
+
+
+def test_menu_map_ignores_supplier_locked_missing_urls(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "get_menu_map_output_root", lambda: tmp_path)
+    cases = {
+        "mobilesentrix": {"parent_name": "Pre-Owned Devices", "sub_child_name": "", "child_name": ""},
+        "mobilesentrix_canada": {"parent_name": "Pre-Owned Devices", "sub_child_name": "", "child_name": ""},
+        "phonelcdparts": {"parent_name": "What's", "sub_child_name": "What's", "child_name": ""},
+    }
+    for slug, row in cases.items():
+        site_dir = tmp_path / slug
+        site_dir.mkdir()
+        with (site_dir / "categories.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["parent_name", "sub_child_name", "child_name", "url_missing"])
+            writer.writeheader()
+            writer.writerow({**row, "url_missing": "True"})
+        with app_module.app.test_request_context():
+            assert app_module.read_menu_map_site(slug)["missing_urls"] == 0
 
 
 def test_menu_map_rejects_overlapping_active_run():
