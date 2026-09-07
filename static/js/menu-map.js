@@ -803,7 +803,11 @@ function focusElement(element) {
 }
 
 function setTreeFilter(filter) {
-  activeTreeFilter = filter;
+  const site = sites.find(item => item.slug === selectedSite);
+  // Avoid leaving the hierarchy viewer blank when a site has no missing URLs.
+  // The counts can still be populated, which otherwise makes the empty view
+  // look like the menu failed to load.
+  activeTreeFilter = filter === 'missing' && !(site?.missing_urls > 0) ? 'all' : filter;
   elements.treeSearch.value = '';
   renderDetail();
   focusElement(elements.treeContainer.closest('.menu-map-panel'));

@@ -101,7 +101,9 @@ GADGETFIX_JS = """
 
     sections.forEach(section => {
       const headingAnchor = section.querySelector(':scope > h3 > a[href*="/category/"], :scope > h2 > a[href*="/category/"], :scope > h4 > a[href*="/category/"]');
-      const childAnchors = uniqueAnchors([...section.querySelectorAll(':scope > ul a[href*="/category/"]')])
+      // Category links may be nested below wrapper lists/divs in the mega
+      // menu. Descendant traversal keeps every model/category link.
+      const childAnchors = uniqueAnchors([...section.querySelectorAll('a[href*="/category/"]')])
         .filter(anchor => anchor !== headingAnchor && href(anchor) !== href(headingAnchor));
       const subName = clean(headingAnchor?.innerText || headingAnchor?.textContent);
       if (subName) {

@@ -177,6 +177,24 @@ def test_gadgetfix_keeps_brand_series_and_model_levels():
     assert hierarchy[1]["sub_children"][0]["children"][0]["name"] == "Pixel 10"
 
 
+def test_gadgetfix_collects_links_below_nested_wrappers():
+    hierarchy = evaluate_menu(
+        GADGETFIX_JS,
+        """
+        <div class="mega-menu"><ul><li class="menu-item">
+          <a href="/category/apple-1228.html">Apple</a>
+          <div class="mega-submenu"><div class="section links">
+            <h3><a href="/category/iphone-1559.html">iPhone</a></h3>
+            <ul><li><div><a href="/category/iphone-17-2001.html">iPhone 17</a></div></li></ul>
+          </div></div>
+        </li></ul></div>
+        """,
+        "https://gadgetfix.com/",
+    )
+
+    assert hierarchy[0]["sub_children"][0]["children"][0]["name"] == "iPhone 17"
+
+
 def test_canada_location_prompt_stays_on_canadian_store():
     assert _is_mobilesentrix_canada_url("https://www.mobilesentrix.ca/example") is True
     assert _is_mobilesentrix_canada_url("https://www.mobilesentrix.com/example") is False

@@ -832,12 +832,17 @@ SEMANTIC_MENU_JS = r"""
       sub_children: []
     };
 
+    // Do not assume that a menu group has two direct children or that its
+    // links are direct children of the same <li>. Responsive/mega menus
+    // commonly add wrapper <div>/<li> elements and some valid groups have a
+    // single child. Select the deepest real groups and inspect descendants.
     const groupCandidates = [...parentItem.querySelectorAll('ul')].filter(list => {
       const items = immediateItems(list);
-      if (items.length < 2) return false;
+      if (!items.length) return false;
       const first = directAnchor(items[0]);
       const title = clean(first?.innerText || first?.textContent);
-      const validLinks = items.slice(1).map(directAnchor).filter(anchor => usableUrl(anchor)).length;
+      const validLinks = [...list.querySelectorAll('a[href]')]
+        .filter(anchor => anchor !== first && usableUrl(anchor)).length;
       return usableName(title) && validLinks > 0;
     });
     const deepestGroups = groupCandidates.filter(candidate =>
@@ -857,21 +862,24 @@ SEMANTIC_MENU_JS = r"""
         method: 'adaptive-dom',
         children: []
       };
-      items.slice(1).forEach(item => {
-        const anchor = directAnchor(item);
-        const name = clean(anchor?.innerText || anchor?.textContent);
-        const url = usableUrl(anchor);
-        if (!usableName(name) || !url) return;
-        sub.children.push({
-          order: sub.children.length + 1,
-          name,
-          url,
-          column: 0,
-          row: sub.children.length + 1,
-          selector: css(anchor),
-          method: 'adaptive-dom'
+      const seenChildren = new Set();
+      [...group.querySelectorAll('a[href]')].filter(anchor => anchor !== titleAnchor)
+        .forEach(anchor => {
+          const name = clean(anchor?.innerText || anchor?.textContent);
+          const url = usableUrl(anchor);
+          const key = `${name.toLowerCase()}|${url.toLowerCase()}`;
+          if (!usableName(name) || !url || seenChildren.has(key)) return;
+          seenChildren.add(key);
+          sub.children.push({
+            order: sub.children.length + 1,
+            name,
+            url,
+            column: 0,
+            row: sub.children.length + 1,
+            selector: css(anchor),
+            method: 'adaptive-dom'
+          });
         });
-      });
       if (sub.children.length) parent.sub_children.push(sub);
     });
 

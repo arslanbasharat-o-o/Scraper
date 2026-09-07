@@ -108,7 +108,7 @@ XCELL_JS = """
     if (splitPanels.length) {
       splitPanels.forEach((section, sectionIndex) => {
         let row = 1;
-        const links = [...section.querySelectorAll(':scope > a.xcell-mm__plp-group-head[href], :scope .xcell-mm__plp-thumbs a.xcell-mm__plp-thumb[href]')];
+        const links = [...section.querySelectorAll('a.xcell-mm__plp-group-head[href], a.xcell-mm__plp-thumb[href]')];
         links.forEach(anchor => {
           row = pushChild(sub, anchor, sectionIndex + 1, row);
         });
@@ -116,7 +116,7 @@ XCELL_JS = """
       return;
     }
     let row = 1;
-    const links = [...contentPanel.querySelectorAll(':scope > a.xcell-mm__plp-group-head[href], :scope .xcell-mm__plp-thumbs a.xcell-mm__plp-thumb[href], :scope > a.xcell-mm__plp-thumb[href]')];
+    const links = [...contentPanel.querySelectorAll('a.xcell-mm__plp-group-head[href], a.xcell-mm__plp-thumb[href]')];
     links.forEach(anchor => {
       row = pushChild(sub, anchor, 1, row);
     });

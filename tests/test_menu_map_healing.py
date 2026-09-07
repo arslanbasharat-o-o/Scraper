@@ -94,3 +94,22 @@ def test_semantic_healer_rebuilds_changed_nested_menu():
     assert hierarchy[0]["name"] == "Apple"
     assert [group["name"] for group in hierarchy[0]["sub_children"]] == ["iPhone", "iPad"]
     assert hierarchy[0]["sub_children"][0]["children"][0]["url"].endswith("/iphone-17")
+
+
+def test_semantic_healer_keeps_single_child_groups_and_wrapped_links():
+    hierarchy = evaluate_script(
+        SEMANTIC_MENU_JS,
+        """
+        <nav aria-label="navigation"><ul id="nav"><li>
+          <a href="/parts">Apple</a>
+          <ul><li><div><a href="/parts/iphone">iPhone</a></div>
+            <ul><li><div><span><a href="/parts/iphone-17">iPhone 17</a></span></div></li></ul>
+          </li></ul>
+        </li></ul></nav>
+        """,
+        "https://example.com/",
+        "#nav",
+    )
+
+    assert hierarchy[0]["sub_children"][0]["name"] == "iPhone"
+    assert hierarchy[0]["sub_children"][0]["children"][0]["name"] == "iPhone 17"
