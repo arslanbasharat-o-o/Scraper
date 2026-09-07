@@ -31,6 +31,11 @@ This application uses an embedded SQLite database and an in-process background s
    cp .env.example .env
    # Edit .env with your credentials and SECRET_KEY
    ```
+   For a 40 GB Hostinger server, keep the required application/authentication
+   settings from `.env.example`, then apply the values from
+   `.env.server-40gb.example` (`SCRAPER_WORKER_PROFILE=server_40gb` and
+   `SCRAPER_LOCAL_BROWSER_MAX_WINDOWS=4`). The server file is an override
+   reference, not a complete environment file by itself.
 
 ### Running the Application
 

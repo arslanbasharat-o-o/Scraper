@@ -22,4 +22,5 @@ EXPOSE 8080
 
 # Keep one worker so the in-process automation scheduler cannot duplicate jobs.
 # Use threads for concurrent requests and a long timeout for scraper workflows.
-CMD ["sh", "-c", "gunicorn --workers ${WEB_WORKERS:-1} --threads ${WEB_THREADS:-8} --timeout ${WEB_TIMEOUT:-900} -b 0.0.0.0:${PORT:-8080} app:app"]
+# The scheduler runs inside Flask; keep exactly one Gunicorn worker.
+CMD ["sh", "-c", "gunicorn --workers 1 --threads ${WEB_THREADS:-8} --timeout ${WEB_TIMEOUT:-900} -b 0.0.0.0:${PORT:-8080} app:app"]
