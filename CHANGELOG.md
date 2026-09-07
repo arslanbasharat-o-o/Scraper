@@ -1,5 +1,11 @@
 # Changelog
 
+## [8.4.16] - 2026-09-07
+- Auto-seed menu maps from bundled baseline data in `data/menu_map_seeds/` whenever site output is missing, empty, or corrupted by server-level Cloudflare access blocks.
+- Preserve healthy previous menu map outputs and fall back to baseline seeds on Cloudflare HTTP 403 or verification challenge blocks, preventing empty output replacement (`[]`).
+- Add baseline seed fallback in Phone LCD Parts direct HTTP extractor.
+- Clear stale scrape error indicators when baseline seed is restored.
+
 ## [8.4.15] - 2026-09-07
 - Add automatic Cloudflare access challenge waiting in Menu Map runner.
 - Add direct HTTP NinjaMenus extraction fallback for Phone LCD Parts (`/swpninjamenu/index/menu`) to bypass datacenter IP verification hurdles.

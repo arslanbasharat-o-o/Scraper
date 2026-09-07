@@ -208,3 +208,31 @@ def test_menu_map_links_export_returns_xlsx(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.get_data()[:2] == b"PK"
+
+
+def test_menu_map_ensure_seeded_populates_baseline(tmp_path, monkeypatch):
+    monkeypatch.setenv("FORCE_MENU_MAP_SEED", "1")
+    output_dir = tmp_path / "phonelcdparts"
+    assert not output_dir.exists()
+
+    seeded = app_module.ensure_menu_map_seeded("phonelcdparts", output_dir)
+    assert seeded is True
+    assert (output_dir / "categories.json").exists()
+    assert (output_dir / "categories.csv").exists()
+
+    # Re-running on already seeded non-empty directory should return False (no re-copy needed)
+    assert app_module.ensure_menu_map_seeded("phonelcdparts", output_dir) is False
+
+
+def test_menu_map_restore_from_seed_output(tmp_path):
+    from scrapers.menu_map.common import is_valid_nonempty_output, restore_from_seed_output
+    import logging
+
+    test_dir = tmp_path / "phonelcdparts"
+    assert not is_valid_nonempty_output(test_dir / "categories.json")
+
+    logger = logging.getLogger("test_logger")
+    restored = restore_from_seed_output("phonelcdparts", test_dir, logger)
+    assert restored is True
+    assert is_valid_nonempty_output(test_dir / "categories.json")
+

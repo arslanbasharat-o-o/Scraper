@@ -421,7 +421,7 @@ def main() -> None:
     except Exception as exc:
         import logging
         from pathlib import Path
-        from .common import ScrapeResult, export_outputs, mark_duplicates
+        from .common import ScrapeResult, export_outputs, mark_duplicates, restore_from_seed_output
 
         logger = logging.getLogger("phonelcdparts_fallback")
         logger.warning("run_site failed (%s); running direct HTTP extraction fallback", exc)
@@ -433,6 +433,8 @@ def main() -> None:
             res.records = records
             export_outputs(CONFIG, output_dir, res, headless=True, duplicates=mark_duplicates(records))
             logger.info("Successfully exported %d records via HTTP fallback", len(records))
+        elif restore_from_seed_output(CONFIG.output_slug, output_dir, logger):
+            logger.warning("HTTP fallback failed; restored baseline seed for %s", CONFIG.website)
         else:
             raise
 

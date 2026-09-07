@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import time
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
@@ -641,6 +642,39 @@ async def validate_urls(records: list[CategoryRecord], concurrency: int = 8, tim
         r.validation_timestamp = stamp
 
 
+def is_valid_nonempty_output(categories_path: Path) -> bool:
+    if not categories_path.exists() or categories_path.stat().st_size < 10:
+        return False
+    try:
+        data = json.loads(categories_path.read_text(encoding="utf-8"))
+        return isinstance(data, list) and len(data) > 0
+    except Exception:
+        return False
+
+
+def restore_from_seed_output(slug: str, output_dir: Path, logger: logging.Logger) -> bool:
+    """Restores baseline seed files to output_dir if present in data/menu_map_seeds."""
+    seed_dir = Path(__file__).resolve().parent.parent.parent / "data" / "menu_map_seeds" / slug
+    if not seed_dir.exists() or not is_valid_nonempty_output(seed_dir / "categories.json"):
+        return False
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for file_path in seed_dir.iterdir():
+            if file_path.is_file():
+                shutil.copy2(file_path, output_dir / file_path.name)
+        stale_errors = output_dir / "scraping_errors.json"
+        if stale_errors.exists():
+            try:
+                stale_errors.unlink()
+            except Exception:
+                pass
+        logger.info("Successfully restored baseline menu-map seed for %s from %s", slug, seed_dir)
+        return True
+    except Exception as exc:
+        logger.warning("Failed to restore baseline menu-map seed for %s: %s", slug, exc)
+        return False
+
+
 def export_outputs(
     config: SiteConfig,
     output_dir: Path,
@@ -1131,12 +1165,24 @@ async def run_site(
     if args.validate_urls and not args.skip_url_validation and result.records:
         await validate_urls(result.records)
     if not args.inspect_only:
-        has_previous_output = (output_dir / "categories.json").exists()
-        if result.records or not has_previous_output:
+        if result.records:
             export_outputs(config, output_dir, result, headless=headless, duplicates=duplicates)
-        else:
+        elif is_valid_nonempty_output(output_dir / "categories.json"):
             result.preserve_previous_output = True
-            logger.error("No healthy replacement hierarchy was produced; previous Menu Map output was preserved")
+            logger.warning("No replacement hierarchy was produced; healthy previous Menu Map output was preserved")
+        elif restore_from_seed_output(config.output_slug, output_dir, logger):
+            result.preserve_previous_output = True
+            logger.warning("No replacement hierarchy was produced; restored baseline seed for %s", config.website)
+        else:
+            export_outputs(config, output_dir, result, headless=headless, duplicates=duplicates)
+
+        if not result.records and (output_dir / "categories.json").exists():
+            try:
+                cat_tree = json.loads((output_dir / "categories.json").read_text(encoding="utf-8"))
+                if isinstance(cat_tree, list) and cat_tree:
+                    result.records = records_from_hierarchy(config, cat_tree)
+            except Exception:
+                pass
     print_validation_summary(config, output_dir, result, duplicates)
     return result
 

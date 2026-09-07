@@ -1,0 +1,2178 @@
+[
+  {
+    "parent_name": "Apple",
+    "parent_url": "https://txpartscanada.ca/shop/iphone",
+    "display_order": 1,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Iphone",
+        "sub_child_url": "https://txpartscanada.ca/shop/iphone",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "IPhone Air",
+            "child_url": "https://txpartscanada.ca/shop/iphone-air",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "IPhone 17 Pro Max",
+            "child_url": "https://txpartscanada.ca/shop/iphone-17-pro-max",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "IPhone 17 Pro",
+            "child_url": "https://txpartscanada.ca/shop/iphone-17-pro",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "IPhone 17",
+            "child_url": "https://txpartscanada.ca/shop/iphone-17",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "IPhone 16 Pro Max",
+            "child_url": "https://txpartscanada.ca/shop/iphone-16-pro-max",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "IPhone 16 Pro",
+            "child_url": "https://txpartscanada.ca/shop/iphone-16-pro",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "IPhone 16 Plus",
+            "child_url": "https://txpartscanada.ca/shop/iphone-16-plus",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "IPhone 16",
+            "child_url": "https://txpartscanada.ca/shop/iphone-16",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "IPhone 16e",
+            "child_url": "https://txpartscanada.ca/shop/iphone-16e",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "IPhone 15 Pro Max",
+            "child_url": "https://txpartscanada.ca/shop/iphone-15-pro-max",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "IPhone 15 Pro",
+            "child_url": "https://txpartscanada.ca/shop/iphone-15-pro",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "IPhone 15 Plus",
+            "child_url": "https://txpartscanada.ca/shop/iphone-15-plus",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "IPhone 15",
+            "child_url": "https://txpartscanada.ca/shop/iphone-15",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "IPhone 14 Pro Max",
+            "child_url": "https://txpartscanada.ca/shop/iphone-14-pro-max",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "IPhone 14 Pro",
+            "child_url": "https://txpartscanada.ca/shop/iphone-14-pro",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "IPhone 14 Plus",
+            "child_url": "https://txpartscanada.ca/shop/iphone-14-plus",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "IPhone 14",
+            "child_url": "https://txpartscanada.ca/shop/iphone-14",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "IPhone 13 Pro Max",
+            "child_url": "https://txpartscanada.ca/shop/iphone-13-pro-max",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "IPhone 13 Pro",
+            "child_url": "https://txpartscanada.ca/shop/iphone-13-pro",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "IPhone 13",
+            "child_url": "https://txpartscanada.ca/shop/iphone-13",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "IPhone 13 Mini",
+            "child_url": "https://txpartscanada.ca/shop/iphone-13-mini",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "IPhone SE (2022)",
+            "child_url": "https://txpartscanada.ca/shop/iphone-se-2022",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "IPhone 12 Pro Max",
+            "child_url": "https://txpartscanada.ca/shop/iphone-12-pro-max",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "IPhone 12 Pro",
+            "child_url": "https://txpartscanada.ca/shop/iphone-12-pro",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "IPhone 12",
+            "child_url": "https://txpartscanada.ca/shop/iphone-12",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "IPhone 12 Mini",
+            "child_url": "https://txpartscanada.ca/shop/iphone-12-mini",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "IPhone 11 Pro Max",
+            "child_url": "https://txpartscanada.ca/shop/iphone-11-pro-max",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "IPhone 11 Pro",
+            "child_url": "https://txpartscanada.ca/shop/iphone-11-pro",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "IPhone 11",
+            "child_url": "https://txpartscanada.ca/shop/iphone-11",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "IPhone XS Max",
+            "child_url": "https://txpartscanada.ca/shop/iphone-xs-max",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "IPhone XS",
+            "child_url": "https://txpartscanada.ca/shop/iphone-xs",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "IPhone XR",
+            "child_url": "https://txpartscanada.ca/shop/iphone-xr",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "IPhone X",
+            "child_url": "https://txpartscanada.ca/shop/iphone-x",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          },
+          {
+            "child_name": "IPhone 8 Plus",
+            "child_url": "https://txpartscanada.ca/shop/iphone-8-plus",
+            "display_order": 34,
+            "column_number": 0,
+            "row_number": 34
+          },
+          {
+            "child_name": "IPhone SE (2020)",
+            "child_url": "https://txpartscanada.ca/shop/iphone-se-2020",
+            "display_order": 35,
+            "column_number": 0,
+            "row_number": 35
+          },
+          {
+            "child_name": "IPhone 8",
+            "child_url": "https://txpartscanada.ca/shop/iphone-8",
+            "display_order": 36,
+            "column_number": 0,
+            "row_number": 36
+          },
+          {
+            "child_name": "IPhone 7 Plus",
+            "child_url": "https://txpartscanada.ca/shop/iphone-7-plus",
+            "display_order": 37,
+            "column_number": 0,
+            "row_number": 37
+          },
+          {
+            "child_name": "IPhone 7",
+            "child_url": "https://txpartscanada.ca/shop/iphone-7",
+            "display_order": 38,
+            "column_number": 0,
+            "row_number": 38
+          },
+          {
+            "child_name": "IPhone 6S Plus",
+            "child_url": "https://txpartscanada.ca/shop/iphone-6s-plus",
+            "display_order": 39,
+            "column_number": 0,
+            "row_number": 39
+          },
+          {
+            "child_name": "IPhone 6S",
+            "child_url": "https://txpartscanada.ca/shop/iphone-6s",
+            "display_order": 40,
+            "column_number": 0,
+            "row_number": 40
+          },
+          {
+            "child_name": "IPhone 6 Plus",
+            "child_url": "https://txpartscanada.ca/shop/iphone-6-plus",
+            "display_order": 41,
+            "column_number": 0,
+            "row_number": 41
+          },
+          {
+            "child_name": "IPhone 6",
+            "child_url": "https://txpartscanada.ca/shop/iphone-6",
+            "display_order": 42,
+            "column_number": 0,
+            "row_number": 42
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Ipad",
+        "sub_child_url": "https://txpartscanada.ca/shop/ipad",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "IPAD PRO 12.9\" 6TH GEN (2022)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-129-6th-gen-2022",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "IPAD PRO 12.9\" 5TH GEN (2021)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-129-5th-gen-2021",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "IPAD PRO 12.9\" 4TH GEN (2020)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-129-4th-gen-2020",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "IPAD PRO 12.9\" 3RD GEN (2018)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-129-3rd-gen-2018",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "IPAD PRO 12.9\" 2ND GEN (2017)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-129-2nd-gen-2017",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "IPAD PRO 12.9\" 1ST GEN (2015)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-129-1st-gen-2015",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "IPAD PRO 11\" 4TH GEN (2022)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-11-4th-gen-2022",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "IPAD PRO 11\" 3RD GEN (2021)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-11-3rd-gen-2021",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "IPAD PRO 11\" 2ND GEN (2020)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-11-2nd-gen-2020",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "IPAD PRO 11\" 1ST GEN (2018)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-11-1st-gen-2018",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "IPAD PRO 10.5",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-105",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "IPAD PRO 9.7",
+            "child_url": "https://txpartscanada.ca/shop/ipad-pro-97",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "IPAD AIR 13'' (2025)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-air-13-2025",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "IPAD AIR 11'' (2025)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-air-11-2025",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "IPAD AIR 13'' (2024)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-air-13-2024",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "IPAD AIR 11'' (2024)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-air-11-2024",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "IPAD AIR 5(2022)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-air-52022",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "IPAD AIR 4 (2020)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-air-4-2020",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "IPAD AIR 3 (2019)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-air-3-2019",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "IPAD AIR 2 (2014)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-air-2-2014",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "IPAD AIR 1 (2013)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-air-1-2013",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "IPAD MINI 6 (2021)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-mini-6-2021",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "IPAD MINI 5 (2019)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-mini-5-2019",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "IPAD MINI 4",
+            "child_url": "https://txpartscanada.ca/shop/ipad-mini-4",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "IPAD MINI 3",
+            "child_url": "https://txpartscanada.ca/shop/ipad-mini-3",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "IPAD MINI 2",
+            "child_url": "https://txpartscanada.ca/shop/ipad-mini-2",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "IPAD MINI 1",
+            "child_url": "https://txpartscanada.ca/shop/ipad-mini-1",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "IPad 11 (2025)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-11-2025",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "IPAD 10 (2022)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-10-2022",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "IPAD 9 (2021)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-9-2021",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "IPAD 8 (2020)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-8-2020",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "IPAD 7 (2019)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-7-2019",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "IPAD 6 (2018)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-6-2018",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          },
+          {
+            "child_name": "IPAD 5 (2017)",
+            "child_url": "https://txpartscanada.ca/shop/ipad-5-2017",
+            "display_order": 34,
+            "column_number": 0,
+            "row_number": 34
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Samsung",
+    "parent_url": "https://txpartscanada.ca/shop/s-series",
+    "display_order": 2,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "S Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/s-series",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Galaxy S26 Ultra",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s26-ultra",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Galaxy S26 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s26-plus",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Galaxy S26",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s26",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Galaxy S25 Edge",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s25-edge",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Galaxy S25 FE",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s25-fe",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Galaxy S25 Ultra",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s25-ultra",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Galaxy S25 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s25-plus",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Galaxy S25",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s25",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Galaxy S24 FE",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s24-fe",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Galaxy S24 Ultra",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s24-ultra",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Galaxy S24 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s24-plus",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Galaxy S24",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s24",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Galaxy S23 FE",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s23-fe",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Galaxy S23 Ultra",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s23-ultra",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Galaxy S23 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s23-plus",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "Galaxy S23 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s23-5g",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Galaxy S22 Ultra",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s22-ultra",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Galaxy S22 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s22-plus",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "Galaxy S22",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s22",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "Galaxy S21 Ultra",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s21-ultra",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "Galaxy S21 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s21-plus",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "Galaxy S21",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s21",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "Galaxy S21FE",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s21fe",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "Galaxy S20 Ultra",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s20-ultra",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "Galaxy S20 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s20-plus",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "Galaxy S20 FE",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s20-fe",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "Galaxy S20 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s20-5g",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "Galaxy S10 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s10-plus",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "Galaxy S10",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s10-3",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "Galaxy S9 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s9-plus",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "Galaxy S9",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s9",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "Galaxy S8 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s8-plus",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "Galaxy S8",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-s8",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          }
+        ]
+      },
+      {
+        "sub_child_name": "A Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/a-series",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "A56 5G (A566 / 2025)",
+            "child_url": "https://txpartscanada.ca/shop/a56-5g-a566-2025",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "A17 5G (A176 / 2025)",
+            "child_url": "https://txpartscanada.ca/shop/a17-5g-a176-2025",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "A17 4G (A175 / 2025)",
+            "child_url": "https://txpartscanada.ca/shop/a17-4g-a175-2025",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "A07 4G (A075 / 2025)",
+            "child_url": "https://txpartscanada.ca/shop/a07-4g-a075-2025",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "A06 5G (A066 / 2025)",
+            "child_url": "https://txpartscanada.ca/shop/a06-5g-a066-2025",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "A55 5G (A556 / 2024)",
+            "child_url": "https://txpartscanada.ca/shop/a55-5g-a556-2024",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "A35 5G (A356 / 2024)",
+            "child_url": "https://txpartscanada.ca/shop/a35-5g-a356-2024",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "A16 5G (A166 / 2024)",
+            "child_url": "https://txpartscanada.ca/shop/a16-5g-a166-2024",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "A16 4G (A165 / 2024)",
+            "child_url": "https://txpartscanada.ca/shop/a16-4g-a165-2024",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "A06 4G (A065 /2024)",
+            "child_url": "https://txpartscanada.ca/shop/a06-4g-a065-2024",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "A54 5G (A546 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/a54-5g-a546-2023",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "A34 5G (A346 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/a34-5g-a346-2023",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "A25 5G (A256 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/a25-5g-a256-2023",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "A24 4G (A245 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/a24-4g-a245-2023",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "A15 5G (A156 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/a15-5g-a156-2023",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "A14 5G (A146 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/a14-5g-a146-2023",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "A14 (A145 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/a14-a145-2023",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "A05 (A055 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/a05-a055-2023",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "A05S (A057 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/a05s-a057-2023",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "A73 5g (A736 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/a73-5g-a736-2022",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "A53 5G (A536B / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/a53-5g-a536b-2022",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "A33 5G (A336 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/a33-5g-a336-2022",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "A23 5G (A236 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/a23-5g-a236-2022",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "A23 (A235 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/a23-a235-2022",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "A13 4g (A135 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/a13-4g-a135-2022",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "A04 (A045 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/a04-a045-2022",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "A04E (A042 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/a04e-a042-2022",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "A04S (A047 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/a04s-a047-2022",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "A72 (A725 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a72-a725-2021",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "A52 5G (A526 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a52-5g-a526-2021",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "A52 4G (A525 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a52-4g-a525-2021",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "A32 5G (A326 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a32-5g-a326-2021",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "A32 (A325 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a32-a325-2021",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          },
+          {
+            "child_name": "A22 5G (A226 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a22-5g-a226-2021",
+            "display_order": 34,
+            "column_number": 0,
+            "row_number": 34
+          },
+          {
+            "child_name": "A22 4G (A225 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a22-4g-a225-2021",
+            "display_order": 35,
+            "column_number": 0,
+            "row_number": 35
+          },
+          {
+            "child_name": "A13 5g (A136 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a13-5g-a136-2021",
+            "display_order": 36,
+            "column_number": 0,
+            "row_number": 36
+          },
+          {
+            "child_name": "A12 Nacho (A127 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a12-nacho-a127-2021",
+            "display_order": 37,
+            "column_number": 0,
+            "row_number": 37
+          },
+          {
+            "child_name": "A03 (A035 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a03-a035-2021",
+            "display_order": 38,
+            "column_number": 0,
+            "row_number": 38
+          },
+          {
+            "child_name": "A03 Core (A032 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a03-core-a032-2021",
+            "display_order": 39,
+            "column_number": 0,
+            "row_number": 39
+          },
+          {
+            "child_name": "A03s (A037 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/a03s-a037-2021",
+            "display_order": 40,
+            "column_number": 0,
+            "row_number": 40
+          },
+          {
+            "child_name": "A71 (A715 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/a71-a715-2020",
+            "display_order": 41,
+            "column_number": 0,
+            "row_number": 41
+          },
+          {
+            "child_name": "A31 (A315 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/a31-a315-2020",
+            "display_order": 42,
+            "column_number": 0,
+            "row_number": 42
+          },
+          {
+            "child_name": "A21 (A215 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/a21-a215-2020",
+            "display_order": 43,
+            "column_number": 0,
+            "row_number": 43
+          },
+          {
+            "child_name": "A21s (A217 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/a21s-a217-2020",
+            "display_order": 44,
+            "column_number": 0,
+            "row_number": 44
+          },
+          {
+            "child_name": "A12 (A125 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/a12-a125-2020",
+            "display_order": 45,
+            "column_number": 0,
+            "row_number": 45
+          },
+          {
+            "child_name": "A11 (A115 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/a11-a115-2020",
+            "display_order": 46,
+            "column_number": 0,
+            "row_number": 46
+          },
+          {
+            "child_name": "A02 (A022 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/a02-a022-2020",
+            "display_order": 47,
+            "column_number": 0,
+            "row_number": 47
+          },
+          {
+            "child_name": "A02s (A025 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/a02s-a025-2020",
+            "display_order": 48,
+            "column_number": 0,
+            "row_number": 48
+          },
+          {
+            "child_name": "A70 (A705 / 2019)",
+            "child_url": "https://txpartscanada.ca/shop/a70-a705-2019",
+            "display_order": 49,
+            "column_number": 0,
+            "row_number": 49
+          },
+          {
+            "child_name": "A51 4G (A515 / 2019)",
+            "child_url": "https://txpartscanada.ca/shop/a51-4g-a515-2019",
+            "display_order": 50,
+            "column_number": 0,
+            "row_number": 50
+          },
+          {
+            "child_name": "A50 (A505 / 2019)",
+            "child_url": "https://txpartscanada.ca/shop/a50-a505-2019",
+            "display_order": 51,
+            "column_number": 0,
+            "row_number": 51
+          },
+          {
+            "child_name": "A30 (A305 / 2019)",
+            "child_url": "https://txpartscanada.ca/shop/a30-a305-2019",
+            "display_order": 52,
+            "column_number": 0,
+            "row_number": 52
+          },
+          {
+            "child_name": "A30S (A307 / 2019)",
+            "child_url": "https://txpartscanada.ca/shop/a30s-a307-2019",
+            "display_order": 53,
+            "column_number": 0,
+            "row_number": 53
+          },
+          {
+            "child_name": "A20 (A205 / 2019)",
+            "child_url": "https://txpartscanada.ca/shop/a20-a205-2019",
+            "display_order": 54,
+            "column_number": 0,
+            "row_number": 54
+          },
+          {
+            "child_name": "A20S (A207 / 2019)",
+            "child_url": "https://txpartscanada.ca/shop/a20s-a207-2019",
+            "display_order": 55,
+            "column_number": 0,
+            "row_number": 55
+          },
+          {
+            "child_name": "A10 (A105 / 2019)",
+            "child_url": "https://txpartscanada.ca/shop/a10-a105-2019",
+            "display_order": 56,
+            "column_number": 0,
+            "row_number": 56
+          },
+          {
+            "child_name": "A10e (A102 / 2019)",
+            "child_url": "https://txpartscanada.ca/shop/a10e-a102-2019",
+            "display_order": 57,
+            "column_number": 0,
+            "row_number": 57
+          },
+          {
+            "child_name": "A10S (A107 / 2019)",
+            "child_url": "https://txpartscanada.ca/shop/a10s-a107-2019",
+            "display_order": 58,
+            "column_number": 0,
+            "row_number": 58
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Note Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/note-series",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Galaxy Note 20 Ultra",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-note-20-ultra",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Galaxy Note 10 Plus",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-note-10-plus",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Galaxy Note 9",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-note-9",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Galaxy Note 8",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-note-8",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Fold Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/fold-series",
+        "display_order": 4,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Galaxy Z Fold 7 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-fold-7-5g",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Galaxy Z Fold 6 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-fold-6-5g",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Galaxy Z Fold 5 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-fold-5-5g",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Galaxy Z Fold 4 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-fold-4-5g",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Galaxy Z Fold 3 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-fold-3-5g",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Galaxy Z Fold 2 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-fold-2-5g",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Galaxy Fold 1 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-fold-1-5g",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Galaxy Fold 1 4G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-fold-1-4g",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Flip Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/flip-series",
+        "display_order": 5,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Galaxy Z Flip 7 FE 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-flip-7-fe-5g",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Galaxy Z Flip 7 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-flip-7-5g",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Galaxy Z Flip 6 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-flip-6-5g",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Galaxy Z Flip5 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-flip5-5g",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Galaxy Z Flip4 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-flip4-5g",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Galaxy Z Flip3 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-flip3-5g",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Galaxy Z Flip 2 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-flip-2-5g",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Galaxy Z Flip 5G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-flip-5g",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Galaxy Z Flip 4G",
+            "child_url": "https://txpartscanada.ca/shop/galaxy-z-flip-4g",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Tab A series",
+        "sub_child_url": "https://txpartscanada.ca/shop/tab-a-series",
+        "display_order": 6,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Tab A9 Plus (2023)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a9-plus-2023",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Tab A9 (2023)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a9-2023",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Tab A8 10.5\" (2021)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a8-105-2021",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Tab A7 Lite 8.7\" (2021)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a7-lite-87-2021",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Tab A7 10.4\" (2020)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a7-104-2020",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Tab A 8.4\" (2020)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a-84-2020-2",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Tab A 10.1\" (2019)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a-101-2019-2",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Tab A 8.0\" (2019)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a-80-2019",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Tab A 10.5\" (2018)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a-105-2018",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Tab A 8.0\" (2017)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a-80-2017",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Tab A 7.0\" (2016)",
+            "child_url": "https://txpartscanada.ca/shop/tab-a-70-2016",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Tab S Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/tab-s-series",
+        "display_order": 7,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Tab S9 FE Plus (2023)",
+            "child_url": "https://txpartscanada.ca/shop/tab-s9-fe-plus-2023",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Tab S9 FE (2023)",
+            "child_url": "https://txpartscanada.ca/shop/tab-s9-fe-2023",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Tab S7 FE (2021)",
+            "child_url": "https://txpartscanada.ca/shop/tab-s7-fe-2021",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Tab S6 Lite 10.4\" (2020)",
+            "child_url": "https://txpartscanada.ca/shop/tab-s6-lite-104-2020",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Motorola",
+    "parent_url": "https://txpartscanada.ca/shop/moto-g-series",
+    "display_order": 3,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Moto G Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/moto-g-series",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "G Play (XT2615-1 / 2026)",
+            "child_url": "https://txpartscanada.ca/shop/g-play-xt2615-1-2026",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "G Stylus 5G (XT2517 / 2025)",
+            "child_url": "https://txpartscanada.ca/shop/g-stylus-5g-xt2517-2025",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "G Power (XT2515 / 2025)",
+            "child_url": "https://txpartscanada.ca/shop/g-power-xt2515-2025",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "G 5G (XT2513 / 2025)",
+            "child_url": "https://txpartscanada.ca/shop/g-5g-xt2513-2025",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "G Stylus 5G (XT2419 / 2024)",
+            "child_url": "https://txpartscanada.ca/shop/g-stylus-5g-xt2419-2024",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "G 5G (XT2417 / 2024)",
+            "child_url": "https://txpartscanada.ca/shop/g-5g-xt2417-2024",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "G POWER 5G (XT2415 / 2024)",
+            "child_url": "https://txpartscanada.ca/shop/g-power-5g-xt2415-2024",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "G Play (XT2413 / 2024)",
+            "child_url": "https://txpartscanada.ca/shop/g-play-xt2413-2024",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "G STYLUS 5G (XT2315 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/g-stylus-5g-xt2315-2023",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "G POWER 5G (XT2311-3 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/g-power-5g-xt2311-3-2023",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "G PLAY (XT2271-5 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/g-play-xt2271-5-2023",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "G STYLUS 4G (XT2317 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/g-stylus-4g-xt2317-2023",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "G 5G (XT2313 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/g-5g-xt2313-2023",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "G Power (XT2165 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/g-power-xt2165-2022",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "G 5G (XT2213 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/g-5g-xt2213-2022",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "G Stylus 5G (XT2215 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/g-stylus-5g-xt2215-2022",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "G Stylus 4G (XT2211 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/g-stylus-4g-xt2211-2022",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "G Pure (XT2163/2021)",
+            "child_url": "https://txpartscanada.ca/shop/g-pure-xt21632021",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "G Stylus 5G (XT2131/2021)",
+            "child_url": "https://txpartscanada.ca/shop/g-stylus-5g-xt21312021",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "G POWER (XT2117/ 2021)",
+            "child_url": "https://txpartscanada.ca/shop/g-power-xt2117-2021",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "G STYLUS 6.8\" (XT2115 / 2021)",
+            "child_url": "https://txpartscanada.ca/shop/g-stylus-68-xt2115-2021",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "G PLAY (XT2093/ 2021)",
+            "child_url": "https://txpartscanada.ca/shop/g-play-xt2093-2021",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "G 5G (XT2113-3 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/g-5g-xt2113-3-2020",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "G FAST (XT2045-3 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/g-fast-xt2045-3-2020",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "G STYLUS 6.4\" (XT2043 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/g-stylus-64-xt2043-2020",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Moto Edge Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/moto-edge-series",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Edge (XT2519 / 2025)",
+            "child_url": "https://txpartscanada.ca/shop/edge-xt2519-2025",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Edge (XT2405 / 2024)",
+            "child_url": "https://txpartscanada.ca/shop/edge-xt2405-2024",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Edge (XT2305 / 2023)",
+            "child_url": "https://txpartscanada.ca/shop/edge-xt2305-2023",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Edge (XT2205-1 / 2022)",
+            "child_url": "https://txpartscanada.ca/shop/edge-xt2205-1-2022",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Edge 5G (XT2063 / 2020)",
+            "child_url": "https://txpartscanada.ca/shop/edge-5g-xt2063-2020",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Moto E Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/moto-e-series",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "E20 (XT2155/2021)",
+            "child_url": "https://txpartscanada.ca/shop/e20-xt21552021",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "E (XT2052/2020)",
+            "child_url": "https://txpartscanada.ca/shop/e-xt20522020",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "E (XT1022/2014)",
+            "child_url": "https://txpartscanada.ca/shop/e-xt10222014",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Google",
+    "parent_url": "https://txpartscanada.ca/shop/6-series",
+    "display_order": 4,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "6 Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/6-series",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Pixel 6",
+            "child_url": "https://txpartscanada.ca/shop/pixel-6",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Pixel 6A",
+            "child_url": "https://txpartscanada.ca/shop/pixel-6a",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Pixel 6 pro",
+            "child_url": "https://txpartscanada.ca/shop/pixel-6-pro",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          }
+        ]
+      },
+      {
+        "sub_child_name": "7 Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/7-series",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Pixel 7",
+            "child_url": "https://txpartscanada.ca/shop/pixel-7",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Pixel 7A",
+            "child_url": "https://txpartscanada.ca/shop/pixel-7a",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Pixel 7 Pro",
+            "child_url": "https://txpartscanada.ca/shop/pixel-7-pro",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          }
+        ]
+      },
+      {
+        "sub_child_name": "8 Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/8-series",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Pixel 8",
+            "child_url": "https://txpartscanada.ca/shop/pixel-8",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Pixel 8A",
+            "child_url": "https://txpartscanada.ca/shop/pixel-8a",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Pixel 8 Pro",
+            "child_url": "https://txpartscanada.ca/shop/pixel-8-pro",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          }
+        ]
+      },
+      {
+        "sub_child_name": "9 Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/9-series",
+        "display_order": 4,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Pixel 9",
+            "child_url": "https://txpartscanada.ca/shop/pixel-9",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Pixel 9A",
+            "child_url": "https://txpartscanada.ca/shop/pixel-9a",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Pixel 9 Pro",
+            "child_url": "https://txpartscanada.ca/shop/pixel-9-pro",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Pixel 9 Pro XL",
+            "child_url": "https://txpartscanada.ca/shop/pixel-9-pro-xl",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          }
+        ]
+      },
+      {
+        "sub_child_name": "10 Series",
+        "sub_child_url": "https://txpartscanada.ca/shop/10-series",
+        "display_order": 5,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Pixel 10",
+            "child_url": "https://txpartscanada.ca/shop/pixel-10",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Pixel 10A",
+            "child_url": "https://txpartscanada.ca/shop/pixel-10a",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Pixel 10 pro",
+            "child_url": "https://txpartscanada.ca/shop/pixel-10-pro",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Pixel 10 pro XL",
+            "child_url": "https://txpartscanada.ca/shop/pixel-10-pro-xl",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Other Brands",
+    "parent_url": "https://txpartscanada.ca/shop/huawei",
+    "display_order": 5,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Huawei",
+        "sub_child_url": "https://txpartscanada.ca/shop/huawei",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Huawei P Series",
+            "child_url": "https://txpartscanada.ca/shop/huawei-p-series",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "P30 Pro (2019)",
+            "child_url": "https://txpartscanada.ca/shop/p30-pro-2019",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "P30 LITE (2019)",
+            "child_url": "https://txpartscanada.ca/shop/p30-lite-2019",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "P30 (2019)",
+            "child_url": "https://txpartscanada.ca/shop/p30-2019",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "P20 Pro (2018)",
+            "child_url": "https://txpartscanada.ca/shop/p20-pro-2018",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "P20 (2018)",
+            "child_url": "https://txpartscanada.ca/shop/p20-2018",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          }
+        ]
+      },
+      {
+        "sub_child_name": "LG",
+        "sub_child_url": "https://txpartscanada.ca/shop/lg",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "LG G Series",
+            "child_url": "https://txpartscanada.ca/shop/lg-g-series",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "LG G8X ThinQ",
+            "child_url": "https://txpartscanada.ca/shop/lg-g8x-thinq",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "LG G8 ThinQ",
+            "child_url": "https://txpartscanada.ca/shop/lg-g8-thinq-1",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "LG G7 ThinQ",
+            "child_url": "https://txpartscanada.ca/shop/lg-g7-thinq-1",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "LG G6",
+            "child_url": "https://txpartscanada.ca/shop/lg-g6-1",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "LG G3",
+            "child_url": "https://txpartscanada.ca/shop/lg-g3-1",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "LG K Series",
+            "child_url": "https://txpartscanada.ca/shop/lg-k-series",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "LG K71 (2020)",
+            "child_url": "https://txpartscanada.ca/shop/lg-k71-2020",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "LG K61 (2020)",
+            "child_url": "https://txpartscanada.ca/shop/lg-k61-2020",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "LG K41S (2020)",
+            "child_url": "https://txpartscanada.ca/shop/lg-k41s-2020",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "LG K41 (2020)",
+            "child_url": "https://txpartscanada.ca/shop/lg-k41-2020",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "LG K30 (2019)",
+            "child_url": "https://txpartscanada.ca/shop/lg-k30-2019",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "LG V Series",
+            "child_url": "https://txpartscanada.ca/shop/lg-v-series",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "LG V30",
+            "child_url": "https://txpartscanada.ca/shop/lg-v30",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "LG Velvet 5G",
+            "child_url": "https://txpartscanada.ca/shop/lg-velvet-5g",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "LG Q Series",
+            "child_url": "https://txpartscanada.ca/shop/lg-q-series",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Q70 (2019)",
+            "child_url": "https://txpartscanada.ca/shop/q70-2019",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Q60 (2019)",
+            "child_url": "https://txpartscanada.ca/shop/q60-2019",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Tools and Accessories",
+    "parent_url": "https://txpartscanada.ca/shop/accessories",
+    "display_order": 6,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Accessories",
+        "sub_child_url": "https://txpartscanada.ca/shop/accessories",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Chargers",
+            "child_url": "https://txpartscanada.ca/shop/chargers",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Cables",
+            "child_url": "https://txpartscanada.ca/shop/cables",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Headphones",
+        "sub_child_url": "https://txpartscanada.ca/shop/headphones",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "AirPods",
+            "child_url": "https://txpartscanada.ca/shop/airpods-1",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          }
+        ]
+      }
+    ]
+  }
+]

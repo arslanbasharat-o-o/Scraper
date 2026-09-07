@@ -45,7 +45,7 @@ from flask_login import current_user, login_user, logout_user
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.4.15'
+APP_VERSION = '8.4.16'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -4325,6 +4325,50 @@ def summarize_hierarchy(tree: List[Dict[str, object]]) -> Dict[str, int]:
     }
 
 
+def ensure_menu_map_seeded(slug: str, output_dir: Path | None = None) -> bool:
+    """Populates output directory from bundled seed data if output is missing or empty."""
+    if slug not in MENU_MAP_SITES:
+        return False
+    if output_dir is None:
+        output_dir = get_menu_map_output_root() / slug
+    categories_json = output_dir / 'categories.json'
+
+    if categories_json.exists():
+        try:
+            if categories_json.stat().st_size > 10:
+                parsed = json.loads(categories_json.read_text(encoding='utf-8'))
+                if isinstance(parsed, list) and len(parsed) > 0:
+                    return False
+        except Exception:
+            pass
+
+    # Skip in isolated test environments (e.g. pytest tmp_path) unless forced
+    default_output_root = (APP_ROOT / 'output').resolve()
+    current_output_root = get_menu_map_output_root().resolve()
+    if current_output_root != default_output_root and not os.getenv('FORCE_MENU_MAP_SEED'):
+        return False
+
+    seed_dir = APP_ROOT / 'data' / 'menu_map_seeds' / slug
+    if not seed_dir.exists():
+        return False
+
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for item in seed_dir.iterdir():
+            if item.is_file():
+                shutil.copy2(item, output_dir / item.name)
+        stale_errors = output_dir / 'scraping_errors.json'
+        if stale_errors.exists():
+            try:
+                stale_errors.unlink()
+            except Exception:
+                pass
+        return True
+    except Exception as exc:
+        logging.getLogger(__name__).warning('Failed to auto-seed menu-map for %s: %s', slug, exc)
+        return False
+
+
 def read_menu_map_site(slug: str, include_tree: bool = False) -> Dict[str, object]:
     if slug not in MENU_MAP_SITES:
         raise ValueError('Unknown menu-map site')
@@ -4348,6 +4392,17 @@ def read_menu_map_site(slug: str, include_tree: bool = False) -> Dict[str, objec
         except Exception as exc:
             tree = []
             parse_error = f'{type(exc).__name__}: {exc}'
+
+    # Auto-seed baseline if missing or empty on production/default storage
+    if not tree and ensure_menu_map_seeded(slug, output_dir):
+        try:
+            parsed_tree = json.loads(categories_json.read_text(encoding='utf-8'))
+            if isinstance(parsed_tree, list) and parsed_tree:
+                tree = parsed_tree
+                output_valid = True
+                parse_error = ''
+        except Exception:
+            pass
 
     summary = summarize_hierarchy(tree)
     missing_urls = 0

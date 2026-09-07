@@ -1,0 +1,5011 @@
+[
+  {
+    "parent_name": "Apple",
+    "parent_url": "https://gadgetfix.com/category/apple-1228.html",
+    "display_order": 1,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "iWatch",
+        "sub_child_url": "https://gadgetfix.com/category/iwatch-1638.html",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Series 9",
+            "child_url": "https://gadgetfix.com/category/series-9-2121.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Series Ultra (2st Gen)",
+            "child_url": "https://gadgetfix.com/category/series-ultra-2st-gen-2123.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Series Ultra (1st Gen)",
+            "child_url": "https://gadgetfix.com/category/series-ultra-1st-gen-2122.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Series 8",
+            "child_url": "https://gadgetfix.com/category/series-8-2062.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Series SE (2nd Gen)",
+            "child_url": "https://gadgetfix.com/category/series-se-2nd-gen-2058.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Series 7",
+            "child_url": "https://gadgetfix.com/category/series-7-1962.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Series 6",
+            "child_url": "https://gadgetfix.com/category/series-6-1861.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Series SE (1st Gen)",
+            "child_url": "https://gadgetfix.com/category/series-se-1st-gen-1887.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Series 5",
+            "child_url": "https://gadgetfix.com/category/series-5-1790.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Series 4",
+            "child_url": "https://gadgetfix.com/category/series-4-1743.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Series 3",
+            "child_url": "https://gadgetfix.com/category/series-3-1641.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Series 2",
+            "child_url": "https://gadgetfix.com/category/series-2-1640.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Series 1",
+            "child_url": "https://gadgetfix.com/category/series-1-1639.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          }
+        ]
+      },
+      {
+        "sub_child_name": "iPhone",
+        "sub_child_url": "https://gadgetfix.com/category/iphone-1559.html",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Iphone 17e",
+            "child_url": "https://gadgetfix.com/category/iphone-17e-2227.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Iphone 17 Pro Max",
+            "child_url": "https://gadgetfix.com/category/iphone-17-pro-max-2209.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Iphone 17 Pro",
+            "child_url": "https://gadgetfix.com/category/iphone-17-pro-2208.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Iphone Air",
+            "child_url": "https://gadgetfix.com/category/iphone-air-2207.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Iphone 17",
+            "child_url": "https://gadgetfix.com/category/iphone-17-2206.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Iphone 16e",
+            "child_url": "https://gadgetfix.com/category/iphone-16e-2189.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Iphone 16 Pro Max",
+            "child_url": "https://gadgetfix.com/category/iphone-16-pro-max-2152.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Iphone 16 Pro",
+            "child_url": "https://gadgetfix.com/category/iphone-16-pro-2151.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Iphone 16 Plus",
+            "child_url": "https://gadgetfix.com/category/iphone-16-plus-2150.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Iphone 16",
+            "child_url": "https://gadgetfix.com/category/iphone-16-2149.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Iphone 15 Pro Max",
+            "child_url": "https://gadgetfix.com/category/iphone-15-pro-max-2092.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "IPhone 15 Pro",
+            "child_url": "https://gadgetfix.com/category/iphone-15-pro-2091.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Iphone 15 Plus",
+            "child_url": "https://gadgetfix.com/category/iphone-15-plus-2090.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Iphone 15",
+            "child_url": "https://gadgetfix.com/category/iphone-15-2089.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Iphone 14 Pro Max",
+            "child_url": "https://gadgetfix.com/category/iphone-14-pro-max-2051.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "Iphone 14 Pro",
+            "child_url": "https://gadgetfix.com/category/iphone-14-pro-2050.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Iphone 14 Plus",
+            "child_url": "https://gadgetfix.com/category/iphone-14-plus-2049.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Iphone 14",
+            "child_url": "https://gadgetfix.com/category/iphone-14-2048.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "Iphone 13 Pro Max",
+            "child_url": "https://gadgetfix.com/category/iphone-13-pro-max-1939.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "Iphone 13 Pro",
+            "child_url": "https://gadgetfix.com/category/iphone-13-pro-1938.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "Iphone 13",
+            "child_url": "https://gadgetfix.com/category/iphone-13-1937.html",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "Iphone 13 Mini",
+            "child_url": "https://gadgetfix.com/category/iphone-13-mini-1936.html",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "Iphone 12 Pro Max",
+            "child_url": "https://gadgetfix.com/category/iphone-12-pro-max-1859.html",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "Iphone 12 Pro",
+            "child_url": "https://gadgetfix.com/category/iphone-12-pro-1856.html",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "Iphone 12",
+            "child_url": "https://gadgetfix.com/category/iphone-12-1855.html",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "Iphone 12 Mini",
+            "child_url": "https://gadgetfix.com/category/iphone-12-mini-1858.html",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "Iphone 11 Pro Max",
+            "child_url": "https://gadgetfix.com/category/iphone-11-pro-max-1785.html",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "Iphone 11 Pro",
+            "child_url": "https://gadgetfix.com/category/iphone-11-pro-1784.html",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "Iphone 11",
+            "child_url": "https://gadgetfix.com/category/iphone-11-1778.html",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "Iphone XS Max",
+            "child_url": "https://gadgetfix.com/category/iphone-xs-max-1611.html",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "Iphone XS",
+            "child_url": "https://gadgetfix.com/category/iphone-xs-1706.html",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "Iphone XR",
+            "child_url": "https://gadgetfix.com/category/iphone-xr-1705.html",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "Iphone X",
+            "child_url": "https://gadgetfix.com/category/iphone-x-1652.html",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          },
+          {
+            "child_name": "Iphone 8 Plus",
+            "child_url": "https://gadgetfix.com/category/iphone-8-plus-1622.html",
+            "display_order": 34,
+            "column_number": 0,
+            "row_number": 34
+          },
+          {
+            "child_name": "Iphone 8",
+            "child_url": "https://gadgetfix.com/category/iphone-8-1621.html",
+            "display_order": 35,
+            "column_number": 0,
+            "row_number": 35
+          },
+          {
+            "child_name": "Iphone 7 Plus",
+            "child_url": "https://gadgetfix.com/category/iphone-7-plus-1595.html",
+            "display_order": 36,
+            "column_number": 0,
+            "row_number": 36
+          },
+          {
+            "child_name": "Iphone 7",
+            "child_url": "https://gadgetfix.com/category/iphone-7-1594.html",
+            "display_order": 37,
+            "column_number": 0,
+            "row_number": 37
+          },
+          {
+            "child_name": "Iphone 6S Plus",
+            "child_url": "https://gadgetfix.com/category/iphone-6s-plus-1541.html",
+            "display_order": 38,
+            "column_number": 0,
+            "row_number": 38
+          },
+          {
+            "child_name": "Iphone 6S",
+            "child_url": "https://gadgetfix.com/category/iphone-6s-1540.html",
+            "display_order": 39,
+            "column_number": 0,
+            "row_number": 39
+          },
+          {
+            "child_name": "Iphone 6 Plus",
+            "child_url": "https://gadgetfix.com/category/iphone-6-plus-1539.html",
+            "display_order": 40,
+            "column_number": 0,
+            "row_number": 40
+          },
+          {
+            "child_name": "iPhone 6",
+            "child_url": "https://gadgetfix.com/category/iphone-6-1214.html",
+            "display_order": 41,
+            "column_number": 0,
+            "row_number": 41
+          },
+          {
+            "child_name": "Iphone SE 3rd Gen (2022)",
+            "child_url": "https://gadgetfix.com/category/iphone-se-3rd-gen-2022-2047.html",
+            "display_order": 42,
+            "column_number": 0,
+            "row_number": 42
+          },
+          {
+            "child_name": "Iphone SE 2nd Gen (2020)",
+            "child_url": "https://gadgetfix.com/category/iphone-se-2nd-gen-2020-1798.html",
+            "display_order": 43,
+            "column_number": 0,
+            "row_number": 43
+          },
+          {
+            "child_name": "Iphone SE 1st Gen (2016)",
+            "child_url": "https://gadgetfix.com/category/iphone-se-1st-gen-2016-1580.html",
+            "display_order": 44,
+            "column_number": 0,
+            "row_number": 44
+          },
+          {
+            "child_name": "iPhone 5S",
+            "child_url": "https://gadgetfix.com/category/iphone-5s-1277.html",
+            "display_order": 45,
+            "column_number": 0,
+            "row_number": 45
+          },
+          {
+            "child_name": "iPhone 5C",
+            "child_url": "https://gadgetfix.com/category/iphone-5c-1278.html",
+            "display_order": 46,
+            "column_number": 0,
+            "row_number": 46
+          },
+          {
+            "child_name": "Iphone 5",
+            "child_url": "https://gadgetfix.com/category/iphone-5-1189.html",
+            "display_order": 47,
+            "column_number": 0,
+            "row_number": 47
+          },
+          {
+            "child_name": "Iphone 4S",
+            "child_url": "https://gadgetfix.com/category/iphone-4s-1184.html",
+            "display_order": 48,
+            "column_number": 0,
+            "row_number": 48
+          }
+        ]
+      },
+      {
+        "sub_child_name": "iPad",
+        "sub_child_url": "https://gadgetfix.com/category/ipad-1560.html",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Air Series",
+            "child_url": "https://gadgetfix.com/category/air-series-1967.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Mini Series",
+            "child_url": "https://gadgetfix.com/category/mini-series-1965.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Pro Series",
+            "child_url": "https://gadgetfix.com/category/pro-series-1966.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Number Series",
+            "child_url": "https://gadgetfix.com/category/number-series-1968.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          }
+        ]
+      },
+      {
+        "sub_child_name": "iPod",
+        "sub_child_url": "https://gadgetfix.com/category/ipod-1561.html",
+        "display_order": 4,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "iPod Touch 7th Gen",
+            "child_url": "https://gadgetfix.com/category/ipod-touch-7th-gen-1788.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "iPod Touch 6th Gen",
+            "child_url": "https://gadgetfix.com/category/ipod-touch-6th-gen-1571.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "iPod Touch 5th Gen",
+            "child_url": "https://gadgetfix.com/category/ipod-touch-5th-gen-1219.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "ipod Touch 4th Gen",
+            "child_url": "https://gadgetfix.com/category/ipod-touch-4th-gen-1225.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "iPod Nano 7th Gen",
+            "child_url": "https://gadgetfix.com/category/ipod-nano-7th-gen-1363.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Google",
+    "parent_url": "https://gadgetfix.com/category/google-1552.html",
+    "display_order": 2,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Pixel Series",
+        "sub_child_url": "https://gadgetfix.com/category/pixel-series-2045.html",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Pixel 10A",
+            "child_url": "https://gadgetfix.com/category/pixel-10a-2234.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Pixel 10 Pro Fold",
+            "child_url": "https://gadgetfix.com/category/pixel-10-pro-fold-2219.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Pixel 10 Pro XL",
+            "child_url": "https://gadgetfix.com/category/pixel-10-pro-xl-2212.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Pixel 10 Pro",
+            "child_url": "https://gadgetfix.com/category/pixel-10-pro-2211.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Pixel 10",
+            "child_url": "https://gadgetfix.com/category/pixel-10-2210.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Pixel 9A",
+            "child_url": "https://gadgetfix.com/category/pixel-9a-2202.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Pixel 9 Pro Fold",
+            "child_url": "https://gadgetfix.com/category/pixel-9-pro-fold-2203.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Pixel 9 Pro XL",
+            "child_url": "https://gadgetfix.com/category/pixel-9-pro-xl-2156.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Pixel 9 Pro",
+            "child_url": "https://gadgetfix.com/category/pixel-9-pro-2155.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Pixel 9",
+            "child_url": "https://gadgetfix.com/category/pixel-9-2154.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Pixel 8A",
+            "child_url": "https://gadgetfix.com/category/pixel-8a-2139.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Pixel 8 Pro",
+            "child_url": "https://gadgetfix.com/category/pixel-8-pro-2102.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Pixel 8",
+            "child_url": "https://gadgetfix.com/category/pixel-8-2101.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Pixel Fold",
+            "child_url": "https://gadgetfix.com/category/pixel-fold-2158.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Pixel 7A",
+            "child_url": "https://gadgetfix.com/category/pixel-7a-2086.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "Pixel 7 Pro",
+            "child_url": "https://gadgetfix.com/category/pixel-7-pro-2054.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Pixel 7",
+            "child_url": "https://gadgetfix.com/category/pixel-7-2053.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Pixel 6A",
+            "child_url": "https://gadgetfix.com/category/pixel-6a-2036.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "Pixel 6 Pro",
+            "child_url": "https://gadgetfix.com/category/pixel-6-pro-1950.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "Pixel 6",
+            "child_url": "https://gadgetfix.com/category/pixel-6-1949.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "Pixel 5A 5G",
+            "child_url": "https://gadgetfix.com/category/pixel-5a-5g-1943.html",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "Pixel 5",
+            "child_url": "https://gadgetfix.com/category/pixel-5-1864.html",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "Pixel 4A 5G",
+            "child_url": "https://gadgetfix.com/category/pixel-4a-5g-1852.html",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "Pixel 4A",
+            "child_url": "https://gadgetfix.com/category/pixel-4a-1869.html",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "Pixel 4 XL",
+            "child_url": "https://gadgetfix.com/category/pixel-4-xl-1783.html",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "Pixel 4",
+            "child_url": "https://gadgetfix.com/category/pixel-4-1782.html",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "Pixel 3A XL",
+            "child_url": "https://gadgetfix.com/category/pixel-3a-xl-1752.html",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "Pixel 3A",
+            "child_url": "https://gadgetfix.com/category/pixel-3a-1751.html",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "Pixel 3 XL",
+            "child_url": "https://gadgetfix.com/category/pixel-3-xl-1704.html",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "Pixel 3",
+            "child_url": "https://gadgetfix.com/category/pixel-3-1703.html",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "Pixel 2 XL",
+            "child_url": "https://gadgetfix.com/category/pixel-2-xl-1636.html",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "Pixel 2",
+            "child_url": "https://gadgetfix.com/category/pixel-2-1635.html",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "Pixel XL",
+            "child_url": "https://gadgetfix.com/category/pixel-xl-1598.html",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          },
+          {
+            "child_name": "Pixel",
+            "child_url": "https://gadgetfix.com/category/pixel-1597.html",
+            "display_order": 34,
+            "column_number": 0,
+            "row_number": 34
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Nexus Series",
+        "sub_child_url": "https://gadgetfix.com/category/nexus-series-2046.html",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Pixel Nexus S1",
+            "child_url": "https://gadgetfix.com/category/pixel-nexus-s1-1653.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Nexus 6P",
+            "child_url": "https://gadgetfix.com/category/nexus-6p-1557.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Nexus 6",
+            "child_url": "https://gadgetfix.com/category/nexus-6-1556.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Nexus 5X",
+            "child_url": "https://gadgetfix.com/category/nexus-5x-1555.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Nexus 5",
+            "child_url": "https://gadgetfix.com/category/nexus-5-1554.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Nexus 4",
+            "child_url": "https://gadgetfix.com/category/nexus-4-1553.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Others",
+        "sub_child_url": "https://gadgetfix.com/category/others-1558.html",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": []
+      }
+    ]
+  },
+  {
+    "parent_name": "LG",
+    "parent_url": "https://gadgetfix.com/category/lg-1171.html",
+    "display_order": 3,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "V Series",
+        "sub_child_url": "https://gadgetfix.com/category/v-series-1668.html",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "V60 ThinQ 5G",
+            "child_url": "https://gadgetfix.com/category/v60-thinq-5g-1815.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "V50S ThinQ 5G",
+            "child_url": "https://gadgetfix.com/category/v50s-thinq-5g-1807.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "V50 ThinQ 5G",
+            "child_url": "https://gadgetfix.com/category/v50-thinq-5g-1781.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "V40 ThinQ",
+            "child_url": "https://gadgetfix.com/category/v40-thinq-1707.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "V35 ThinQ",
+            "child_url": "https://gadgetfix.com/category/v35-thinq-1685.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "V30 | V30+ | V30S ThinQ",
+            "child_url": "https://gadgetfix.com/category/v30-v30-v30s-thinq-1634.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "V20",
+            "child_url": "https://gadgetfix.com/category/v20-1614.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "V10",
+            "child_url": "https://gadgetfix.com/category/v10-1602.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          }
+        ]
+      },
+      {
+        "sub_child_name": "G Series",
+        "sub_child_url": "https://gadgetfix.com/category/g-series-1667.html",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Velvet",
+            "child_url": "https://gadgetfix.com/category/velvet-1844.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "G8X ThinQ",
+            "child_url": "https://gadgetfix.com/category/g8x-thinq-1803.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "G8S ThinQ",
+            "child_url": "https://gadgetfix.com/category/g8s-thinq-1802.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "G8 ThinQ",
+            "child_url": "https://gadgetfix.com/category/g8-thinq-1750.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "G7 ThinQ",
+            "child_url": "https://gadgetfix.com/category/g7-thinq-1681.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "G6",
+            "child_url": "https://gadgetfix.com/category/g6-1617.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "G5",
+            "child_url": "https://gadgetfix.com/category/g5-1583.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "G4",
+            "child_url": "https://gadgetfix.com/category/g4-1582.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "G3",
+            "child_url": "https://gadgetfix.com/category/g3-1390.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "G2",
+            "child_url": "https://gadgetfix.com/category/g2-1251.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Stylo | Stylus Series",
+        "sub_child_url": "https://gadgetfix.com/category/stylo-stylus-series-1670.html",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Stylo 6",
+            "child_url": "https://gadgetfix.com/category/stylo-6-1833.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Stylo 5",
+            "child_url": "https://gadgetfix.com/category/stylo-5-1771.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Stylo 4 | Stylo 4 Plus",
+            "child_url": "https://gadgetfix.com/category/stylo-4-stylo-4-plus-1682.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Stylo 3 Plus",
+            "child_url": "https://gadgetfix.com/category/stylo-3-plus-1645.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Stylo 3",
+            "child_url": "https://gadgetfix.com/category/stylo-3-1644.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Stylo 2 Plus",
+            "child_url": "https://gadgetfix.com/category/stylo-2-plus-1643.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Stylo 2",
+            "child_url": "https://gadgetfix.com/category/stylo-2-1642.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          }
+        ]
+      },
+      {
+        "sub_child_name": "K Series",
+        "sub_child_url": "https://gadgetfix.com/category/k-series-1669.html",
+        "display_order": 4,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "K92 5G 2020",
+            "child_url": "https://gadgetfix.com/category/k92-5g-2020-1875.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "K71 2020",
+            "child_url": "https://gadgetfix.com/category/k71-2020-1905.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "K62 2020",
+            "child_url": "https://gadgetfix.com/category/k62-2020-1886.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "K61 2020",
+            "child_url": "https://gadgetfix.com/category/k61-2020-1836.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "K52 2020",
+            "child_url": "https://gadgetfix.com/category/k52-2020-1885.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "K51 2020",
+            "child_url": "https://gadgetfix.com/category/k51-2020-1839.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "K50S 2019",
+            "child_url": "https://gadgetfix.com/category/k50s-2019-1819.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "K50 2019",
+            "child_url": "https://gadgetfix.com/category/k50-2019-1777.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "K42 2020",
+            "child_url": "https://gadgetfix.com/category/k42-2020-1884.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "K41 2020",
+            "child_url": "https://gadgetfix.com/category/k41-2020-1883.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "K40S",
+            "child_url": "https://gadgetfix.com/category/k40s-1808.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "K40 | K12 Plus",
+            "child_url": "https://gadgetfix.com/category/k40-k12-plus-1773.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "K31 2020",
+            "child_url": "https://gadgetfix.com/category/k31-2020-1870.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "K30 2019",
+            "child_url": "https://gadgetfix.com/category/k30-2019-1804.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "K30 | Phoenix Plus",
+            "child_url": "https://gadgetfix.com/category/k30-phoenix-plus-1688.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "K20 | K22 | K22 Plus (2020)",
+            "child_url": "https://gadgetfix.com/category/k20-k22-k22-plus-2020-1898.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "K20 2019",
+            "child_url": "https://gadgetfix.com/category/k20-2019-1805.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "K20 | K20 Plus",
+            "child_url": "https://gadgetfix.com/category/k20-k20-plus-1687.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "K10 (2018)",
+            "child_url": "https://gadgetfix.com/category/k10-2018-1684.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "K10 (2017)",
+            "child_url": "https://gadgetfix.com/category/k10-2017-1686.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "K10 410 (2016)",
+            "child_url": "https://gadgetfix.com/category/k10-410-2016-1683.html",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "K8X 2020",
+            "child_url": "https://gadgetfix.com/category/k8x-2020-1871.html",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "K8 2018",
+            "child_url": "https://gadgetfix.com/category/k8-2018-1695.html",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "K8 2017",
+            "child_url": "https://gadgetfix.com/category/k8-2017-1696.html",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Q Series",
+        "sub_child_url": "https://gadgetfix.com/category/q-series-1708.html",
+        "display_order": 5,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Q70",
+            "child_url": "https://gadgetfix.com/category/q70-1834.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Q7 | Q7 Plus",
+            "child_url": "https://gadgetfix.com/category/q7-q7-plus-1709.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Q6",
+            "child_url": "https://gadgetfix.com/category/q6-1710.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Aristo Series",
+            "child_url": "https://gadgetfix.com/category/aristo-series-1822.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Aristo 5",
+            "child_url": "https://gadgetfix.com/category/aristo-5-1872.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Aristo 4+",
+            "child_url": "https://gadgetfix.com/category/aristo-4-1827.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Aristo 3 Plus",
+            "child_url": "https://gadgetfix.com/category/aristo-3-plus-1828.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Aristo 3",
+            "child_url": "https://gadgetfix.com/category/aristo-3-1826.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Aristo 2 Plus",
+            "child_url": "https://gadgetfix.com/category/aristo-2-plus-1825.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Aristo 2",
+            "child_url": "https://gadgetfix.com/category/aristo-2-1824.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Aristo",
+            "child_url": "https://gadgetfix.com/category/aristo-1823.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Others",
+            "child_url": "https://gadgetfix.com/category/others-1200.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Wing 5G",
+            "child_url": "https://gadgetfix.com/category/wing-5g-1874.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Harmony 4 | Premier Pro Plus | Xpression Plus 3",
+            "child_url": "https://gadgetfix.com/category/harmony-4-premier-pro-plus-xpression-plus-3-1873.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Microsoft",
+    "parent_url": "https://gadgetfix.com/category/microsoft-1454.html",
+    "display_order": 4,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Surface Pro Series",
+        "sub_child_url": "https://gadgetfix.com/category/surface-pro-series-1927.html",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Surface Pro 11 (2024)",
+            "child_url": "https://gadgetfix.com/category/surface-pro-11-2024-2167.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Surface Pro 10 (2024)",
+            "child_url": "https://gadgetfix.com/category/surface-pro-10-2024-2166.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Surface Pro 9 (2022)",
+            "child_url": "https://gadgetfix.com/category/surface-pro-9-2022-2078.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Surface Pro 8 (2021)",
+            "child_url": "https://gadgetfix.com/category/surface-pro-8-2021-2077.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Surface Pro 7 Plus (2021)",
+            "child_url": "https://gadgetfix.com/category/surface-pro-7-plus-2021-1948.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Surface Pro X (2020)",
+            "child_url": "https://gadgetfix.com/category/surface-pro-x-2020-1907.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Surface Pro 7 (2019)",
+            "child_url": "https://gadgetfix.com/category/surface-pro-7-2019-1789.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Surface Pro 6 (2018)",
+            "child_url": "https://gadgetfix.com/category/surface-pro-6-2018-1746.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Surface Pro 5 (2017)",
+            "child_url": "https://gadgetfix.com/category/surface-pro-5-2017-1628.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Surface Pro 4",
+            "child_url": "https://gadgetfix.com/category/surface-pro-4-1585.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Surface Pro 3",
+            "child_url": "https://gadgetfix.com/category/surface-pro-3-1613.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Surface Pro",
+            "child_url": "https://gadgetfix.com/category/surface-pro-1459.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Surface Go Series",
+        "sub_child_url": "https://gadgetfix.com/category/surface-go-series-1928.html",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Surface Go 3 (2021)",
+            "child_url": "https://gadgetfix.com/category/surface-go-3-2021-2118.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Surface Go 2 (2020)",
+            "child_url": "https://gadgetfix.com/category/surface-go-2-2020-1917.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Surface Go (2018)",
+            "child_url": "https://gadgetfix.com/category/surface-go-2018-1776.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Surface Book Series",
+        "sub_child_url": "https://gadgetfix.com/category/surface-book-series-1929.html",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Surface Book 3 2020",
+            "child_url": "https://gadgetfix.com/category/surface-book-3-2020-2114.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Surface Book 2 2017",
+            "child_url": "https://gadgetfix.com/category/surface-book-2-2017-1458.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Surface Book 2015",
+            "child_url": "https://gadgetfix.com/category/surface-book-2015-1587.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Surface Laptop Series",
+        "sub_child_url": "https://gadgetfix.com/category/surface-laptop-series-1930.html",
+        "display_order": 4,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Surface Laptop Studio",
+            "child_url": "https://gadgetfix.com/category/surface-laptop-studio-2143.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Surface Laptop 5",
+            "child_url": "https://gadgetfix.com/category/surface-laptop-5-2117.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Surface Laptop 4",
+            "child_url": "https://gadgetfix.com/category/surface-laptop-4-1926.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Surface Laptop 3",
+            "child_url": "https://gadgetfix.com/category/surface-laptop-3-1925.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Surface Laptop 2",
+            "child_url": "https://gadgetfix.com/category/surface-laptop-2-1924.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Surface Laptop 1",
+            "child_url": "https://gadgetfix.com/category/surface-laptop-1-1923.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Surface Laptop Go Series",
+        "sub_child_url": "https://gadgetfix.com/category/surface-laptop-go-series-2168.html",
+        "display_order": 5,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Surface Laptop Go 4",
+            "child_url": "https://gadgetfix.com/category/surface-laptop-go-4-2172.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Surface Laptop Go 3",
+            "child_url": "https://gadgetfix.com/category/surface-laptop-go-3-2171.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Surface Laptop Go 2",
+            "child_url": "https://gadgetfix.com/category/surface-laptop-go-2-2170.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Surface Laptop Go 1",
+            "child_url": "https://gadgetfix.com/category/surface-laptop-go-1-2169.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Motorola",
+    "parent_url": "https://gadgetfix.com/category/motorola-1177.html",
+    "display_order": 5,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Razr Series",
+        "sub_child_url": "https://gadgetfix.com/category/razr-series-2177.html",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Razr Plus | Razr 50 Ultra (XT2451 | 2024)",
+            "child_url": "https://gadgetfix.com/category/razr-plus-razr-50-ultra-xt2451-2024-2180.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Razr | Razr 50 (XT2453 | 2024)",
+            "child_url": "https://gadgetfix.com/category/razr-razr-50-xt2453-2024-2179.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Razr Plus | Razr 40 Ultra (XT2321 | 2023)",
+            "child_url": "https://gadgetfix.com/category/razr-plus-razr-40-ultra-xt2321-2023-2178.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Razr | Razr 40 (XT2323 | 2023)",
+            "child_url": "https://gadgetfix.com/category/razr-razr-40-xt2323-2023-2181.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          }
+        ]
+      },
+      {
+        "sub_child_name": "G Series",
+        "sub_child_url": "https://gadgetfix.com/category/g-series-1663.html",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Moto G24 Power (2024) | XT2425",
+            "child_url": "https://gadgetfix.com/category/moto-g24-power-2024-xt2425-2176.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Moto G24 (2024) | XT2423",
+            "child_url": "https://gadgetfix.com/category/moto-g24-2024-xt2423-2175.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Moto G 05 (2026) | XT2613",
+            "child_url": "https://gadgetfix.com/category/moto-g-05-2026-xt2613-2224.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Moto G 05 (2025) | XT2421",
+            "child_url": "https://gadgetfix.com/category/moto-g-05-2025-xt2421-2200.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Moto G 04 (2024) | XT2421",
+            "child_url": "https://gadgetfix.com/category/moto-g-04-2024-xt2421-2174.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Moto G Stylus 5G (2025) | XT2517",
+            "child_url": "https://gadgetfix.com/category/moto-g-stylus-5g-2025-xt2517-2195.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Moto G Stylus 5G (2024) | XT2419",
+            "child_url": "https://gadgetfix.com/category/moto-g-stylus-5g-2024-xt2419-2129.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Moto G Stylus 5G (2023) | XT2315",
+            "child_url": "https://gadgetfix.com/category/moto-g-stylus-5g-2023-xt2315-2100.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Moto G Stylus 4G (2023) | XT2317",
+            "child_url": "https://gadgetfix.com/category/moto-g-stylus-4g-2023-xt2317-2104.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Moto G Stylus 5G (2022) | XT2215",
+            "child_url": "https://gadgetfix.com/category/moto-g-stylus-5g-2022-xt2215-2052.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Moto G Stylus 4G (2022) | XT2211-2",
+            "child_url": "https://gadgetfix.com/category/moto-g-stylus-4g-2022-xt2211-2-2001.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Moto G Stylus 5G (2021) | XT2131",
+            "child_url": "https://gadgetfix.com/category/moto-g-stylus-5g-2021-xt2131-1933.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Moto G Stylus (2021) | XT2115",
+            "child_url": "https://gadgetfix.com/category/moto-g-stylus-2021-xt2115-1897.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Moto G Stylus (2020) | XT2043",
+            "child_url": "https://gadgetfix.com/category/moto-g-stylus-2020-xt2043-1843.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Moto G Pure (2021) | XT2163",
+            "child_url": "https://gadgetfix.com/category/moto-g-pure-2021-xt2163-1970.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "Moto G Power 5G (2026) | XT2617",
+            "child_url": "https://gadgetfix.com/category/moto-g-power-5g-2026-xt2617-2226.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Moto G Power 5G (2025) | XT2515",
+            "child_url": "https://gadgetfix.com/category/moto-g-power-5g-2025-xt2515-2196.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Moto G Power 5G (2024) | XT2415",
+            "child_url": "https://gadgetfix.com/category/moto-g-power-5g-2024-xt2415-2116.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "Moto G Power 5G (2023) | XT2311",
+            "child_url": "https://gadgetfix.com/category/moto-g-power-5g-2023-xt2311-2103.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "Moto G Power (2022) | XT2165",
+            "child_url": "https://gadgetfix.com/category/moto-g-power-2022-xt2165-2023.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "Moto G Power (2021) | XT2117",
+            "child_url": "https://gadgetfix.com/category/moto-g-power-2021-xt2117-1900.html",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "Moto G Power (2020) | XT2041",
+            "child_url": "https://gadgetfix.com/category/moto-g-power-2020-xt2041-1980.html",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "Moto G Play (2026) | XT2615",
+            "child_url": "https://gadgetfix.com/category/moto-g-play-2026-xt2615-2223.html",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "Moto G Play (2024) | XT2413-2",
+            "child_url": "https://gadgetfix.com/category/moto-g-play-2024-xt2413-2-2113.html",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "Moto G Play (2023) | XT2271-5",
+            "child_url": "https://gadgetfix.com/category/moto-g-play-2023-xt2271-5-2072.html",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "Moto G Play (2021) | XT2093",
+            "child_url": "https://gadgetfix.com/category/moto-g-play-2021-xt2093-1899.html",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "Moto G Fast",
+            "child_url": "https://gadgetfix.com/category/moto-g-fast-1851.html",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "Moto G200 | XT2175 (2022)",
+            "child_url": "https://gadgetfix.com/category/moto-g200-xt2175-2022-2041.html",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "Moto G100 | XT2125",
+            "child_url": "https://gadgetfix.com/category/moto-g100-xt2125-1931.html",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "Moto G75 5G XT2437-2",
+            "child_url": "https://gadgetfix.com/category/moto-g75-5g-xt2437-2-2197.html",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "Moto G71S (2022) | XT2225-2",
+            "child_url": "https://gadgetfix.com/category/moto-g71s-2022-xt2225-2-2035.html",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "Moto G71 (2022) | XT2169-1",
+            "child_url": "https://gadgetfix.com/category/moto-g71-2022-xt2169-1-2027.html",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "Moto G60S (2021) | XT2133",
+            "child_url": "https://gadgetfix.com/category/moto-g60s-2021-xt2133-1975.html",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          },
+          {
+            "child_name": "Moto G60 (2021) | XT2135-1",
+            "child_url": "https://gadgetfix.com/category/moto-g60-2021-xt2135-1-2021.html",
+            "display_order": 34,
+            "column_number": 0,
+            "row_number": 34
+          },
+          {
+            "child_name": "Moto G51 5G (2021) | XT2171",
+            "child_url": "https://gadgetfix.com/category/moto-g51-5g-2021-xt2171-2059.html",
+            "display_order": 35,
+            "column_number": 0,
+            "row_number": 35
+          },
+          {
+            "child_name": "Moto G50 5G (2021) | XT2149",
+            "child_url": "https://gadgetfix.com/category/moto-g50-5g-2021-xt2149-1977.html",
+            "display_order": 36,
+            "column_number": 0,
+            "row_number": 36
+          },
+          {
+            "child_name": "Moto G50 (2021) | XT2137",
+            "child_url": "https://gadgetfix.com/category/moto-g50-2021-xt2137-1976.html",
+            "display_order": 37,
+            "column_number": 0,
+            "row_number": 37
+          },
+          {
+            "child_name": "Moto G41 (2022) | XT2167",
+            "child_url": "https://gadgetfix.com/category/moto-g41-2022-xt2167-2026.html",
+            "display_order": 38,
+            "column_number": 0,
+            "row_number": 38
+          },
+          {
+            "child_name": "Moto G31 (2021) | XT2173",
+            "child_url": "https://gadgetfix.com/category/moto-g31-2021-xt2173-2025.html",
+            "display_order": 39,
+            "column_number": 0,
+            "row_number": 39
+          },
+          {
+            "child_name": "Moto G30 (2021) | XT2129",
+            "child_url": "https://gadgetfix.com/category/moto-g30-2021-xt2129-1893.html",
+            "display_order": 40,
+            "column_number": 0,
+            "row_number": 40
+          },
+          {
+            "child_name": "Moto G22 (2022) | XT2231",
+            "child_url": "https://gadgetfix.com/category/moto-g22-2022-xt2231-2024.html",
+            "display_order": 41,
+            "column_number": 0,
+            "row_number": 41
+          },
+          {
+            "child_name": "Moto G20 (2021) | XT2128",
+            "child_url": "https://gadgetfix.com/category/moto-g20-2021-xt2128-1944.html",
+            "display_order": 42,
+            "column_number": 0,
+            "row_number": 42
+          },
+          {
+            "child_name": "Moto G15 Power (2025) | XT2521-5",
+            "child_url": "https://gadgetfix.com/category/moto-g15-power-2025-xt2521-5-2199.html",
+            "display_order": 43,
+            "column_number": 0,
+            "row_number": 43
+          },
+          {
+            "child_name": "Moto G15 (2025) | XT2521-3",
+            "child_url": "https://gadgetfix.com/category/moto-g15-2025-xt2521-3-2198.html",
+            "display_order": 44,
+            "column_number": 0,
+            "row_number": 44
+          },
+          {
+            "child_name": "Moto G10 Power (2021) | XT2127",
+            "child_url": "https://gadgetfix.com/category/moto-g10-power-2021-xt2127-1894.html",
+            "display_order": 45,
+            "column_number": 0,
+            "row_number": 45
+          },
+          {
+            "child_name": "Moto G10 (2021) | XT2127",
+            "child_url": "https://gadgetfix.com/category/moto-g10-2021-xt2127-1892.html",
+            "display_order": 46,
+            "column_number": 0,
+            "row_number": 46
+          },
+          {
+            "child_name": "Moto G9 Power (2020) | XT2091",
+            "child_url": "https://gadgetfix.com/category/moto-g9-power-2020-xt2091-1940.html",
+            "display_order": 47,
+            "column_number": 0,
+            "row_number": 47
+          },
+          {
+            "child_name": "Moto G9 Plus (2020) | XT2087",
+            "child_url": "https://gadgetfix.com/category/moto-g9-plus-2020-xt2087-1942.html",
+            "display_order": 48,
+            "column_number": 0,
+            "row_number": 48
+          },
+          {
+            "child_name": "Moto G9 Play",
+            "child_url": "https://gadgetfix.com/category/moto-g9-play-1895.html",
+            "display_order": 49,
+            "column_number": 0,
+            "row_number": 49
+          },
+          {
+            "child_name": "Moto G8 Power Lite",
+            "child_url": "https://gadgetfix.com/category/moto-g8-power-lite-1845.html",
+            "display_order": 50,
+            "column_number": 0,
+            "row_number": 50
+          },
+          {
+            "child_name": "Moto G8 Power",
+            "child_url": "https://gadgetfix.com/category/moto-g8-power-1842.html",
+            "display_order": 51,
+            "column_number": 0,
+            "row_number": 51
+          },
+          {
+            "child_name": "Moto G8 Play",
+            "child_url": "https://gadgetfix.com/category/moto-g8-play-1847.html",
+            "display_order": 52,
+            "column_number": 0,
+            "row_number": 52
+          },
+          {
+            "child_name": "Moto G8 Plus",
+            "child_url": "https://gadgetfix.com/category/moto-g8-plus-1860.html",
+            "display_order": 53,
+            "column_number": 0,
+            "row_number": 53
+          },
+          {
+            "child_name": "Moto G8",
+            "child_url": "https://gadgetfix.com/category/moto-g8-1846.html",
+            "display_order": 54,
+            "column_number": 0,
+            "row_number": 54
+          },
+          {
+            "child_name": "Moto G7 Supra | XT1955-5",
+            "child_url": "https://gadgetfix.com/category/moto-g7-supra-xt1955-5-2016.html",
+            "display_order": 55,
+            "column_number": 0,
+            "row_number": 55
+          },
+          {
+            "child_name": "Moto G7 Power | XT1955",
+            "child_url": "https://gadgetfix.com/category/moto-g7-power-xt1955-1754.html",
+            "display_order": 56,
+            "column_number": 0,
+            "row_number": 56
+          },
+          {
+            "child_name": "Moto G7 Plus",
+            "child_url": "https://gadgetfix.com/category/moto-g7-plus-1755.html",
+            "display_order": 57,
+            "column_number": 0,
+            "row_number": 57
+          },
+          {
+            "child_name": "Moto G7 Play (2019) | XT1952",
+            "child_url": "https://gadgetfix.com/category/moto-g7-play-2019-xt1952-1756.html",
+            "display_order": 58,
+            "column_number": 0,
+            "row_number": 58
+          },
+          {
+            "child_name": "Moto G7",
+            "child_url": "https://gadgetfix.com/category/moto-g7-1753.html",
+            "display_order": 59,
+            "column_number": 0,
+            "row_number": 59
+          },
+          {
+            "child_name": "Moto G6 Play",
+            "child_url": "https://gadgetfix.com/category/moto-g6-play-1701.html",
+            "display_order": 60,
+            "column_number": 0,
+            "row_number": 60
+          },
+          {
+            "child_name": "Moto G6",
+            "child_url": "https://gadgetfix.com/category/moto-g6-1732.html",
+            "display_order": 61,
+            "column_number": 0,
+            "row_number": 61
+          },
+          {
+            "child_name": "Moto G5S Plus",
+            "child_url": "https://gadgetfix.com/category/moto-g5s-plus-1625.html",
+            "display_order": 62,
+            "column_number": 0,
+            "row_number": 62
+          },
+          {
+            "child_name": "Moto G5S",
+            "child_url": "https://gadgetfix.com/category/moto-g5s-1624.html",
+            "display_order": 63,
+            "column_number": 0,
+            "row_number": 63
+          },
+          {
+            "child_name": "Moto G5 Plus",
+            "child_url": "https://gadgetfix.com/category/moto-g5-plus-1616.html",
+            "display_order": 64,
+            "column_number": 0,
+            "row_number": 64
+          },
+          {
+            "child_name": "Moto G5",
+            "child_url": "https://gadgetfix.com/category/moto-g5-1615.html",
+            "display_order": 65,
+            "column_number": 0,
+            "row_number": 65
+          },
+          {
+            "child_name": "Moto G4 Plus LTE",
+            "child_url": "https://gadgetfix.com/category/moto-g4-plus-lte-1584.html",
+            "display_order": 66,
+            "column_number": 0,
+            "row_number": 66
+          },
+          {
+            "child_name": "Moto G4 LTE",
+            "child_url": "https://gadgetfix.com/category/moto-g4-lte-1591.html",
+            "display_order": 67,
+            "column_number": 0,
+            "row_number": 67
+          },
+          {
+            "child_name": "Moto G4 Play",
+            "child_url": "https://gadgetfix.com/category/moto-g4-play-1604.html",
+            "display_order": 68,
+            "column_number": 0,
+            "row_number": 68
+          },
+          {
+            "child_name": "Moto G 3rd Gen",
+            "child_url": "https://gadgetfix.com/category/moto-g-3rd-gen-1549.html",
+            "display_order": 69,
+            "column_number": 0,
+            "row_number": 69
+          },
+          {
+            "child_name": "Moto G 2nd Gen",
+            "child_url": "https://gadgetfix.com/category/moto-g-2nd-gen-1548.html",
+            "display_order": 70,
+            "column_number": 0,
+            "row_number": 70
+          },
+          {
+            "child_name": "Moto G 5G Plus 2020",
+            "child_url": "https://gadgetfix.com/category/moto-g-5g-plus-2020-1888.html",
+            "display_order": 71,
+            "column_number": 0,
+            "row_number": 71
+          },
+          {
+            "child_name": "Moto G 5G (2025) | XT2513",
+            "child_url": "https://gadgetfix.com/category/moto-g-5g-2025-xt2513-2201.html",
+            "display_order": 72,
+            "column_number": 0,
+            "row_number": 72
+          },
+          {
+            "child_name": "Moto G 5G (2024) | XT2417",
+            "child_url": "https://gadgetfix.com/category/moto-g-5g-2024-xt2417-2132.html",
+            "display_order": 73,
+            "column_number": 0,
+            "row_number": 73
+          },
+          {
+            "child_name": "Moto G 5G (2023) | XT2313",
+            "child_url": "https://gadgetfix.com/category/moto-g-5g-2023-xt2313-2098.html",
+            "display_order": 74,
+            "column_number": 0,
+            "row_number": 74
+          },
+          {
+            "child_name": "Moto G 5G (2022) | XT2213",
+            "child_url": "https://gadgetfix.com/category/moto-g-5g-2022-xt2213-2055.html",
+            "display_order": 75,
+            "column_number": 0,
+            "row_number": 75
+          },
+          {
+            "child_name": "Moto G 5G (2020) | XT2113",
+            "child_url": "https://gadgetfix.com/category/moto-g-5g-2020-xt2113-1890.html",
+            "display_order": 76,
+            "column_number": 0,
+            "row_number": 76
+          },
+          {
+            "child_name": "Moto G",
+            "child_url": "https://gadgetfix.com/category/moto-g-1473.html",
+            "display_order": 77,
+            "column_number": 0,
+            "row_number": 77
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Edge Series",
+        "sub_child_url": "https://gadgetfix.com/category/edge-series-1208.html",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Edge 60 Stylus (XT2517-4 | 2025)",
+            "child_url": "https://gadgetfix.com/category/edge-60-stylus-xt2517-4-2025-2225.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Edge 60 Pro (XT2507 | 2025)",
+            "child_url": "https://gadgetfix.com/category/edge-60-pro-xt2507-2025-2222.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Edge 60 (XT2505 | 2025)",
+            "child_url": "https://gadgetfix.com/category/edge-60-xt2505-2025-2221.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Edge 60 Fusion (XT2503 | 2025)",
+            "child_url": "https://gadgetfix.com/category/edge-60-fusion-xt2503-2025-2220.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Edge S50 (XT2409 | 2024)",
+            "child_url": "https://gadgetfix.com/category/edge-s50-xt2409-2024-2135.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Edge 50 Neo (XT2409 | 2024)",
+            "child_url": "https://gadgetfix.com/category/edge-50-neo-xt2409-2024-2162.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Edge 50 Fusion 5G (XT2429 | 2024)",
+            "child_url": "https://gadgetfix.com/category/edge-50-fusion-5g-xt2429-2024-2161.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Edge 50 Ultra (XT2401-2 | 2024)",
+            "child_url": "https://gadgetfix.com/category/edge-50-ultra-xt2401-2-2024-2160.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Edge 50 Pro (XT2403 | 2024)",
+            "child_url": "https://gadgetfix.com/category/edge-50-pro-xt2403-2024-1974.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Edge 50 (XT2407 | 2024)",
+            "child_url": "https://gadgetfix.com/category/edge-50-xt2407-2024-2136.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Edge 40 Pro (XT2301-4 | 2023)",
+            "child_url": "https://gadgetfix.com/category/edge-40-pro-xt2301-4-2023-2148.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Edge 40 Neo (XT2307 | 2023)",
+            "child_url": "https://gadgetfix.com/category/edge-40-neo-xt2307-2023-2138.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Edge 40 (XT2303 | 2023)",
+            "child_url": "https://gadgetfix.com/category/edge-40-xt2303-2023-2144.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Edge 30 Ultra (XT2201 | 2022)",
+            "child_url": "https://gadgetfix.com/category/edge-30-ultra-xt2201-2022-2163.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Edge 30 Pro (XT2201 | 2022)",
+            "child_url": "https://gadgetfix.com/category/edge-30-pro-xt2201-2022-2056.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "Edge X30 (XT2201 | 2021)",
+            "child_url": "https://gadgetfix.com/category/edge-x30-xt2201-2021-1988.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Edge S30 (XT2175 | 2022)",
+            "child_url": "https://gadgetfix.com/category/edge-s30-xt2175-2022-2040.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Edge 30 (XT2203 | 2022)",
+            "child_url": "https://gadgetfix.com/category/edge-30-xt2203-2022-2034.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "Edge 20 Pro (XT2153 | 2021)",
+            "child_url": "https://gadgetfix.com/category/edge-20-pro-xt2153-2021-1987.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "Edge 20 Fusion (XT2139 | 2021)",
+            "child_url": "https://gadgetfix.com/category/edge-20-fusion-xt2139-2021-2032.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "Edge 20 Lite (XT2139 | 2021)",
+            "child_url": "https://gadgetfix.com/category/edge-20-lite-xt2139-2021-1973.html",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "Edge Plus (XT2301-1 | 2023)",
+            "child_url": "https://gadgetfix.com/category/edge-plus-xt2301-1-2023-2147.html",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "Edge Plus (XT2201 | 2022)",
+            "child_url": "https://gadgetfix.com/category/edge-plus-xt2201-2022-2057.html",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "Edge 20 (XT2143 | 2021)",
+            "child_url": "https://gadgetfix.com/category/edge-20-xt2143-2021-1986.html",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "Edge Plus (XT2061 | 2020)",
+            "child_url": "https://gadgetfix.com/category/edge-plus-xt2061-2020-1971.html",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "Edge S (XT2125 | 2021)",
+            "child_url": "https://gadgetfix.com/category/edge-s-xt2125-2021-1932.html",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "Edge 2024 | XT2405",
+            "child_url": "https://gadgetfix.com/category/edge-2024-xt2405-2137.html",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "Edge 2023 | XT2305",
+            "child_url": "https://gadgetfix.com/category/edge-2023-xt2305-2145.html",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "Edge 2022 | XT2205-1",
+            "child_url": "https://gadgetfix.com/category/edge-2022-xt2205-1-2097.html",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "Edge 2021 | XT2141",
+            "child_url": "https://gadgetfix.com/category/edge-2021-xt2141-1972.html",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "Edge 2020 | XT2063",
+            "child_url": "https://gadgetfix.com/category/edge-2020-xt2063-1848.html",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          }
+        ]
+      },
+      {
+        "sub_child_name": "E Series",
+        "sub_child_url": "https://gadgetfix.com/category/e-series-1666.html",
+        "display_order": 4,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Moto E40 (2021)",
+            "child_url": "https://gadgetfix.com/category/moto-e40-2021-2018.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Moto E7 Power (2021) | XT2097-6",
+            "child_url": "https://gadgetfix.com/category/moto-e7-power-2021-xt2097-6-1906.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Moto E7 Plus (2020) | XT2081",
+            "child_url": "https://gadgetfix.com/category/moto-e7-plus-2020-xt2081-1891.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Moto E7 (2020) | XT2095",
+            "child_url": "https://gadgetfix.com/category/moto-e7-2020-xt2095-2013.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Moto E (2020) | XT2052",
+            "child_url": "https://gadgetfix.com/category/moto-e-2020-xt2052-1853.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Moto E6 Plus (2019) | XT2025",
+            "child_url": "https://gadgetfix.com/category/moto-e6-plus-2019-xt2025-1806.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Moto E6",
+            "child_url": "https://gadgetfix.com/category/moto-e6-1809.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Moto E5 Plus",
+            "child_url": "https://gadgetfix.com/category/moto-e5-plus-1714.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Moto E5",
+            "child_url": "https://gadgetfix.com/category/moto-e5-1713.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Moto E4 Plus Dual",
+            "child_url": "https://gadgetfix.com/category/moto-e4-plus-dual-1678.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Moto E4 Plus",
+            "child_url": "https://gadgetfix.com/category/moto-e4-plus-1627.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Moto E4",
+            "child_url": "https://gadgetfix.com/category/moto-e4-1626.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Moto E 2nd Gen",
+            "child_url": "https://gadgetfix.com/category/moto-e-2nd-gen-1547.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Moto E (2014) | XT1021",
+            "child_url": "https://gadgetfix.com/category/moto-e-2014-xt1021-1546.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          }
+        ]
+      },
+      {
+        "sub_child_name": "One Series",
+        "sub_child_url": "https://gadgetfix.com/category/one-series-1810.html",
+        "display_order": 5,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "One 5G Ace (2021) | XT2113-2",
+            "child_url": "https://gadgetfix.com/category/one-5g-ace-2021-xt2113-2-1896.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "One 5G (2020) | XT2075",
+            "child_url": "https://gadgetfix.com/category/one-5g-2020-xt2075-1889.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "One Fusion (2020) | XT2073-2",
+            "child_url": "https://gadgetfix.com/category/one-fusion-2020-xt2073-2-2031.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "One Fusion Plus (2020) | XT2067",
+            "child_url": "https://gadgetfix.com/category/one-fusion-plus-2020-xt2067-1854.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "One Hyper (2020) | XT2027",
+            "child_url": "https://gadgetfix.com/category/one-hyper-2020-xt2027-1813.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "One Macro (2019) | XT2016",
+            "child_url": "https://gadgetfix.com/category/one-macro-2019-xt2016-2014.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "One Action (2019) | XT2013",
+            "child_url": "https://gadgetfix.com/category/one-action-2019-xt2013-1812.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "One Zoom (2019) | XT2010",
+            "child_url": "https://gadgetfix.com/category/one-zoom-2019-xt2010-1814.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "One Vision (2019) | XT1970",
+            "child_url": "https://gadgetfix.com/category/one-vision-2019-xt1970-2012.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "One Power (2018) | P30 Note | XT1942",
+            "child_url": "https://gadgetfix.com/category/one-power-2018-p30-note-xt1942-2017.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "One (2018) | P30 Play | XT1941",
+            "child_url": "https://gadgetfix.com/category/one-2018-p30-play-xt1941-1818.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Z Series",
+            "child_url": "https://gadgetfix.com/category/z-series-1665.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Moto Z4",
+            "child_url": "https://gadgetfix.com/category/moto-z4-1759.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Moto Z3 | Z3 Play (2018) | XT1929",
+            "child_url": "https://gadgetfix.com/category/moto-z3-z3-play-2018-xt1929-1699.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Moto Z2 Force XT1789",
+            "child_url": "https://gadgetfix.com/category/moto-z2-force-xt1789-1659.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "Moto Z Force XT1650-02",
+            "child_url": "https://gadgetfix.com/category/moto-z-force-xt1650-02-1620.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Moto Z2 Play",
+            "child_url": "https://gadgetfix.com/category/moto-z2-play-1619.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Moto Z Play | Z Play Droid",
+            "child_url": "https://gadgetfix.com/category/moto-z-play-z-play-droid-1599.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "Moto Z Droid Edition XLTE",
+            "child_url": "https://gadgetfix.com/category/moto-z-droid-edition-xlte-1603.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "X Series",
+            "child_url": "https://gadgetfix.com/category/x-series-1664.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "Moto X40",
+            "child_url": "https://gadgetfix.com/category/moto-x40-2146.html",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "Moto X30 Pro (XT2241 | 2022)",
+            "child_url": "https://gadgetfix.com/category/moto-x30-pro-xt2241-2022-2164.html",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "Moto X4",
+            "child_url": "https://gadgetfix.com/category/moto-x4-1649.html",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "Moto X 2nd Gen",
+            "child_url": "https://gadgetfix.com/category/moto-x-2nd-gen-1545.html",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "Moto X",
+            "child_url": "https://gadgetfix.com/category/moto-x-1259.html",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "Moto X Play",
+            "child_url": "https://gadgetfix.com/category/moto-x-play-1550.html",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "Moto X Style (2015)",
+            "child_url": "https://gadgetfix.com/category/moto-x-style-2015-1566.html",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "Moto X Pure Edition",
+            "child_url": "https://gadgetfix.com/category/moto-x-pure-edition-1567.html",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "Droid Series",
+            "child_url": "https://gadgetfix.com/category/droid-series-1565.html",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "Droid Turbo 2 XT1580 XT1581 XT1585",
+            "child_url": "https://gadgetfix.com/category/droid-turbo-2-xt1580-xt1581-xt1585-1572.html",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "Droid Turbo XT1225 | XT1254",
+            "child_url": "https://gadgetfix.com/category/droid-turbo-xt1225-xt1254-1551.html",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "Droid MAXX 2 XT1565",
+            "child_url": "https://gadgetfix.com/category/droid-maxx-2-xt1565-1576.html",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "Droid Ultra XT1080 | MAXX XT1080M",
+            "child_url": "https://gadgetfix.com/category/droid-ultra-xt1080-maxx-xt1080m-1258.html",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          },
+          {
+            "child_name": "Droid Razr HD XT925 XT926 | Maxx XT926M",
+            "child_url": "https://gadgetfix.com/category/droid-razr-hd-xt925-xt926-maxx-xt926m-1262.html",
+            "display_order": 34,
+            "column_number": 0,
+            "row_number": 34
+          },
+          {
+            "child_name": "Droid Razr M XT907",
+            "child_url": "https://gadgetfix.com/category/droid-razr-m-xt907-1261.html",
+            "display_order": 35,
+            "column_number": 0,
+            "row_number": 35
+          },
+          {
+            "child_name": "Droid Razr XT890 | XT910 | XT912 | XT913 | XT916",
+            "child_url": "https://gadgetfix.com/category/droid-razr-xt890-xt910-xt912-xt913-xt916-1428.html",
+            "display_order": 36,
+            "column_number": 0,
+            "row_number": 36
+          },
+          {
+            "child_name": "Droid Mini XT1030",
+            "child_url": "https://gadgetfix.com/category/droid-mini-xt1030-1260.html",
+            "display_order": 37,
+            "column_number": 0,
+            "row_number": 37
+          },
+          {
+            "child_name": "Droid 4 XT894",
+            "child_url": "https://gadgetfix.com/category/droid-4-xt894-1256.html",
+            "display_order": 38,
+            "column_number": 0,
+            "row_number": 38
+          },
+          {
+            "child_name": "OTHERS",
+            "child_url": "https://gadgetfix.com/category/others-1978.html",
+            "display_order": 39,
+            "column_number": 0,
+            "row_number": 39
+          },
+          {
+            "child_name": "Moto RAZR 5G (2020) | XT2071",
+            "child_url": "https://gadgetfix.com/category/moto-razr-5g-2020-xt2071-1979.html",
+            "display_order": 40,
+            "column_number": 0,
+            "row_number": 40
+          },
+          {
+            "child_name": "Moto Defy (2021) | XT2083",
+            "child_url": "https://gadgetfix.com/category/moto-defy-2021-xt2083-2019.html",
+            "display_order": 41,
+            "column_number": 0,
+            "row_number": 41
+          },
+          {
+            "child_name": "P30 (2018) | XT1943",
+            "child_url": "https://gadgetfix.com/category/p30-2018-xt1943-1816.html",
+            "display_order": 42,
+            "column_number": 0,
+            "row_number": 42
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "OnePlus",
+    "parent_url": "https://gadgetfix.com/category/oneplus-1637.html",
+    "display_order": 6,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Oneplus Series",
+        "sub_child_url": "https://gadgetfix.com/category/oneplus-series-2043.html",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "OnePlus 12R 5G",
+            "child_url": "https://gadgetfix.com/category/oneplus-12r-5g-2130.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Oneplus 12 5G",
+            "child_url": "https://gadgetfix.com/category/oneplus-12-5g-2153.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "OnePlus 11",
+            "child_url": "https://gadgetfix.com/category/oneplus-11-2165.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "OnePlus 10R",
+            "child_url": "https://gadgetfix.com/category/oneplus-10r-2039.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "OnePlus 10 Pro",
+            "child_url": "https://gadgetfix.com/category/oneplus-10-pro-2015.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "OnePlus 9 Pro",
+            "child_url": "https://gadgetfix.com/category/oneplus-9-pro-1989.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Oneplus 9R",
+            "child_url": "https://gadgetfix.com/category/oneplus-9r-2079.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "OnePlus 9",
+            "child_url": "https://gadgetfix.com/category/oneplus-9-1947.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "OnePlus 8 Pro",
+            "child_url": "https://gadgetfix.com/category/oneplus-8-pro-1946.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "OnePlus 8T",
+            "child_url": "https://gadgetfix.com/category/oneplus-8t-2011.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "OnePlus 8",
+            "child_url": "https://gadgetfix.com/category/oneplus-8-1945.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "OnePlus 7T Pro",
+            "child_url": "https://gadgetfix.com/category/oneplus-7t-pro-1990.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "OnePlus 7T",
+            "child_url": "https://gadgetfix.com/category/oneplus-7t-1849.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "OnePlus 7 Pro",
+            "child_url": "https://gadgetfix.com/category/oneplus-7-pro-1768.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "OnePlus 7",
+            "child_url": "https://gadgetfix.com/category/oneplus-7-1758.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "OnePlus 6T",
+            "child_url": "https://gadgetfix.com/category/oneplus-6t-1737.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "OnePlus 6",
+            "child_url": "https://gadgetfix.com/category/oneplus-6-1677.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "OnePlus 5T",
+            "child_url": "https://gadgetfix.com/category/oneplus-5t-1676.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "OnePlus 5",
+            "child_url": "https://gadgetfix.com/category/oneplus-5-1675.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "OnePlus 3T",
+            "child_url": "https://gadgetfix.com/category/oneplus-3t-1674.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "OnePlus 3",
+            "child_url": "https://gadgetfix.com/category/oneplus-3-1673.html",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "OnePlus 2",
+            "child_url": "https://gadgetfix.com/category/oneplus-2-1672.html",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "OnePlus One",
+            "child_url": "https://gadgetfix.com/category/oneplus-one-1671.html",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Nord Series",
+        "sub_child_url": "https://gadgetfix.com/category/nord-series-2044.html",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "OnePlus Nord N300 5G",
+            "child_url": "https://gadgetfix.com/category/oneplus-nord-n300-5g-2067.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "OnePlus Nord N30 5G",
+            "child_url": "https://gadgetfix.com/category/oneplus-nord-n30-5g-2124.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "OnePlus Nord N200 5G",
+            "child_url": "https://gadgetfix.com/category/oneplus-nord-n200-5g-1941.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "OnePlus Nord N20 SE",
+            "child_url": "https://gadgetfix.com/category/oneplus-nord-n20-se-2033.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "OnePlus Nord N10 5G",
+            "child_url": "https://gadgetfix.com/category/oneplus-nord-n10-5g-1935.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "OnePlus Nord CE 2 5G",
+            "child_url": "https://gadgetfix.com/category/oneplus-nord-ce-2-5g-1999.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "OnePlus Nord CE 5G",
+            "child_url": "https://gadgetfix.com/category/oneplus-nord-ce-5g-1998.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "OnePlus Nord 2 5G",
+            "child_url": "https://gadgetfix.com/category/oneplus-nord-2-5g-1997.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "OnePlus Nord N100",
+            "child_url": "https://gadgetfix.com/category/oneplus-nord-n100-1934.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "OnePlus Nord",
+            "child_url": "https://gadgetfix.com/category/oneplus-nord-2000.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Others",
+        "sub_child_url": "https://gadgetfix.com/category/others-2042.html",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "OnePlus Ace Pro",
+            "child_url": "https://gadgetfix.com/category/oneplus-ace-pro-2038.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "OnePlus Ace 3 5G",
+            "child_url": "https://gadgetfix.com/category/oneplus-ace-3-5g-2182.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "OnePlus Ace",
+            "child_url": "https://gadgetfix.com/category/oneplus-ace-2037.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Samsung",
+    "parent_url": "https://gadgetfix.com/category/samsung-1172.html",
+    "display_order": 7,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Galaxy S Series",
+        "sub_child_url": "https://gadgetfix.com/category/galaxy-s-series-1562.html",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "S26 Ultra",
+            "child_url": "https://gadgetfix.com/category/s26-ultra-2230.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "S26 Plus",
+            "child_url": "https://gadgetfix.com/category/s26-plus-2229.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "S26",
+            "child_url": "https://gadgetfix.com/category/s26-2228.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "S25 FE",
+            "child_url": "https://gadgetfix.com/category/s25-fe-2213.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "S25 Edge",
+            "child_url": "https://gadgetfix.com/category/s25-edge-2204.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "S25 Ultra",
+            "child_url": "https://gadgetfix.com/category/s25-ultra-2187.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "S25 Plus",
+            "child_url": "https://gadgetfix.com/category/s25-plus-2186.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "S25",
+            "child_url": "https://gadgetfix.com/category/s25-2185.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "S24 FE",
+            "child_url": "https://gadgetfix.com/category/s24-fe-2183.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "S24 Ultra 5G",
+            "child_url": "https://gadgetfix.com/category/s24-ultra-5g-2107.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "S24 Plus 5G",
+            "child_url": "https://gadgetfix.com/category/s24-plus-5g-2115.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "S24 5G",
+            "child_url": "https://gadgetfix.com/category/s24-5g-2112.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "S23 FE",
+            "child_url": "https://gadgetfix.com/category/s23-fe-2106.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "S23 Ultra",
+            "child_url": "https://gadgetfix.com/category/s23-ultra-2076.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "S23 Plus",
+            "child_url": "https://gadgetfix.com/category/s23-plus-2075.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "S23",
+            "child_url": "https://gadgetfix.com/category/s23-2074.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "S22 Ultra",
+            "child_url": "https://gadgetfix.com/category/s22-ultra-1985.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "S22 Plus",
+            "child_url": "https://gadgetfix.com/category/s22-plus-1984.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "S22",
+            "child_url": "https://gadgetfix.com/category/s22-1983.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "S21 FE",
+            "child_url": "https://gadgetfix.com/category/s21-fe-1952.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "S21 Ultra 5G",
+            "child_url": "https://gadgetfix.com/category/s21-ultra-5g-1879.html",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "S21 Plus 5G",
+            "child_url": "https://gadgetfix.com/category/s21-plus-5g-1878.html",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "S21 5G",
+            "child_url": "https://gadgetfix.com/category/s21-5g-1877.html",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "S20 FE",
+            "child_url": "https://gadgetfix.com/category/s20-fe-1868.html",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "S20 Ultra",
+            "child_url": "https://gadgetfix.com/category/s20-ultra-1795.html",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "S20 Plus 4G | 5G",
+            "child_url": "https://gadgetfix.com/category/s20-plus-4g-5g-1797.html",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "S20 5G",
+            "child_url": "https://gadgetfix.com/category/s20-5g-1796.html",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "S10 5G",
+            "child_url": "https://gadgetfix.com/category/s10-5g-1765.html",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "S10 Plus",
+            "child_url": "https://gadgetfix.com/category/s10-plus-1745.html",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "S10 Lite",
+            "child_url": "https://gadgetfix.com/category/s10-lite-1801.html",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "S10",
+            "child_url": "https://gadgetfix.com/category/s10-1744.html",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "S10e",
+            "child_url": "https://gadgetfix.com/category/s10e-1747.html",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "S9 Plus",
+            "child_url": "https://gadgetfix.com/category/s9-plus-1651.html",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          },
+          {
+            "child_name": "S9",
+            "child_url": "https://gadgetfix.com/category/s9-1650.html",
+            "display_order": 34,
+            "column_number": 0,
+            "row_number": 34
+          },
+          {
+            "child_name": "S8 Active",
+            "child_url": "https://gadgetfix.com/category/s8-active-1655.html",
+            "display_order": 35,
+            "column_number": 0,
+            "row_number": 35
+          },
+          {
+            "child_name": "S8 Plus",
+            "child_url": "https://gadgetfix.com/category/s8-plus-1610.html",
+            "display_order": 36,
+            "column_number": 0,
+            "row_number": 36
+          },
+          {
+            "child_name": "S8",
+            "child_url": "https://gadgetfix.com/category/s8-1609.html",
+            "display_order": 37,
+            "column_number": 0,
+            "row_number": 37
+          },
+          {
+            "child_name": "S7 Active",
+            "child_url": "https://gadgetfix.com/category/s7-active-1606.html",
+            "display_order": 38,
+            "column_number": 0,
+            "row_number": 38
+          },
+          {
+            "child_name": "S7 Edge",
+            "child_url": "https://gadgetfix.com/category/s7-edge-1581.html",
+            "display_order": 39,
+            "column_number": 0,
+            "row_number": 39
+          },
+          {
+            "child_name": "S7",
+            "child_url": "https://gadgetfix.com/category/s7-1579.html",
+            "display_order": 40,
+            "column_number": 0,
+            "row_number": 40
+          },
+          {
+            "child_name": "S6 Edge Plus",
+            "child_url": "https://gadgetfix.com/category/s6-edge-plus-1542.html",
+            "display_order": 41,
+            "column_number": 0,
+            "row_number": 41
+          },
+          {
+            "child_name": "S6 Edge",
+            "child_url": "https://gadgetfix.com/category/s6-edge-1537.html",
+            "display_order": 42,
+            "column_number": 0,
+            "row_number": 42
+          },
+          {
+            "child_name": "S6 Active",
+            "child_url": "https://gadgetfix.com/category/s6-active-1568.html",
+            "display_order": 43,
+            "column_number": 0,
+            "row_number": 43
+          },
+          {
+            "child_name": "S6",
+            "child_url": "https://gadgetfix.com/category/s6-1534.html",
+            "display_order": 44,
+            "column_number": 0,
+            "row_number": 44
+          },
+          {
+            "child_name": "S5 Active",
+            "child_url": "https://gadgetfix.com/category/s5-active-1536.html",
+            "display_order": 45,
+            "column_number": 0,
+            "row_number": 45
+          },
+          {
+            "child_name": "S5",
+            "child_url": "https://gadgetfix.com/category/s5-1231.html",
+            "display_order": 46,
+            "column_number": 0,
+            "row_number": 46
+          },
+          {
+            "child_name": "S4 Active",
+            "child_url": "https://gadgetfix.com/category/s4-active-1286.html",
+            "display_order": 47,
+            "column_number": 0,
+            "row_number": 47
+          },
+          {
+            "child_name": "Galaxy S4",
+            "child_url": "https://gadgetfix.com/category/galaxy-s4-1232.html",
+            "display_order": 48,
+            "column_number": 0,
+            "row_number": 48
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Galaxy Note Series",
+        "sub_child_url": "https://gadgetfix.com/category/galaxy-note-series-1563.html",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Galaxy Note 20 Ultra 5G",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-20-ultra-5g-1840.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Galaxy Note 20 5G",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-20-5g-1838.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Galaxy Note 10+",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-10-1767.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Galaxy Note 10 Lite",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-10-lite-1841.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Galaxy Note 10",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-10-1766.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Galaxy Note 9",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-9-1700.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Galaxy Note 8",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-8-1629.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Galaxy Note 5",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-5-1535.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Galaxy Note 4",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-4-1344.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Galaxy Note 3",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-3-1290.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Galaxy Note 2",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-2-1289.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Galaxy Note",
+            "child_url": "https://gadgetfix.com/category/galaxy-note-1359.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Galaxy A Series",
+        "sub_child_url": "https://gadgetfix.com/category/galaxy-a-series-1662.html",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Galaxy A90 5G (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a90-5g-2019-1862.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Galaxy A80 (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a80-2019-1762.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Galaxy A73 5G (2022)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a73-5g-2022-2029.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Galaxy A72 (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a72-2021-1902.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Galaxy A71 5G (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a71-5g-2020-1880.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Galaxy A71 (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a71-2020-1800.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Galaxy A70 (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a70-2019-1761.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Galaxy A60 (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a60-2019-1867.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Galaxy A57 5G (2026) | A576",
+            "child_url": "https://gadgetfix.com/category/galaxy-a57-5g-2026-a576-2231.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Galaxy A56 5G (2025) | A566",
+            "child_url": "https://gadgetfix.com/category/galaxy-a56-5g-2025-a566-2192.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Galaxy A55 5G (2024) | A556",
+            "child_url": "https://gadgetfix.com/category/galaxy-a55-5g-2024-a556-2126.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Galaxy A54 5G (2023) | A546",
+            "child_url": "https://gadgetfix.com/category/galaxy-a54-5g-2023-a546-2082.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Galaxy A53 5G (2022) | A536",
+            "child_url": "https://gadgetfix.com/category/galaxy-a53-5g-2022-a536-2028.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Galaxy A52S 5G (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a52s-5g-2021-1959.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Galaxy A52 5G (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a52-5g-2021-1922.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "Galaxy A52 (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a52-2021-1921.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Galaxy A51 5G (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a51-5g-2020-1866.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Galaxy A51 (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a51-2019-1799.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "Galaxy A50S (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a50s-2019-1857.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "Galaxy A50 (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a50-2019-1760.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "Galaxy A42 5G (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a42-5g-2020-1881.html",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "Galaxy A41 (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a41-2020-1835.html",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "Galaxy A40 (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a40-2019-1769.html",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "Galaxy A37 5G (2026)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a37-5g-2026-2232.html",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "Galaxy A36 5G (2025)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a36-5g-2025-2193.html",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "Galaxy A35 5G (2024)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a35-5g-2024-2125.html",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "Galaxy A34 5G (2023)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a34-5g-2023-2083.html",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "Galaxy A33 5G (2022)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a33-5g-2022-2030.html",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "Galaxy A32 5G (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a32-5g-2021-1916.html",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "Galaxy A32 4G (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a32-4g-2021-1953.html",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "Galaxy A31 (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a31-2020-1837.html",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "Galaxy A30S (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a30s-2019-1792.html",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "Galaxy A30 (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a30-2019-1772.html",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          },
+          {
+            "child_name": "Galaxy A26 5G (2025)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a26-5g-2025-2194.html",
+            "display_order": 34,
+            "column_number": 0,
+            "row_number": 34
+          },
+          {
+            "child_name": "Galaxy A25 5G (2023)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a25-5g-2023-2134.html",
+            "display_order": 35,
+            "column_number": 0,
+            "row_number": 35
+          },
+          {
+            "child_name": "Galaxy A23 5G (2022)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a23-5g-2022-2099.html",
+            "display_order": 36,
+            "column_number": 0,
+            "row_number": 36
+          },
+          {
+            "child_name": "Galaxy A23 (2022)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a23-2022-2085.html",
+            "display_order": 37,
+            "column_number": 0,
+            "row_number": 37
+          },
+          {
+            "child_name": "Galaxy A22 5G (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a22-5g-2021-1955.html",
+            "display_order": 38,
+            "column_number": 0,
+            "row_number": 38
+          },
+          {
+            "child_name": "Galaxy A22 4G (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a22-4g-2021-1954.html",
+            "display_order": 39,
+            "column_number": 0,
+            "row_number": 39
+          },
+          {
+            "child_name": "Galaxy A21S (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a21s-2020-1821.html",
+            "display_order": 40,
+            "column_number": 0,
+            "row_number": 40
+          },
+          {
+            "child_name": "Galaxy A21 (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a21-2020-1876.html",
+            "display_order": 41,
+            "column_number": 0,
+            "row_number": 41
+          },
+          {
+            "child_name": "Galaxy A20S (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a20s-2019-1811.html",
+            "display_order": 42,
+            "column_number": 0,
+            "row_number": 42
+          },
+          {
+            "child_name": "Galaxy A20e (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a20e-2019-1770.html",
+            "display_order": 43,
+            "column_number": 0,
+            "row_number": 43
+          },
+          {
+            "child_name": "Galaxy A20 (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a20-2019-1757.html",
+            "display_order": 44,
+            "column_number": 0,
+            "row_number": 44
+          },
+          {
+            "child_name": "Galaxy A17 5G (2025)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a17-5g-2025-2216.html",
+            "display_order": 45,
+            "column_number": 0,
+            "row_number": 45
+          },
+          {
+            "child_name": "Galaxy A16 5G (2024)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a16-5g-2024-2188.html",
+            "display_order": 46,
+            "column_number": 0,
+            "row_number": 46
+          },
+          {
+            "child_name": "Galaxy A15 5G (2023)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a15-5g-2023-2108.html",
+            "display_order": 47,
+            "column_number": 0,
+            "row_number": 47
+          },
+          {
+            "child_name": "Galaxy A15 4G (2023)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a15-4g-2023-2119.html",
+            "display_order": 48,
+            "column_number": 0,
+            "row_number": 48
+          },
+          {
+            "child_name": "Galaxy A14 5G (2023",
+            "child_url": "https://gadgetfix.com/category/galaxy-a14-5g-2023-2080.html",
+            "display_order": 49,
+            "column_number": 0,
+            "row_number": 49
+          },
+          {
+            "child_name": "Galaxy A13 5G (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a13-5g-2021-1969.html",
+            "display_order": 50,
+            "column_number": 0,
+            "row_number": 50
+          },
+          {
+            "child_name": "Galaxy A12 Nacho (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a12-nacho-2021-1956.html",
+            "display_order": 51,
+            "column_number": 0,
+            "row_number": 51
+          },
+          {
+            "child_name": "Galaxy A12 (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a12-2020-1882.html",
+            "display_order": 52,
+            "column_number": 0,
+            "row_number": 52
+          },
+          {
+            "child_name": "Galaxy A11 (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a11-2020-1831.html",
+            "display_order": 53,
+            "column_number": 0,
+            "row_number": 53
+          },
+          {
+            "child_name": "Galaxy A10S (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a10s-2019-1791.html",
+            "display_order": 54,
+            "column_number": 0,
+            "row_number": 54
+          },
+          {
+            "child_name": "Galaxy A10e (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a10e-2019-1793.html",
+            "display_order": 55,
+            "column_number": 0,
+            "row_number": 55
+          },
+          {
+            "child_name": "Galaxy A10 (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a10-2019-1775.html",
+            "display_order": 56,
+            "column_number": 0,
+            "row_number": 56
+          },
+          {
+            "child_name": "Galaxy A8 Plus (2018)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a8-plus-2018-1657.html",
+            "display_order": 57,
+            "column_number": 0,
+            "row_number": 57
+          },
+          {
+            "child_name": "Galaxy A9 (2018)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a9-2018-1774.html",
+            "display_order": 58,
+            "column_number": 0,
+            "row_number": 58
+          },
+          {
+            "child_name": "Galaxy A8 (2018)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a8-2018-1742.html",
+            "display_order": 59,
+            "column_number": 0,
+            "row_number": 59
+          },
+          {
+            "child_name": "Galaxy A7 (2018)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a7-2018-1779.html",
+            "display_order": 60,
+            "column_number": 0,
+            "row_number": 60
+          },
+          {
+            "child_name": "Galaxy A7 (2017)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a7-2017-1618.html",
+            "display_order": 61,
+            "column_number": 0,
+            "row_number": 61
+          },
+          {
+            "child_name": "Galaxy A6 Plus (2018)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a6-plus-2018-1736.html",
+            "display_order": 62,
+            "column_number": 0,
+            "row_number": 62
+          },
+          {
+            "child_name": "Galaxy A6 (2018)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a6-2018-1735.html",
+            "display_order": 63,
+            "column_number": 0,
+            "row_number": 63
+          },
+          {
+            "child_name": "Galaxy A5 (2017)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a5-2017-1612.html",
+            "display_order": 64,
+            "column_number": 0,
+            "row_number": 64
+          },
+          {
+            "child_name": "Galaxy A03S A037 (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a03s-a037-2021-1958.html",
+            "display_order": 65,
+            "column_number": 0,
+            "row_number": 65
+          },
+          {
+            "child_name": "Galaxy A02S A205 (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a02s-a205-2020-1919.html",
+            "display_order": 66,
+            "column_number": 0,
+            "row_number": 66
+          },
+          {
+            "child_name": "Galaxy A02 A022 (2021)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a02-a022-2021-1957.html",
+            "display_order": 67,
+            "column_number": 0,
+            "row_number": 67
+          },
+          {
+            "child_name": "Galaxy A01 Core (2020)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a01-core-2020-1863.html",
+            "display_order": 68,
+            "column_number": 0,
+            "row_number": 68
+          },
+          {
+            "child_name": "Galaxy A01 (2019)",
+            "child_url": "https://gadgetfix.com/category/galaxy-a01-2019-1832.html",
+            "display_order": 69,
+            "column_number": 0,
+            "row_number": 69
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Galaxy J Series",
+        "sub_child_url": "https://gadgetfix.com/category/galaxy-j-series-1661.html",
+        "display_order": 4,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Galaxy J8 2018 SM-J810",
+            "child_url": "https://gadgetfix.com/category/galaxy-j8-2018-sm-j810-1712.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Galaxy J7 Prime 2 2018",
+            "child_url": "https://gadgetfix.com/category/galaxy-j7-prime-2-2018-1740.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Galaxy J7 J737 2018",
+            "child_url": "https://gadgetfix.com/category/galaxy-j7-j737-2018-1731.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Galaxy J7 J727 2017",
+            "child_url": "https://gadgetfix.com/category/galaxy-j7-j727-2017-1679.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Galaxy J7 Pro J730 2017",
+            "child_url": "https://gadgetfix.com/category/galaxy-j7-pro-j730-2017-1658.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Galaxy J7 Prime G610 2016",
+            "child_url": "https://gadgetfix.com/category/galaxy-j7-prime-g610-2016-1690.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Galaxy J7 J710 2016",
+            "child_url": "https://gadgetfix.com/category/galaxy-j7-j710-2016-1605.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Galaxy J7 J700 2015",
+            "child_url": "https://gadgetfix.com/category/galaxy-j7-j700-2015-1607.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Galaxy J6 2018 SM-J600",
+            "child_url": "https://gadgetfix.com/category/galaxy-j6-2018-sm-j600-1711.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Galaxy J5 Pro J530 2017",
+            "child_url": "https://gadgetfix.com/category/galaxy-j5-pro-j530-2017-1689.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Galaxy J5 Prime G570",
+            "child_url": "https://gadgetfix.com/category/galaxy-j5-prime-g570-1698.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Galaxy J5 J510 2016",
+            "child_url": "https://gadgetfix.com/category/galaxy-j5-j510-2016-1592.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Galaxy J5 J500 2015",
+            "child_url": "https://gadgetfix.com/category/galaxy-j5-j500-2015-1575.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Galaxy J4 2018",
+            "child_url": "https://gadgetfix.com/category/galaxy-j4-2018-1730.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Galaxy J3 2018",
+            "child_url": "https://gadgetfix.com/category/galaxy-j3-2018-1729.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "Galaxy J3 2017",
+            "child_url": "https://gadgetfix.com/category/galaxy-j3-2017-1691.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Galaxy J3 2016",
+            "child_url": "https://gadgetfix.com/category/galaxy-j3-2016-1601.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Galaxy J2 Pro 2018",
+            "child_url": "https://gadgetfix.com/category/galaxy-j2-pro-2018-1739.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "Galaxy J1 Ace",
+            "child_url": "https://gadgetfix.com/category/galaxy-j1-ace-1593.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "Galaxy J1 2016",
+            "child_url": "https://gadgetfix.com/category/galaxy-j1-2016-1588.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Galaxy Z Series",
+        "sub_child_url": "https://gadgetfix.com/category/galaxy-z-series-1960.html",
+        "display_order": 5,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Z Flip 7 FE 5G F761",
+            "child_url": "https://gadgetfix.com/category/z-flip-7-fe-5g-f761-2215.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Z Flip 7 5G F766",
+            "child_url": "https://gadgetfix.com/category/z-flip-7-5g-f766-2214.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Z Flip 6 5G F741",
+            "child_url": "https://gadgetfix.com/category/z-flip-6-5g-f741-2159.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Z Flip 5 5G F731",
+            "child_url": "https://gadgetfix.com/category/z-flip-5-5g-f731-2109.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Z Flip 4 5G F721",
+            "child_url": "https://gadgetfix.com/category/z-flip-4-5g-f721-2081.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Z Flip 3 5G F711",
+            "child_url": "https://gadgetfix.com/category/z-flip-3-5g-f711-1961.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Z Fold 7 5G F966",
+            "child_url": "https://gadgetfix.com/category/z-fold-7-5g-f966-2233.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Z Fold 6 5G F956",
+            "child_url": "https://gadgetfix.com/category/z-fold-6-5g-f956-2184.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Z Fold 5 5G F946",
+            "child_url": "https://gadgetfix.com/category/z-fold-5-5g-f946-2157.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Z Fold 4 5G F936",
+            "child_url": "https://gadgetfix.com/category/z-fold-4-5g-f936-2120.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Galaxy M Series",
+            "child_url": "https://gadgetfix.com/category/galaxy-m-series-2095.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Samsung Galaxy M30S",
+            "child_url": "https://gadgetfix.com/category/samsung-galaxy-m30s-2096.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Tablets",
+            "child_url": "https://gadgetfix.com/category/tablets-1660.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Galaxy Tab A",
+            "child_url": "https://gadgetfix.com/category/galaxy-tab-a-1786.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Galaxy Tab S",
+            "child_url": "https://gadgetfix.com/category/galaxy-tab-s-1787.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "Others Tablets",
+            "child_url": "https://gadgetfix.com/category/others-tablets-1991.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Others",
+            "child_url": "https://gadgetfix.com/category/others-1204.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Galaxy Xcover Pro",
+            "child_url": "https://gadgetfix.com/category/galaxy-xcover-pro-1865.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "Galaxy Express 3",
+            "child_url": "https://gadgetfix.com/category/galaxy-express-3-1589.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "Galaxy Alpha",
+            "child_url": "https://gadgetfix.com/category/galaxy-alpha-1574.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Other Parts",
+    "parent_url": "https://gadgetfix.com/category/other-parts-1169.html",
+    "display_order": 8,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "TCL",
+        "sub_child_url": "https://gadgetfix.com/category/tcl-1529.html",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Stylus 5G T779W",
+            "child_url": "https://gadgetfix.com/category/stylus-5g-t779w-2065.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "40 T",
+            "child_url": "https://gadgetfix.com/category/40-t-2142.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "40 XE 5G",
+            "child_url": "https://gadgetfix.com/category/40-xe-5g-2141.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "30 V 5G",
+            "child_url": "https://gadgetfix.com/category/30-v-5g-2140.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "30 XE 5G",
+            "child_url": "https://gadgetfix.com/category/30-xe-5g-2064.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "20 XE",
+            "child_url": "https://gadgetfix.com/category/20-xe-2063.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "20 Pro 5G",
+            "child_url": "https://gadgetfix.com/category/20-pro-5g-2071.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          }
+        ]
+      },
+      {
+        "sub_child_name": "T-Mobile Revvl",
+        "sub_child_url": "https://gadgetfix.com/category/t-mobile-revvl-1901.html",
+        "display_order": 2,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Revvl TAB 5G",
+            "child_url": "https://gadgetfix.com/category/revvl-tab-5g-2131.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Revvl 7",
+            "child_url": "https://gadgetfix.com/category/revvl-7-2133.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Revvl 6X Pro 5G",
+            "child_url": "https://gadgetfix.com/category/revvl-6x-pro-5g-2111.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Revvl 6X 5G",
+            "child_url": "https://gadgetfix.com/category/revvl-6x-5g-2110.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Revvl 6 Pro 5G",
+            "child_url": "https://gadgetfix.com/category/revvl-6-pro-5g-2061.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Revvl 6 5G",
+            "child_url": "https://gadgetfix.com/category/revvl-6-5g-2060.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Revvl V+ 5G (2021)",
+            "child_url": "https://gadgetfix.com/category/revvl-v-5g-2021-2022.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Revvl V",
+            "child_url": "https://gadgetfix.com/category/revvl-v-2070.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Revvl 5G",
+            "child_url": "https://gadgetfix.com/category/revvl-5g-1914.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Revvl 4 Plus",
+            "child_url": "https://gadgetfix.com/category/revvl-4-plus-1913.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Revvl 4",
+            "child_url": "https://gadgetfix.com/category/revvl-4-1912.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Revvl 2 Plus",
+            "child_url": "https://gadgetfix.com/category/revvl-2-plus-1911.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Revvl",
+            "child_url": "https://gadgetfix.com/category/revvl-1910.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Revvly Plus",
+            "child_url": "https://gadgetfix.com/category/revvly-plus-1909.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Revvly",
+            "child_url": "https://gadgetfix.com/category/revvly-1908.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          }
+        ]
+      },
+      {
+        "sub_child_name": "HTC",
+        "sub_child_url": "https://gadgetfix.com/category/htc-1170.html",
+        "display_order": 3,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "HTC U12+ Plus",
+            "child_url": "https://gadgetfix.com/category/htc-u12-plus-1748.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "HTC U11",
+            "child_url": "https://gadgetfix.com/category/htc-u11-1633.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "HTC U Ultra",
+            "child_url": "https://gadgetfix.com/category/htc-u-ultra-1632.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "HTC U Play",
+            "child_url": "https://gadgetfix.com/category/htc-u-play-1749.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "HTC Bolt",
+            "child_url": "https://gadgetfix.com/category/htc-bolt-1631.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "HTC 10",
+            "child_url": "https://gadgetfix.com/category/htc-10-1630.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Others",
+            "child_url": "https://gadgetfix.com/category/others-1196.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          }
+        ]
+      },
+      {
+        "sub_child_name": "ZTE",
+        "sub_child_url": "https://gadgetfix.com/category/zte-1516.html",
+        "display_order": 4,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "ZTE MAX XL N9560",
+            "child_url": "https://gadgetfix.com/category/zte-max-xl-n9560-1720.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "ZTE Grand X4 Z956",
+            "child_url": "https://gadgetfix.com/category/zte-grand-x4-z956-1738.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "ZTE Grand X MAX 2 Z988",
+            "child_url": "https://gadgetfix.com/category/zte-grand-x-max-2-z988-1719.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "ZTE Blade X Max Z983",
+            "child_url": "https://gadgetfix.com/category/zte-blade-x-max-z983-1717.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "ZTE Blade Z Max Z982",
+            "child_url": "https://gadgetfix.com/category/zte-blade-z-max-z982-1716.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Zmax Pro Z981",
+            "child_url": "https://gadgetfix.com/category/zmax-pro-z981-1726.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "ZTE ZMAX Z970",
+            "child_url": "https://gadgetfix.com/category/zte-zmax-z970-1725.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "ZTE Imperial MAX Z963 Z963U",
+            "child_url": "https://gadgetfix.com/category/zte-imperial-max-z963-z963u-1723.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "ZTE MAX+ N9521",
+            "child_url": "https://gadgetfix.com/category/zte-max-n9521-1722.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "ZTE MAX N9520",
+            "child_url": "https://gadgetfix.com/category/zte-max-n9520-1721.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "ZTE Blade L2",
+            "child_url": "https://gadgetfix.com/category/zte-blade-l2-1718.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "ZTE Axon Pro A2015",
+            "child_url": "https://gadgetfix.com/category/zte-axon-pro-a2015-1724.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Others",
+            "child_url": "https://gadgetfix.com/category/others-1715.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          }
+        ]
+      },
+      {
+        "sub_child_name": "Blackberry",
+        "sub_child_url": "https://gadgetfix.com/category/blackberry-1167.html",
+        "display_order": 5,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Blackberry Key2",
+            "child_url": "https://gadgetfix.com/category/blackberry-key2-1680.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Blackberry Keyone",
+            "child_url": "https://gadgetfix.com/category/blackberry-keyone-1648.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Blackberry DTEK 60",
+            "child_url": "https://gadgetfix.com/category/blackberry-dtek-60-1647.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Blackberry DTEK 50",
+            "child_url": "https://gadgetfix.com/category/blackberry-dtek-50-1646.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          },
+          {
+            "child_name": "Blackberry Z10",
+            "child_url": "https://gadgetfix.com/category/blackberry-z10-1273.html",
+            "display_order": 5,
+            "column_number": 0,
+            "row_number": 5
+          },
+          {
+            "child_name": "Blackberry Q10",
+            "child_url": "https://gadgetfix.com/category/blackberry-q10-1274.html",
+            "display_order": 6,
+            "column_number": 0,
+            "row_number": 6
+          },
+          {
+            "child_name": "Others",
+            "child_url": "https://gadgetfix.com/category/others-1192.html",
+            "display_order": 7,
+            "column_number": 0,
+            "row_number": 7
+          },
+          {
+            "child_name": "Nokia",
+            "child_url": "https://gadgetfix.com/category/nokia-1178.html",
+            "display_order": 8,
+            "column_number": 0,
+            "row_number": 8
+          },
+          {
+            "child_name": "Lumia 820",
+            "child_url": "https://gadgetfix.com/category/lumia-820-1264.html",
+            "display_order": 9,
+            "column_number": 0,
+            "row_number": 9
+          },
+          {
+            "child_name": "Nokia 1320",
+            "child_url": "https://gadgetfix.com/category/nokia-1320-1462.html",
+            "display_order": 10,
+            "column_number": 0,
+            "row_number": 10
+          },
+          {
+            "child_name": "Nokia 720",
+            "child_url": "https://gadgetfix.com/category/nokia-720-1463.html",
+            "display_order": 11,
+            "column_number": 0,
+            "row_number": 11
+          },
+          {
+            "child_name": "Lumia 630",
+            "child_url": "https://gadgetfix.com/category/lumia-630-1465.html",
+            "display_order": 12,
+            "column_number": 0,
+            "row_number": 12
+          },
+          {
+            "child_name": "Nokia 808",
+            "child_url": "https://gadgetfix.com/category/nokia-808-1466.html",
+            "display_order": 13,
+            "column_number": 0,
+            "row_number": 13
+          },
+          {
+            "child_name": "Lumia 1520",
+            "child_url": "https://gadgetfix.com/category/lumia-1520-1448.html",
+            "display_order": 14,
+            "column_number": 0,
+            "row_number": 14
+          },
+          {
+            "child_name": "Lumia 920",
+            "child_url": "https://gadgetfix.com/category/lumia-920-1449.html",
+            "display_order": 15,
+            "column_number": 0,
+            "row_number": 15
+          },
+          {
+            "child_name": "Lumia 928",
+            "child_url": "https://gadgetfix.com/category/lumia-928-1266.html",
+            "display_order": 16,
+            "column_number": 0,
+            "row_number": 16
+          },
+          {
+            "child_name": "Lumia 1020",
+            "child_url": "https://gadgetfix.com/category/lumia-1020-1450.html",
+            "display_order": 17,
+            "column_number": 0,
+            "row_number": 17
+          },
+          {
+            "child_name": "Lumia 925",
+            "child_url": "https://gadgetfix.com/category/lumia-925-1268.html",
+            "display_order": 18,
+            "column_number": 0,
+            "row_number": 18
+          },
+          {
+            "child_name": "Others",
+            "child_url": "https://gadgetfix.com/category/others-1212.html",
+            "display_order": 19,
+            "column_number": 0,
+            "row_number": 19
+          },
+          {
+            "child_name": "Huawei",
+            "child_url": "https://gadgetfix.com/category/huawei-1514.html",
+            "display_order": 20,
+            "column_number": 0,
+            "row_number": 20
+          },
+          {
+            "child_name": "Amazon",
+            "child_url": "https://gadgetfix.com/category/amazon-1305.html",
+            "display_order": 21,
+            "column_number": 0,
+            "row_number": 21
+          },
+          {
+            "child_name": "Kindle Fire",
+            "child_url": "https://gadgetfix.com/category/kindle-fire-1306.html",
+            "display_order": 22,
+            "column_number": 0,
+            "row_number": 22
+          },
+          {
+            "child_name": "Kindle Fire HD",
+            "child_url": "https://gadgetfix.com/category/kindle-fire-hd-1307.html",
+            "display_order": 23,
+            "column_number": 0,
+            "row_number": 23
+          },
+          {
+            "child_name": "Kindle Fire HDX",
+            "child_url": "https://gadgetfix.com/category/kindle-fire-hdx-1456.html",
+            "display_order": 24,
+            "column_number": 0,
+            "row_number": 24
+          },
+          {
+            "child_name": "Kindle Ebook",
+            "child_url": "https://gadgetfix.com/category/kindle-ebook-1455.html",
+            "display_order": 25,
+            "column_number": 0,
+            "row_number": 25
+          },
+          {
+            "child_name": "Asus",
+            "child_url": "https://gadgetfix.com/category/asus-1272.html",
+            "display_order": 26,
+            "column_number": 0,
+            "row_number": 26
+          },
+          {
+            "child_name": "Nexus",
+            "child_url": "https://gadgetfix.com/category/nexus-1310.html",
+            "display_order": 27,
+            "column_number": 0,
+            "row_number": 27
+          },
+          {
+            "child_name": "Fonepad",
+            "child_url": "https://gadgetfix.com/category/fonepad-1312.html",
+            "display_order": 28,
+            "column_number": 0,
+            "row_number": 28
+          },
+          {
+            "child_name": "Memo Pad",
+            "child_url": "https://gadgetfix.com/category/memo-pad-1314.html",
+            "display_order": 29,
+            "column_number": 0,
+            "row_number": 29
+          },
+          {
+            "child_name": "ViVo Tab",
+            "child_url": "https://gadgetfix.com/category/vivo-tab-1315.html",
+            "display_order": 30,
+            "column_number": 0,
+            "row_number": 30
+          },
+          {
+            "child_name": "PadFone",
+            "child_url": "https://gadgetfix.com/category/padfone-1318.html",
+            "display_order": 31,
+            "column_number": 0,
+            "row_number": 31
+          },
+          {
+            "child_name": "Transformer Book",
+            "child_url": "https://gadgetfix.com/category/transformer-book-1319.html",
+            "display_order": 32,
+            "column_number": 0,
+            "row_number": 32
+          },
+          {
+            "child_name": "Transformer Pad",
+            "child_url": "https://gadgetfix.com/category/transformer-pad-1309.html",
+            "display_order": 33,
+            "column_number": 0,
+            "row_number": 33
+          },
+          {
+            "child_name": "Lenovo",
+            "child_url": "https://gadgetfix.com/category/lenovo-1521.html",
+            "display_order": 34,
+            "column_number": 0,
+            "row_number": 34
+          },
+          {
+            "child_name": "K13 Note",
+            "child_url": "https://gadgetfix.com/category/k13-note-2020.html",
+            "display_order": 35,
+            "column_number": 0,
+            "row_number": 35
+          },
+          {
+            "child_name": "HP",
+            "child_url": "https://gadgetfix.com/category/hp-1519.html",
+            "display_order": 36,
+            "column_number": 0,
+            "row_number": 36
+          },
+          {
+            "child_name": "Toshiba",
+            "child_url": "https://gadgetfix.com/category/toshiba-1525.html",
+            "display_order": 37,
+            "column_number": 0,
+            "row_number": 37
+          },
+          {
+            "child_name": "Nintendo",
+            "child_url": "https://gadgetfix.com/category/nintendo-1526.html",
+            "display_order": 38,
+            "column_number": 0,
+            "row_number": 38
+          },
+          {
+            "child_name": "Acer",
+            "child_url": "https://gadgetfix.com/category/acer-1517.html",
+            "display_order": 39,
+            "column_number": 0,
+            "row_number": 39
+          },
+          {
+            "child_name": "Alcatel",
+            "child_url": "https://gadgetfix.com/category/alcatel-1515.html",
+            "display_order": 40,
+            "column_number": 0,
+            "row_number": 40
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Tempered Glass",
+    "parent_url": "https://gadgetfix.com/category/tempered-glass-1692.html",
+    "display_order": 9,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Tempered Glass",
+        "sub_child_url": "https://gadgetfix.com/category/tempered-glass-1692.html",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "Iphone",
+            "child_url": "https://gadgetfix.com/category/iphone-1693.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Ipad",
+            "child_url": "https://gadgetfix.com/category/ipad-1741.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          },
+          {
+            "child_name": "Samsung",
+            "child_url": "https://gadgetfix.com/category/samsung-1694.html",
+            "display_order": 3,
+            "column_number": 0,
+            "row_number": 3
+          },
+          {
+            "child_name": "Google",
+            "child_url": "https://gadgetfix.com/category/google-2105.html",
+            "display_order": 4,
+            "column_number": 0,
+            "row_number": 4
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "parent_name": "Tools",
+    "parent_url": "https://gadgetfix.com/category/tools-1702.html",
+    "display_order": 10,
+    "open_method": "dom-inspection",
+    "sub_children": [
+      {
+        "sub_child_name": "Tools",
+        "sub_child_url": "https://gadgetfix.com/category/tools-1702.html",
+        "display_order": 1,
+        "activation_method": "dom-inspection",
+        "children": [
+          {
+            "child_name": "QianLi ToolPlus",
+            "child_url": "https://gadgetfix.com/category/qianli-toolplus-1829.html",
+            "display_order": 1,
+            "column_number": 0,
+            "row_number": 1
+          },
+          {
+            "child_name": "Others",
+            "child_url": "https://gadgetfix.com/category/others-1830.html",
+            "display_order": 2,
+            "column_number": 0,
+            "row_number": 2
+          }
+        ]
+      }
+    ]
+  }
+]
