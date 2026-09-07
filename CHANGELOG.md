@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.4.14] - 2026-09-07
+- Consolidate repeated product URLs across scrape responses, saved histories, live automation previews, and product tables.
+- Keep valid same-name products and multi-category occurrences from being treated as duplicate products.
+- Add regression coverage for project-wide product deduplication.
+
 ## [8.4.13] - 2026-09-06
 - Add a compact batched Botasaurus retry lane for blocked MobileSentrix detail pages so phase-2 SKU recovery can extract many SKUs per warmed browser session without returning full page HTML to Python.
 - Keep MobileSentrix HTTP/Safari enrichment primary, but defer retryable blocked detail misses into browser batches instead of one-by-one browser navigation.
