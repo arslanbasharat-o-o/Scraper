@@ -581,7 +581,7 @@ body {
   box-shadow: 0 4px 16px var(--primary-glow);
 }
 
-.btn-run:hover:not(:disabled) {
+.btn-run:focus-visible:not(:disabled) {
   background: var(--primary-hover);
   transform: translateY(-2px);
   box-shadow: 0 10px 24px var(--primary-glow);
@@ -616,7 +616,7 @@ body {
   transition: all var(--transition);
 }
 
-.btn-secondary:hover:not(:disabled) {
+.btn-secondary:focus-visible:not(:disabled) {
   border-color: var(--primary);
   color: var(--primary);
   transform: translateY(-1px);
@@ -738,7 +738,7 @@ body {
   transition: all var(--transition);
 }
 
-.btn-icon-sm:hover {
+.btn-icon-sm:focus-visible {
   border-color: var(--danger);
   color: var(--danger);
 }
@@ -1099,7 +1099,7 @@ select.field-input {
   transition: all var(--transition);
 }
 
-.btn-export:hover:not(:disabled) {
+.btn-export:focus-visible:not(:disabled) {
   border-color: var(--primary);
   color: var(--primary);
   transform: translateY(-1px);
@@ -1127,7 +1127,7 @@ select.field-input {
   transition: all var(--transition);
 }
 
-.btn-danger:hover {
+.btn-danger:focus-visible {
   background: #3a2028;
   border-color: var(--danger);
   transform: translateY(-1px);
@@ -1235,7 +1235,7 @@ body.modal-open {
   color: var(--text-2);
 }
 
-.confirm-modal__actions .btn-export:hover:not(:disabled) {
+.confirm-modal__actions .btn-export:focus-visible:not(:disabled) {
   background: var(--surface-3);
   color: var(--text);
 }
@@ -1246,7 +1246,7 @@ body.modal-open {
   color: #ffd8d8;
 }
 
-.confirm-modal__actions .btn-danger:hover:not(:disabled) {
+.confirm-modal__actions .btn-danger:focus-visible:not(:disabled) {
   background: linear-gradient(180deg, rgba(240, 107, 107, .28), rgba(240, 107, 107, .14));
   border-color: var(--danger);
   color: #fff2f2;
@@ -1613,7 +1613,7 @@ body.modal-open {
   transition: all var(--transition);
 }
 
-.page-btns button:hover:not(:disabled) {
+.page-btns button:focus-visible:not(:disabled) {
   border-color: var(--primary);
   color: var(--primary);
 }

@@ -43,8 +43,8 @@
   transition: border-color var(--transition), background var(--transition), transform var(--transition);
 }
 
-.menu-stat:hover,
-.detail-stat:hover,
+.menu-stat:focus-visible,
+.detail-stat:focus-visible,
 .menu-stat:focus-visible,
 .detail-stat:focus-visible,
 .menu-stat.active,
@@ -266,7 +266,6 @@
   color: var(--danger);
 }
 
-.btn-danger-soft:hover,
 .btn-danger-soft:focus-visible {
   border-color: rgba(240, 107, 107, .75);
   background: rgba(240, 107, 107, .12);
@@ -406,7 +405,7 @@
   flex-shrink: 0;
 }
 
-.tree-remove-btn:hover {
+.tree-remove-btn:focus-visible {
   border-color: rgba(240, 107, 107, .8);
   background: rgba(240, 107, 107, .18);
 }
@@ -634,7 +633,7 @@
   z-index: 1000;
 }
 
-.scroll-top-btn:hover {
+.scroll-top-btn:focus-visible {
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);

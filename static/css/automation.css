@@ -78,7 +78,7 @@ body {
   scroll-snap-align: start;
 }
 
-.automation-supplier-tab:hover {
+.automation-supplier-tab:focus-visible {
   border-color: var(--primary);
   color: var(--primary);
   background: var(--surface-3);
@@ -707,7 +707,7 @@ body {
   white-space: nowrap;
 }
 
-.inspector-tab:hover {
+.inspector-tab:focus-visible {
   color: var(--text);
 }
 
@@ -899,7 +899,7 @@ body {
   transition: border-color var(--transition), background var(--transition), color var(--transition);
 }
 
-.automation-review-filter:hover {
+.automation-review-filter:focus-visible {
   border-color: var(--primary);
   color: var(--text);
 }
@@ -1271,7 +1271,7 @@ body {
   font-size: .72rem;
 }
 
-.automation-product-sort:hover {
+.automation-product-sort:focus-visible {
   color: var(--primary);
 }
 
@@ -1566,7 +1566,7 @@ body {
   transition: all .18s ease;
 }
 
-.automation-target__toggle:hover {
+.automation-target__toggle:focus-visible {
   transform: translateY(-1px);
 }
 
