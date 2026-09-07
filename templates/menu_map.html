@@ -10,7 +10,7 @@
     (function () {
       var theme = sessionStorage.getItem('cy_theme') || 'dark';
       document.documentElement.setAttribute('data-bs-theme', theme);
-      document.documentElement.style.setProperty('--startup-bg', theme === 'light' ? '#f2f4fb' : '#0d0f14');
+      document.documentElement.style.setProperty('--startup-bg', theme === 'light' ? '#f2f4fb' : '#000000');
       document.documentElement.style.setProperty('--startup-text', theme === 'light' ? '#0e1230' : '#e8eaf5');
     })();
   </script>
@@ -20,9 +20,9 @@
   <style>
     :root,
     [data-bs-theme="dark"] {
-      --startup-bg: #0d0f14;
+      --startup-bg: #000000;
       --startup-text: #e8eaf5;
-      --startup-card: #13161e;
+      --startup-card: #000000;
       --startup-border: #252a3d;
     }
 

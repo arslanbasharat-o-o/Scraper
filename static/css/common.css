@@ -12,23 +12,23 @@
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Monaco, "Courier New", monospace;
 
   /* Background layers */
-  --bg: #0d0f14;
-  --surface: #13161e;
-  --surface-2: #191d28;
-  --surface-3: #202535;
-  --panel: #171b27;
-  --panel-solid: #1c2231;
-  --header-bg: #171b27;
+  --bg: #000000;
+  --surface: #000000;
+  --surface-2: #050505;
+  --surface-3: #0b0b0b;
+  --panel: #030303;
+  --panel-solid: #070707;
+  --header-bg: #000000;
 
   /* Borders */
-  --border: #252a3d;
-  --border-2: #2e3450;
+  --border: #1c1c1c;
+  --border-2: #2b2b2b;
 
   /* Text */
-  --text: #e8eaf5;
-  --text-2: #9198b8;
-  --text-3: #7f88aa;
-  --muted: #9ea6c6;
+  --text: #f5f5f5;
+  --text-2: #a6a6a6;
+  --text-3: #858585;
+  --muted: #b2b2b2;
   --url: #85b5ff;
 
   /* Brand */
@@ -961,16 +961,22 @@ select.field-input {
 
 /* ── Alert banner ────────────────────────────────────────────── */
 .alert-banner {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10000;
+  width: min(380px, calc(100vw - 2rem));
   display: flex;
   align-items: center;
   gap: .5rem;
-  padding: .8rem 1rem .8rem 1.15rem;
-  border-radius: var(--r);
+  padding: .7rem .85rem;
+  border-radius: 10px;
   border: 1px solid transparent;
   border-left-width: 4px;
   font-size: .84rem;
   font-weight: 600;
-  margin-bottom: .75rem;
+  margin: 0;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .22);
   line-height: 1.4;
   transition: opacity .2s;
 }
@@ -1017,6 +1023,10 @@ select.field-input {
 [data-bs-theme='light'] .alert-banner.alert-info {
   background: #eef4ff;
   color: #2350bb;
+}
+
+[data-bs-theme='dark'] .alert-banner {
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .7);
 }
 
 /* ── Toolbar Row ─────────────────────────────────────────────── */
