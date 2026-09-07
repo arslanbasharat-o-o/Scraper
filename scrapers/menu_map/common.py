@@ -490,13 +490,10 @@ def mark_duplicates(records: list[CategoryRecord]) -> list[dict[str, Any]]:
         for r in records
     )
     url_paths: dict[str, set[str]] = defaultdict(set)
-    name_urls: dict[str, set[str]] = defaultdict(set)
     for r in records:
         if r.normalized_url:
             path_key = normalized_key(r.parent_name, r.sub_child_name, r.child_name)
             url_paths[r.normalized_url].add(path_key)
-            if r.child_name or r.sub_child_name or r.parent_name:
-                name_urls[normalized_key(r.child_name or r.sub_child_name or r.parent_name)].add(r.normalized_url)
     duplicates = []
     for r in records:
         key = normalized_key(r.parent_name, r.sub_child_name, r.child_name, r.normalized_url)
@@ -505,8 +502,6 @@ def mark_duplicates(records: list[CategoryRecord]) -> list[dict[str, Any]]:
             duplicates.append({**asdict(r), "duplicate_type": "exact"})
         elif r.normalized_url and len(url_paths[r.normalized_url]) > 1:
             duplicates.append({**asdict(r), "duplicate_type": "cross_hierarchy_url"})
-        elif r.normalized_url and len(name_urls[normalized_key(r.child_name or r.sub_child_name or r.parent_name)]) > 1:
-            duplicates.append({**asdict(r), "duplicate_type": "same_name_different_url"})
     return duplicates
 
 

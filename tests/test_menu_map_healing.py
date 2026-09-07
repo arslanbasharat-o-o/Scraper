@@ -4,6 +4,7 @@ from scrapers.menu_map.common import (
     hierarchy_health,
     hierarchy_needs_healing,
     hierarchy_score,
+    mark_duplicates,
 )
 from tests.botasaurus_test_utils import evaluate_script
 
@@ -58,6 +59,15 @@ def test_recovered_children_outscore_parent_only_result():
     ]
 
     assert hierarchy_score(recovered) > hierarchy_score(sparse)
+
+
+def test_same_name_different_urls_are_not_reported_as_duplicates():
+    records = [
+        record("Apple", 1, "iPhone", "iPhone", "https://example.com/iphone"),
+        record("Samsung", 2, "iPhone", "iPhone", "https://example.com/samsung-iphone"),
+    ]
+
+    assert mark_duplicates(records) == []
 
 
 def test_semantic_healer_rebuilds_changed_nested_menu():

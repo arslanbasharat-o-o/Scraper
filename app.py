@@ -4256,6 +4256,20 @@ def parse_boolish(value) -> bool:
 def count_csv_rows(path: Path) -> int:
     if not path.exists():
         return 0
+
+
+def count_menu_map_duplicates(path: Path) -> int:
+    """Count only actual duplicate rows, not valid same-name categories."""
+    if not path.exists():
+        return 0
+    try:
+        with path.open('r', encoding='utf-8-sig', newline='') as handle:
+            return sum(
+                1 for row in csv.DictReader(handle)
+                if row.get('duplicate_type') in {'exact', 'cross_hierarchy_url'}
+            )
+    except Exception:
+        return 0
     try:
         with path.open('r', encoding='utf-8-sig', newline='') as handle:
             return max(0, sum(1 for _ in csv.DictReader(handle)))
@@ -4378,7 +4392,7 @@ def read_menu_map_site(slug: str, include_tree: bool = False) -> Dict[str, objec
         'last_modified': datetime.datetime.fromtimestamp(last_modified).isoformat(timespec='seconds') if last_modified else '',
         'summary': summary,
         'missing_urls': missing_urls,
-        'duplicate_rows': count_csv_rows(duplicate_csv),
+        'duplicate_rows': count_menu_map_duplicates(duplicate_csv),
         'error_count': len(errors),
         'errors': errors[:20],
         'files': files,
