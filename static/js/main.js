@@ -769,7 +769,7 @@ function setLoading(on, urls = '') {
 
       if (elapsedSeconds >= 45 && useBrowserApi?.checked) {
         if (loaderText) loaderText.textContent = 'Waiting for browser verification...';
-        if (loaderSub) loaderSub.textContent = 'Headless Botasaurus is completing the page verification';
+        if (loaderSub) loaderSub.textContent = 'Completing page verification';
         const pct = Math.min(92, 70 + Math.floor(Math.min(elapsedSeconds - 45, 110) / 5));
         if (loaderBar) loaderBar.style.width = `${pct}%`;
         if (loaderPct) loaderPct.textContent = `${pct}%`;
@@ -1729,7 +1729,6 @@ async function doFetch() {
         ? ` Auto detail scan refreshed ${data.details_enriched || 0} item${(data.details_enriched || 0) === 1 ? '' : 's'} to capture stock values.`
         : ` Deep detail scan refreshed ${data.details_enriched || 0} item${(data.details_enriched || 0) === 1 ? '' : 's'}.`
       : '';
-    const browserSummary = data.using_browser ? ' Headless Botasaurus rendering was used.' : '';
 
     if (!rawItems.length) {
       const targetError = summarizeTargetErrors(data.target_errors);
@@ -1737,9 +1736,9 @@ async function doFetch() {
         ? `No products found. Target fetch error: ${targetError}`
         : (data.error || 'No products found. Check the URL or try a different page.'));
     } else if (drops.length) {
-      showToast('success', `Detected ${drops.length} price drop${drops.length > 1 ? 's' : ''}. ${filteredSummary}${detailSummary}${browserSummary}`);
+      showToast('success', `Detected ${drops.length} price drop${drops.length > 1 ? 's' : ''}. ${filteredSummary}${detailSummary}`);
     } else if (!data.error) {
-      showToast('success', `${filteredSummary}${detailSummary}${browserSummary}`);
+      showToast('success', `${filteredSummary}${detailSummary}`);
     }
 
   } catch (err) {
