@@ -64,6 +64,7 @@ let automationSubmissionPending = false;
 let excludedBySite = loadExclusions();
 let treeOpenStateBySite = loadTreeOpenState();
 let activeTreeFilter = 'all';
+let lazyTreeChildren = new Map();
 const MENU_POLL_BASE_MS = 2500;
 const MENU_POLL_MAX_MS = 30000;
 const MAX_JOB_OUTPUT_CHARS = 1600;
@@ -704,6 +705,7 @@ function renderTree(site) {
   let visibleParents = 0;
   let visibleSubs = 0;
   let visibleChildren = 0;
+  lazyTreeChildren = new Map();
   const hidden = hiddenCount(slug);
   if (elements.hiddenSummary) {
     elements.hiddenSummary.textContent = hidden
@@ -730,6 +732,8 @@ function renderTree(site) {
       if (query && !filteredChildren.length && !textMatches(subBlob, query)) return '';
       visibleSubs += 1;
       visibleChildren += filteredChildren.length;
+      lazyTreeChildren.set(sKey, { children: filteredChildren, parent, sub });
+      const lazyChildren = !query && activeTreeFilter === 'all';
       return `
         <details class="tree-sub" data-tree-key="${escapeHtml(sKey)}">
           <summary>
@@ -741,8 +745,8 @@ function renderTree(site) {
               </span>
             </div>
           </summary>
-          <div class="tree-child-list">
-            ${filteredChildren.map(child => `
+          <div class="tree-child-list" data-lazy-children="${lazyChildren ? 'true' : 'false'}">
+            ${lazyChildren ? '' : filteredChildren.map(child => `
               <div class="tree-child">
                 <a class="tree-child__link" href="${escapeHtml(child.child_url || '#')}" target="_blank" rel="noreferrer">
                   <span>${escapeHtml(child.child_name)}</span>
@@ -750,7 +754,7 @@ function renderTree(site) {
                 </a>
                 <button class="tree-remove-btn tree-remove-btn--child" type="button" data-hide-key="${escapeHtml(childKey(parent, sub, child))}" data-hide-label="${escapeHtml(`${parent.parent_name} > ${sub.sub_child_name} > ${child.child_name}`)}" title="Hide child category" aria-label="Hide child category ${escapeHtml(`${parent.parent_name} > ${sub.sub_child_name} > ${child.child_name}`)}">X</button>
               </div>
-            `).join('') || '<div class="section-subtitle">No matching child links.</div>'}
+            `).join('') || (lazyChildren ? '' : '<div class="section-subtitle">No matching child links.</div>')}
           </div>
         </details>
       `;
@@ -783,6 +787,30 @@ function renderTree(site) {
   const openState = treeOpenStateBySite[slug] || {};
   elements.treeContainer.querySelectorAll('details[data-tree-key]').forEach(detail => {
     detail.open = Boolean(openState[detail.dataset.treeKey]);
+    const hydrate = () => {
+      const list = detail.querySelector('[data-lazy-children="true"]');
+      if (!list) return;
+      const entry = lazyTreeChildren.get(detail.dataset.treeKey) || {};
+      const children = entry.children || [];
+      list.innerHTML = children.map(child => `
+        <div class="tree-child">
+          <a class="tree-child__link" href="${escapeHtml(child.child_url || '#')}" target="_blank" rel="noreferrer">
+            <span>${escapeHtml(child.child_name)}</span>
+            <span class="tree-child__order">#${escapeHtml(child.display_order || '')}</span>
+          </a>
+          <button class="tree-remove-btn tree-remove-btn--child" type="button" data-hide-key="${escapeHtml(childKey(entry.parent, entry.sub, child))}" data-hide-label="${escapeHtml(`${entry.parent.parent_name} > ${entry.sub.sub_child_name} > ${child.child_name}`)}" title="Hide child category" aria-label="Hide child category ${escapeHtml(child.child_name)}">X</button>
+        </div>
+      `).join('') || '<div class="section-subtitle">No matching child links.</div>';
+      list.querySelectorAll('.tree-remove-btn').forEach(button => {
+        button.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          excludeNode(slug, button.dataset.hideKey, button.dataset.hideLabel || 'category');
+        });
+      });
+    };
+    if (detail.open) hydrate();
+    detail.addEventListener('toggle', hydrate);
     detail.addEventListener('toggle', () => {
       if (!treeOpenStateBySite[slug]) treeOpenStateBySite[slug] = {};
       treeOpenStateBySite[slug][detail.dataset.treeKey] = Boolean(detail.open);

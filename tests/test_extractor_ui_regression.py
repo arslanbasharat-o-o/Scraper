@@ -79,6 +79,8 @@ def test_real_time_polling_is_visibility_aware_and_payloads_are_compact():
     assert "window.addEventListener('pagehide', stopPolling)" in menu_map_script
     assert "MENU_POLL_MAX_MS = 30000" in menu_map_script
     assert "window.setInterval(() => pollJob()" not in menu_map_script
+    assert "data-lazy-children" in menu_map_script
+    assert "lazyTreeChildren" in menu_map_script
     assert menu_map_template.count("sessionStorage.setItem('cy_theme'") == 0
 
 
