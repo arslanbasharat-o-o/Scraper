@@ -61,6 +61,36 @@ def test_comparison_excludes_categories_and_consolidates_duplicate_products(tmp_
     assert comparison["removed"] == []
 
 
+def test_display_dedup_keeps_one_product_and_preserves_category_occurrences(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    url = "https://xcellparts.com/product/shared-screen/"
+    items = [
+        _item(url, "Shared Screen", extra={"target_url": "https://xcellparts.com/product-category/apple/"}),
+        _item(url, "Shared Screen", extra={"target_url": "https://xcellparts.com/product-category/samsung/"}),
+    ]
+
+    deduplicated, removed = app_module.deduplicate_scraped_items(items)
+
+    assert removed == 1
+    assert len(deduplicated) == 1
+    assert deduplicated[0]["duplicate_categories"] == ["Apple", "Samsung"]
+    assert deduplicated[0]["is_duplicate"] is True
+    assert deduplicated[0]["duplicate_count"] == 2
+
+
+def test_display_dedup_does_not_merge_different_product_urls_with_same_title(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    items = [
+        _item("https://xcellparts.com/product/blue-cable/", "USB-C Cable"),
+        _item("https://xcellparts.com/product/black-cable/", "USB-C Cable"),
+    ]
+
+    deduplicated, removed = app_module.deduplicate_scraped_items(items)
+
+    assert removed == 0
+    assert len(deduplicated) == 2
+
+
 def test_comparison_ignores_missing_metadata_but_keeps_real_changes(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
     url = "https://xcellparts.com/product/charging-board/"

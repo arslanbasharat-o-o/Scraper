@@ -1696,14 +1696,26 @@ def deduplicate_comparable_items(items) -> List[Dict[str, object]]:
         url = url_cache.get(raw_url) or normalize_compare_url(raw_url)
         cats = category_map.get(url, [])
         occurrences = url_counts.get(url, 1)
-        is_dup = occurrences > 1 or len(cats) > 1
+        # A product appearing in multiple valid categories is not a duplicate.
+        # Only repeated rows for the same canonical URL are duplicate data.
+        is_dup = occurrences > 1
         item_dict['duplicate_categories'] = cats
-        item_dict['duplicate_count'] = max(occurrences, len(cats))
+        item_dict['duplicate_count'] = occurrences
         item_dict['is_duplicate'] = is_dup
         if not item_dict.get('category') and cats:
             item_dict['category'] = cats[0]
 
     return out
+
+
+def deduplicate_scraped_items(items) -> Tuple[List[Dict[str, object]], int]:
+    """Consolidate repeated product URLs before they reach APIs, history, or tables."""
+    deduplicated = deduplicate_comparable_items(items)
+    raw_count = len([
+        item for item in (items or [])
+        if str((asdict(item) if hasattr(item, '__dataclass_fields__') else (item or {})).get('url') or '').strip()
+    ])
+    return deduplicated, max(0, raw_count - len(deduplicated))
 
 
 def public_comparison_snapshot(snapshot: Dict[str, object]) -> Dict[str, object]:
@@ -3107,6 +3119,9 @@ def execute_scrape_workflow(
     items, enriched_count = enrich_scraped_items(
         items, rules, retries, verify_ssl, use_curl, enrich_details=effective_enrich_details, logger=app.logger, use_browser=use_browser, progress_callback=progress_callback, stop_check=stop_check, session_cookies_by_engine=session_cookies_by_engine
     )
+    items, duplicate_rows_removed = deduplicate_scraped_items(items)
+    if duplicate_rows_removed:
+        app.logger.info(f"[dedupe] Consolidated {duplicate_rows_removed} repeated product row(s) before saving")
     sku_summary = summarize_sku_resolution(items)
     if progress_callback:
         progress_callback({
@@ -3223,6 +3238,7 @@ def execute_scrape_workflow(
         "pruned_history_ids": pruned_history_ids,
         "urls": urls,
         "target_errors": target_fetch_errors,
+        "duplicate_rows_removed": duplicate_rows_removed,
     }
 
 
@@ -5456,6 +5472,7 @@ def api_automation_run_detail(run_id):
                 raw_preview = run_summary.get('preview_items')
                 if isinstance(raw_preview, list):
                     live_preview_items = [item for item in raw_preview if isinstance(item, dict)]
+            live_preview_items, _ = deduplicate_scraped_items(live_preview_items)
 
         current_history_items = (current_history or {}).get('items', [])
         if curr_hid and curr_hid in _DEDUP_ITEMS_CACHE:
@@ -5544,7 +5561,7 @@ def api_automation_run_detail(run_id):
         duplicate_count = 0
         duplicate_items = []
         for i in current_product_items:
-            if i.get('is_duplicate') or (i.get('duplicate_categories') and len(i.get('duplicate_categories')) > 1):
+            if i.get('is_duplicate') or int(i.get('duplicate_count', 1) or 1) > 1:
                 duplicate_count += 1
                 if len(duplicate_items) < 100:
                     duplicate_items.append({
@@ -5707,6 +5724,7 @@ def api_automation_run_products(run_id):
                 run_summary = run.get('summary') if isinstance(run.get('summary'), dict) else {}
                 raw_preview = run_summary.get('preview_items')
                 items = [item for item in raw_preview if isinstance(item, dict)] if isinstance(raw_preview, list) else []
+            items, _ = deduplicate_scraped_items(items)
             return jsonify({
                 'items': items,
                 'total': len(items),

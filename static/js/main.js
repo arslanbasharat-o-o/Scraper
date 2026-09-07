@@ -1089,7 +1089,16 @@ function render() {
   if (hideDupes?.checked) {
     const seen = new Set();
     rows = rows.filter(r => {
-      const k = r.model || r.title.toLowerCase();
+      let k = r.url || '';
+      try {
+        const parsed = new URL(k, window.location.origin);
+        parsed.hash = '';
+        ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid'].forEach(name => parsed.searchParams.delete(name));
+        k = `${parsed.origin}${parsed.pathname.replace(/\/+$/, '').toLowerCase()}${parsed.search}`;
+      } catch {
+        k = r.sku || r.title.toLowerCase();
+      }
+      if (!k) k = r.sku || r.title.toLowerCase();
       if (seen.has(k)) return false;
       seen.add(k);
       return true;

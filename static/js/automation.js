@@ -1404,7 +1404,7 @@
     const duplicatesCount = Number(
       detail?.duplicate_count
       ?? detail?.comparison?.summary?.duplicate_current_rows
-      ?? products.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1)).length
+      ?? products.filter(item => item?.is_duplicate || Number(item?.duplicate_count || 0) > 1).length
     );
     return {
       all: changed.length + added.length + removed.length,
@@ -1683,8 +1683,8 @@
     }
 
     const mode = String(state.productFilters.mode || 'all');
-    if (mode === 'duplicates') filtered = filtered.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1));
-    if (mode === 'unique_only') filtered = filtered.filter(item => !item?.is_duplicate && (!item?.duplicate_categories || item.duplicate_categories.length <= 1));
+    if (mode === 'duplicates') filtered = filtered.filter(item => item?.is_duplicate || Number(item?.duplicate_count || 0) > 1);
+    if (mode === 'unique_only') filtered = filtered.filter(item => !item?.is_duplicate && Number(item?.duplicate_count || 0) <= 1);
     if (mode === 'priced') filtered = filtered.filter(item => productPriceNumber(item) !== null);
     if (mode === 'missing_price') filtered = filtered.filter(item => productPriceNumber(item) === null);
     if (mode === 'with_sku') filtered = filtered.filter(item => normalizeProductFilterText(item?.sku));
@@ -2274,9 +2274,7 @@
     }
 
     let productItems = filterByModel(isDuplicateView ? duplicateSource : allItems, modelFilter);
-    if (isDuplicateView) {
-      productItems = productItems.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1));
-    }
+    if (isDuplicateView) productItems = productItems.filter(item => item?.is_duplicate || Number(item?.duplicate_count || 0) > 1);
     const items = shouldShowDifferences ? differenceItems : productItems;
     const activeConfig = CHANGE_VIEW_CONFIG.find(config => config.key === selectedChangeView) || CHANGE_VIEW_CONFIG[0];
 
@@ -2669,7 +2667,7 @@
             <button type="button" class="btn btn-sm btn-primary" onclick="if(window.switchToTab) window.switchToTab('table-view');">Open Full Products Table</button>
           </div>
           <div class="automation-change-list">
-            ${(Array.isArray(detail.duplicate_items) && detail.duplicate_items.length ? detail.duplicate_items : allProducts.filter(item => item?.is_duplicate || (item?.duplicate_categories && item.duplicate_categories.length > 1))).slice(0, 100).map(item => `
+            ${(Array.isArray(detail.duplicate_items) && detail.duplicate_items.length ? detail.duplicate_items : allProducts.filter(item => item?.is_duplicate || Number(item?.duplicate_count || 0) > 1)).slice(0, 100).map(item => `
               <div class="automation-change">
                 <div class="automation-change__model">${escapeHtml(item.category || getModelLabel(item) || 'General')}</div>
                 <div class="automation-change__top">
