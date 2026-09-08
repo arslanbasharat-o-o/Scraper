@@ -1905,38 +1905,32 @@ body.modal-open {
 @media (max-width: 1050px) {
   .app-header {
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand actions"
+      "nav nav";
     gap: .65rem 1rem;
   }
 
-  .nav-pills {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: 100%;
-  }
-
-  .nav-link {
-    flex: 1 1 0;
-    text-align: center;
-  }
-}
-
-@media (max-width: 768px) {
-  .app-header {
-    padding: .75rem;
-    gap: .75rem;
-  }
-
   .header-left {
-    flex: 1 1 auto;
+    grid-area: brand;
+  }
+
+  .header-right {
+    grid-area: actions;
+    justify-self: end;
   }
 
   .nav-pills {
+    grid-area: nav;
     width: 100%;
-    justify-content: flex-start;
+    display: flex;
+    flex-wrap: nowrap;
     overflow-x: auto;
     overscroll-behavior-inline: contain;
     scrollbar-width: none;
-    scroll-padding-inline: .25rem;
+    -webkit-overflow-scrolling: touch;
+    gap: .25rem;
+    padding: .25rem;
   }
 
   .nav-pills::-webkit-scrollbar {
@@ -1944,12 +1938,18 @@ body.modal-open {
   }
 
   .nav-link {
-    flex: 0 0 auto;
+    flex: 1 1 0;
+    min-width: max-content;
+    text-align: center;
+    padding: .42rem .75rem;
+    font-size: .8rem;
   }
+}
 
-  .header-right {
-    width: auto;
-    justify-self: end;
+@media (max-width: 768px) {
+  .app-header {
+    padding: .75rem;
+    gap: .65rem .75rem;
   }
 
   .toolbar-row {
@@ -1983,46 +1983,95 @@ body.modal-open {
 
 @media (max-width: 600px) {
   .app-header {
-    grid-template-columns: 1fr;
+    padding: .65rem .75rem;
+    gap: .55rem .5rem;
   }
 
-  .header-left,
-  .header-right,
-  .nav-pills {
-    grid-column: 1;
+  .header-title-row {
+    gap: .4rem;
   }
 
-  .header-left {
-    grid-row: 1;
+  .app-title {
+    font-size: .98rem;
   }
 
-  .nav-pills {
-    grid-row: 2;
+  .app-sub {
+    font-size: .68rem;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-logo {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    font-size: .68rem;
+    border-radius: 8px;
   }
 
   .header-right {
-    grid-row: 3;
-    width: 100%;
-    justify-self: stretch;
-    justify-content: flex-end;
+    gap: .4rem;
   }
 
-  .header-clock {
-    margin-right: auto;
-    align-items: flex-start;
+  .user-auth-badge {
+    max-width: 130px;
+    font-size: .72rem;
+    padding: .25rem .45rem;
+  }
+
+  .theme-switch {
+    min-height: 32px;
+    padding: .2rem .35rem;
+    gap: .25rem;
+  }
+
+  .theme-label {
+    font-size: .58rem;
+  }
+
+  .switch-track {
+    width: 30px;
+    height: 17px;
+  }
+
+  .nav-pills {
+    padding: 3px;
+    gap: 3px;
+    border-radius: 10px;
+  }
+
+  .nav-link {
+    flex: 1 1 0;
+    min-width: max-content;
+    padding: .38rem .5rem;
+    font-size: .75rem;
+    border-radius: 7px;
   }
 }
 
 @media (max-width: 420px) {
+  .app-sub {
+    max-width: 140px;
+  }
+
   .nav-pills {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    overflow: visible;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    gap: 2px;
+    padding: 2px;
   }
 
   .nav-link {
-    min-width: 0;
-    padding: .38rem .5rem;
+    flex: 1 1 0;
+    min-width: max-content;
+    padding: .35rem .42rem;
+    font-size: .72rem;
     text-align: center;
   }
 }

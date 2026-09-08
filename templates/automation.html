@@ -78,13 +78,18 @@
       box-shadow: var(--shadow);
     }
     .app-header {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "brand actions"
+        "nav nav";
       align-items: center;
-      justify-content: space-between;
-      padding: .75rem 1.25rem;
+      gap: .65rem 1rem;
+      padding: .75rem 1rem;
       margin-bottom: 1rem;
     }
-    .header-left { display: flex; align-items: center; gap: .75rem; }
+    .header-left { grid-area: brand; display: flex; align-items: center; gap: .75rem; min-width: 0; }
+    .header-right { grid-area: actions; display: flex; align-items: center; justify-self: end; gap: .5rem; }
     .app-logo {
       width: 36px;
       height: 36px;
@@ -99,40 +104,59 @@
     }
     .app-title { font-size: 1.15rem; font-weight: 700; margin: 0; color: var(--text); }
     .app-sub { font-size: .8rem; color: var(--text-3); margin: 0; }
-    .nav-pills { display: flex; gap: .25rem; }
+    .nav-pills {
+      grid-area: nav;
+      display: flex;
+      flex-wrap: nowrap;
+      width: 100%;
+      gap: .25rem;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .nav-pills::-webkit-scrollbar { display: none; }
     .nav-link {
+      flex: 1 1 0;
+      min-width: max-content;
+      text-align: center;
       padding: .35rem .75rem;
       border-radius: var(--r-md);
       color: var(--text-2);
       text-decoration: none;
       font-size: .85rem;
       font-weight: 500;
+      white-space: nowrap;
     }
     .nav-link.active { background: var(--primary); color: #fff; }
     .automation-supplier-tabs {
       display: flex;
       align-items: center;
       gap: 8px;
-      min-height: 58px;
-      padding: 8px 14px;
+      min-height: 52px;
+      padding: 6px 12px;
       overflow-x: auto;
       margin-bottom: 1rem;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
     }
+    .automation-supplier-tabs::-webkit-scrollbar { display: none; }
     .automation-supplier-tab {
       display: inline-flex;
       align-items: center;
       padding: 6px 14px;
-      border-radius: 999px;
-      border: 1px solid transparent;
-      background: transparent;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
       color: var(--text-2);
-      font-size: .85rem;
-      font-weight: 500;
+      font-size: .82rem;
+      font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
+      flex-shrink: 0;
     }
     .automation-supplier-tab.is-active {
       background: var(--primary);
+      border-color: var(--primary);
       color: #fff;
       font-weight: 600;
     }

@@ -73,9 +73,12 @@
     .btn-cancel { background: transparent; color: inherit; border: 1px solid #252a3d; padding: 0.5rem 1rem; border-radius: 6px; }
     [data-bs-theme="light"] .btn-cancel { border-color: #ccc; }
     @media (max-width: 900px) {
-      .app-header { align-items: flex-start; flex-direction: column; }
-      .users-header-left { align-items: flex-start; flex-direction: column; }
+      .app-header { align-items: flex-start; flex-direction: column; gap: 0.75rem; padding: 0.85rem 1rem; }
+      .users-header-left { align-items: flex-start; flex-direction: column; width: 100%; gap: 0.65rem; }
       .users-header-actions { justify-content: flex-start; width: 100%; }
+      .nav-pills { width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+      .nav-pills::-webkit-scrollbar { display: none; }
+      .nav-link { flex: 1 1 0; min-width: max-content; text-align: center; white-space: nowrap; padding: 0.38rem 0.6rem; font-size: 0.78rem; }
       table.modern-table th, table.modern-table td { padding: .75rem; }
     }
   </style>

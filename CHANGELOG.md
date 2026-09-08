@@ -1,5 +1,11 @@
 # Changelog
 
+## [8.4.21] - 2026-09-08
+- Fix mobile responsiveness across all pages: eliminate 2x2 broken navigation grid on narrow screens and replace with a sleek segmented control with smooth touch scrolling.
+- Refactor mobile header into a balanced 2-row layout keeping the brand on top left and theme switch on top right with zero empty vertical space.
+- Standardize Category Menu Map action buttons into a symmetrical 2x2 grid on mobile screens with uniform 40px touch targets.
+- Refine Automation supplier tab bar on mobile with compact padding and smooth momentum scroll.
+
 ## [8.4.20] - 2026-09-08
 - Make Automation (`/automation`) the default landing page for root `/` and authentication redirects, establishing `/extractor` for the Extractor view.
 
