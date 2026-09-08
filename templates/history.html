@@ -135,8 +135,6 @@
       </div>
     </header>
 
-    <div id="alert" class="alert-banner d-none" role="alert"></div>
-
     <div id="overlay" class="overlay d-none" role="status" aria-live="polite" aria-atomic="true">
       <div class="spinner" aria-hidden="true"></div>
       <span class="sr-only">Loading history data</span>
@@ -370,6 +368,10 @@
   </div>
 
 
+
+  <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true">
+    <div id="alert" class="alert-banner d-none" role="alert"></div>
+  </div>
 
   <script defer src="{{ asset_url('js/history.js') }}"></script>
 </body>

@@ -341,8 +341,6 @@
       </div>
     </section>
 
-    <!-- ── Alert Banner ────────────────────────────────────── -->
-    <div id="alert" class="alert-banner d-none" role="alert"></div>
 
     <div id="confirmModal" class="confirm-modal d-none" aria-hidden="true">
       <div id="confirmModalDialog" class="confirm-modal__dialog cy-card" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="confirmModalTitle"
@@ -479,6 +477,10 @@
 
   <div id="imageHoverPreview" class="image-hover-preview d-none" aria-hidden="true">
     <img id="imageHoverPreviewImg" src="" alt="Product preview">
+  </div>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true">
+    <div id="alert" class="alert-banner d-none" role="alert"></div>
   </div>
 
   <script defer src="{{ asset_url('js/main.js') }}"></script>

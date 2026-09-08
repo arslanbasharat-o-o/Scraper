@@ -369,12 +369,13 @@
     `).join('');
   }
 
-  function showAlert(type, msg, duration = 5000) {
+  function showAlert(type, msg, duration = 4000) {
     const alertBox = elements.alertBox;
     if (!alertBox) return;
-    alertBox.className = `alert-banner ${NOTIF_CLS[type] || 'alert-info'}`;
-    alertBox.innerHTML = `${escapeHtml(msg)}<button type="button" aria-label="Close notification" style="margin-left:auto;background:none;border:none;color:inherit;cursor:pointer;font-size:1rem;padding:0 .2rem">x</button>`;
-    const button = alertBox.querySelector('button');
+    const tone = type === 'warn' ? 'warning' : type;
+    alertBox.className = `alert-banner ${NOTIF_CLS[tone] || NOTIF_CLS[type] || 'alert-info'}`;
+    alertBox.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" class="alert-banner__close" aria-label="Close notification">&times;</button>`;
+    const button = alertBox.querySelector('.alert-banner__close');
     if (button) button.addEventListener('click', () => alertBox.classList.add('d-none'));
     alertBox.classList.remove('d-none');
     clearTimeout(alertBox._timer);
@@ -394,16 +395,28 @@
 
   async function api(url, options = {}) {
     const { headers: optionHeaders = {}, ...requestOptions } = options;
-    const res = await fetch(url, {
-      cache: 'no-store',
-      ...requestOptions,
-      headers: { 'Content-Type': 'application/json', ...optionHeaders }
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || `Request failed (${res.status})`);
+    const maxRetries = (options.method && options.method !== 'GET') ? 0 : 2;
+    let attempt = 0;
+    while (true) {
+      try {
+        const res = await fetch(url, {
+          cache: 'no-store',
+          ...requestOptions,
+          headers: { 'Content-Type': 'application/json', ...optionHeaders }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || `Request failed (${res.status})`);
+        }
+        return data;
+      } catch (err) {
+        if (err?.name === 'AbortError' || attempt >= maxRetries) {
+          throw err;
+        }
+        attempt++;
+        await new Promise(r => setTimeout(r, 300 * attempt));
+      }
     }
-    return data;
   }
 
   const _dateTimeCache = new Map();
@@ -2765,7 +2778,11 @@
         if (err?.name === 'AbortError') return null;
         if (requestId === state.runDetailRequestId) {
           renderRunDetail(null);
-          showAlert('error', err.message || 'Failed to load run detail.', 0);
+          if (!silent) {
+            showAlert('error', err.message || 'Failed to load run detail.', 5000);
+          } else {
+            console.warn('Silent loadRunDetail failed:', err.message);
+          }
         }
       } finally {
         if (state.runDetailInFlightId === requestedRunId) {
@@ -2838,7 +2855,11 @@
         if (!state.runs.length && elements.automationRuns) {
           elements.automationRuns.innerHTML = '<div class="automation-empty-state automation-error-state" role="alert"><div class="automation-run__title">Runs could not be loaded</div><button type="button" class="btn-export" data-action="retry-runs">Retry</button></div>';
         }
-        showAlert('error', err.message || 'Failed to load automation runs.', 0);
+        if (!silent) {
+          showAlert('error', err.message || 'Failed to load automation runs.', 5000);
+        } else {
+          console.warn('Silent loadRuns failed:', err.message);
+        }
       }
     } finally {
       if (!silent) setLoading(false);
@@ -2871,7 +2892,11 @@
         if (!state.allJobs.length && elements.automationJobs) {
           elements.automationJobs.innerHTML = '<div class="automation-empty-state automation-error-state" role="alert"><div class="automation-job__title">Jobs could not be loaded</div><button type="button" class="btn-export" data-action="retry-jobs">Retry</button></div>';
         }
-        showAlert('error', err.message || 'Failed to load automation jobs.', 0);
+        if (!silent) {
+          showAlert('error', err.message || 'Failed to load automation jobs.', 5000);
+        } else {
+          console.warn('Silent loadJobs failed:', err.message);
+        }
       }
     } finally {
       if (!silent) setLoading(false);

@@ -93,8 +93,6 @@
       </div>
     </header>
 
-    <div id="alert" class="alert-banner d-none" role="alert"></div>
-
     <div id="menuMapConfirmModal" class="confirm-modal d-none" aria-hidden="true">
       <div id="menuMapConfirmModalDialog" class="confirm-modal__dialog cy-card" role="dialog" aria-modal="true" tabindex="-1"
         aria-labelledby="menuMapConfirmModalTitle" aria-describedby="menuMapConfirmModalMessage">
@@ -232,6 +230,10 @@
 
     <button id="scrollTopBtn" class="scroll-top-btn" title="Scroll to top" aria-label="Scroll to top">&#8679;</button>
     {% include "_footer.html" %}
+  </div>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true">
+    <div id="alert" class="alert-banner d-none" role="alert"></div>
   </div>
 
   <script defer src="{{ asset_url('js/menu-map.js') }}"></script>

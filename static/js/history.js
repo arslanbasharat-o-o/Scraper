@@ -91,12 +91,18 @@
       `).join('');
     },
 
-    showAlert(type, msg) {
+    showAlert(type, msg, duration = 4000) {
       if (!elements.alertBox) return;
-      elements.alertBox.className = `alert cy-card p-3 alert-${type}`;
-      elements.alertBox.textContent = msg;
+      const tone = type === 'warn' ? 'warning' : (type === 'error' ? 'danger' : type);
+      elements.alertBox.className = `alert-banner alert-${tone}`;
+      elements.alertBox.innerHTML = `<span>${msg}</span><button type="button" class="alert-banner__close" aria-label="Close notification">&times;</button>`;
+      const btn = elements.alertBox.querySelector('.alert-banner__close');
+      if (btn) btn.onclick = () => elements.alertBox.classList.add('d-none');
       elements.alertBox.classList.remove('d-none');
-      setTimeout(() => elements.alertBox.classList.add('d-none'), 5000);
+      clearTimeout(elements.alertBox._timer);
+      if (duration > 0) {
+        elements.alertBox._timer = setTimeout(() => elements.alertBox.classList.add('d-none'), duration);
+      }
     },
 
     formatDate(isoString) {

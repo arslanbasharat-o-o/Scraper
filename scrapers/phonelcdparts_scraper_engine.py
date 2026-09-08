@@ -98,12 +98,41 @@ def apply_price_rules(price: float, rules: dict | None = None) -> float:
     return round(max(0.0, value), 2)
 
 
+def _get_proxy() -> str | None:
+    import os
+    proxy = (
+        os.getenv("SCRAPER_PROXY_URL")
+        or os.getenv("HTTPS_PROXY")
+        or os.getenv("HTTP_PROXY")
+        or os.getenv("https_proxy")
+        or os.getenv("http_proxy")
+        or ""
+    ).strip()
+    return proxy if proxy else None
+
+
 def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = True) -> tuple:
+    proxy = _get_proxy()
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+    }
+
     if use_curl and HAS_CURL:
         try:
             with _CURL_LOCK:
-                session = curl_requests.Session(impersonate="safari15_5")
+                session = curl_requests.Session(impersonate="chrome124", proxy=proxy) if proxy else curl_requests.Session(impersonate="chrome124")
             session.verify = verify_ssl
+            session.headers.update(headers)
             return session, True
         except Exception:
             pass
@@ -112,6 +141,8 @@ def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = Tr
     from urllib3.util.retry import Retry
 
     session = requests.Session()
+    if proxy:
+        session.proxies = {"http": proxy, "https": proxy}
     retry = Retry(
         total=max(1, int(retries)),
         read=max(1, int(retries)),
@@ -124,12 +155,7 @@ def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = Tr
     session.mount('https://', adapter)
     session.mount('http://', adapter)
     session.verify = verify_ssl
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-    })
+    session.headers.update(headers)
     return session, False
 
 

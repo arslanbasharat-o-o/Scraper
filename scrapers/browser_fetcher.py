@@ -127,11 +127,33 @@ def _dismiss_canada_prompt(execute_script, sleep, *, url: str, logger=None, atte
 
 
 def _local_browser_max_windows() -> int:
-    value = os.getenv("SCRAPER_LOCAL_BROWSER_MAX_WINDOWS") or "1"
+    value = os.getenv("SCRAPER_LOCAL_BROWSER_MAX_WINDOWS") or "2"
     try:
-        return max(1, min(4, int(value)))
+        return max(1, min(16, int(value)))
     except (TypeError, ValueError):
-        return 1
+        return 2
+
+
+def _local_browser_proxy() -> str | None:
+    proxy = (
+        os.getenv("SCRAPER_PROXY_URL")
+        or os.getenv("HTTPS_PROXY")
+        or os.getenv("HTTP_PROXY")
+        or os.getenv("https_proxy")
+        or os.getenv("http_proxy")
+        or ""
+    ).strip()
+    return proxy if proxy else None
+
+
+def _local_browser_default_timeout() -> int:
+    val = os.getenv("SCRAPER_LOCAL_BROWSER_TIMEOUT")
+    try:
+        if val:
+            return max(5, int(val))
+    except (TypeError, ValueError):
+        pass
+    return 60
 
 
 def _get_local_browser_semaphore():
@@ -227,7 +249,7 @@ def _looks_like_browser_challenge(html: str) -> bool:
 def fetch_html(
     url: str,
     *,
-    timeout: int = 60,
+    timeout: int | None = None,
     wait_seconds: float | None = None,
     logger=None,
 ) -> BrowserFetchResult:
@@ -235,6 +257,9 @@ def fetch_html(
     prefetched = _get_prefetched_browser_html(url)
     if prefetched:
         return prefetched
+
+    if timeout is None:
+        timeout = _local_browser_default_timeout()
 
     try:
         from .botasaurus_wrapper import Driver, browser
@@ -270,6 +295,7 @@ def fetch_html(
         @browser(
             headless=_local_browser_headless(),
             profile=str(profile_dir),
+            proxy=_local_browser_proxy(),
             window_size=(1440, 1200),
             lang="en-US",
             user_agent=(
@@ -421,6 +447,7 @@ def fetch_html_many(
         @browser(
             headless=_local_browser_headless(),
             profile=str(profile_dir),
+            proxy=_local_browser_proxy(),
             window_size=(1440, 1200),
             lang="en-US",
             user_agent=(
@@ -790,6 +817,7 @@ def fetch_product_details_many(
         @browser(
             headless=_local_browser_headless(),
             profile=str(profile_dir),
+            proxy=_local_browser_proxy(),
             window_size=(1440, 1200),
             lang="en-US",
             user_agent=(

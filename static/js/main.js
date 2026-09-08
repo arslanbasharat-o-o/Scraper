@@ -152,14 +152,16 @@ function showToast(type, msg, duration = 3500) {
   if (!alertBox) return;
   alertBox.className = `alert-banner ${_NOTIF_CLS[type] || 'alert-info'}`;
   alertBox.innerHTML =
-    `<span style="font-weight:800;margin-right:.45rem">${_NOTIF_ICONS[type] || 'ℹ'}</span>${escapeHtml(msg)}` +
-    `<button onclick="this.parentElement.classList.add('d-none')" style="margin-left:auto;background:none;border:none;cursor:pointer;color:inherit;font-size:1rem;opacity:.7;padding:0 .2rem" title="Close">x</button>`;
+    `<span style="font-weight:800;margin-right:.45rem">${_NOTIF_ICONS[type] || 'ℹ'}</span><span>${escapeHtml(msg)}</span>` +
+    `<button class="alert-banner__close" onclick="this.parentElement.classList.add('d-none')" aria-label="Close notification">&times;</button>`;
   alertBox.style.display = 'flex';
   alertBox.style.alignItems = 'center';
   alertBox.style.gap = '.5rem';
   alertBox.classList.remove('d-none');
   clearTimeout(alertBox._clearTimer);
-  alertBox._clearTimer = setTimeout(() => alertBox.classList.add('d-none'), duration);
+  if (duration > 0) {
+    alertBox._clearTimer = setTimeout(() => alertBox.classList.add('d-none'), duration);
+  }
 }
 
 function showAlert(type, msg) { showToast(type, msg); }

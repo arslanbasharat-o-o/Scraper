@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.4.17] - 2026-09-08
+- Fix persistent "Failed to fetch" error notifications on background polling in Automation and History views with exponential retry backoff and silent error handling.
+- Fix UI toast/notification positioning across all pages by hoisting `#toastContainer` to viewport level and removing CSS animation transform containment.
+- Fix PhoneLCDParts scraper stability by migrating TLS impersonation to Chrome 124 JA3/JA4 fingerprinting with full Client Hints and proxy support.
+- Optimize high-core 40 GB server scraper performance by raising local browser window limit from 4 to 16, adding proxy routing, and establishing unified production `.env.example`.
+- Update PhoneLCDParts production benchmark target to valid category endpoint.
+
 ## [8.4.16] - 2026-09-07
 - Auto-seed menu maps from bundled baseline data in `data/menu_map_seeds/` whenever site output is missing, empty, or corrupted by server-level Cloudflare access blocks.
 - Preserve healthy previous menu map outputs and fall back to baseline seeds on Cloudflare HTTP 403 or verification challenge blocks, preventing empty output replacement (`[]`).
