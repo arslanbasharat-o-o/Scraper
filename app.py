@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, send_file, url_for, Response, session as flask_session, redirect, make_response
+from flask import Flask, request, jsonify, render_template, send_file, url_for, Response, make_response
 import atexit
 import csv
 import datetime
@@ -39,13 +39,11 @@ import uuid
 from xml.etree import ElementTree as ET
 from database import db_manager
 from automation_service import discover_category_targets
-from auth import init_auth, require_login, require_role, validate_credentials, is_auth_configured
-from flask_login import current_user, login_user, logout_user
 
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.4.22'
+APP_VERSION = '8.5.0'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -107,6 +105,23 @@ SCRAPER_MODULES = {
     'gadgetfix': gadgetfix_scraper_engine,
 }
 
+BOTARUS_PRIMARY_SCRAPER_KEYS = {
+    key.strip()
+    for key in os.getenv(
+        'SCRAPER_BOTARUS_PRIMARY_ENGINES',
+        'standard,mobilesentrix_canada',
+    ).split(',')
+    if key.strip()
+}
+REQUIRED_SKU_SCRAPER_KEYS = {
+    key.strip()
+    for key in os.getenv(
+        'SCRAPER_REQUIRED_SKU_ENGINES',
+        'standard,mobilesentrix_canada,xcell,txparts,parts4cells,phonelcdparts,gadgetfix',
+    ).split(',')
+    if key.strip()
+}
+
 SCRAPER_PHASE1_WORKER_DEFAULTS = {
     'xcell': 24,
     'txparts': 24,
@@ -124,7 +139,7 @@ SCRAPER_DETAIL_WORKER_DEFAULTS = {
     'mobilesentrix_canada': 4,
     'standard': 8,
 }
-SCRAPER_WORKER_HARD_CAP = 96
+SCRAPER_WORKER_HARD_CAP = 256
 SCRAPER_WORKER_PROFILES = {
     # Conservative high-throughput profile for a 10 GB development machine.
     'local_10gb': {
@@ -138,6 +153,12 @@ SCRAPER_WORKER_PROFILES = {
         'hard_cap': 160,
         'phase1': {'xcell': 48, 'txparts': 40, 'parts4cells': 40, 'phonelcdparts': 40, 'gadgetfix': 32, 'standard': 48},
         'detail': {'xcell': 96, 'txparts': 64, 'parts4cells': 64, 'phonelcdparts': 80, 'gadgetfix': 64, 'mobilesentrix_canada': 32, 'standard': 48},
+    },
+    # Ultra high-throughput server profile for maximum parallel speeds across Phase 1 & Phase 2.
+    'server_max': {
+        'hard_cap': 256,
+        'phase1': {'xcell': 64, 'txparts': 64, 'parts4cells': 64, 'phonelcdparts': 64, 'gadgetfix': 48, 'standard': 64},
+        'detail': {'xcell': 128, 'txparts': 96, 'parts4cells': 96, 'phonelcdparts': 96, 'gadgetfix': 96, 'mobilesentrix_canada': 48, 'standard': 64},
     },
 }
 
@@ -190,12 +211,6 @@ if not _secret_key:
     )
 app.secret_key = _secret_key
 del _secret_key
-
-# Initialise Flask-Login auth system. Auth is backward-compatible:
-# when AUTH_PASSWORD / AUTH_PASSWORD_HASH are not configured, all endpoints
-# remain open (existing behavior preserved).
-init_auth(app)
-
 
 def configure_app_file_logging() -> None:
     log_path = APP_ROOT / 'server.log'
@@ -680,6 +695,48 @@ def get_scraper_for_url(url: str):
     return scraper_key, SCRAPER_MODULES.get(scraper_key)
 
 
+def scraper_prefers_botarus(scraper_key: str) -> bool:
+    """Return whether a supplier should default to rendered Botarus extraction."""
+    return str(scraper_key or '').strip().lower() in BOTARUS_PRIMARY_SCRAPER_KEYS
+
+
+def is_supported_supplier_url(url: str) -> bool:
+    try:
+        host = (urlparse(str(url or '').strip()).hostname or '').lower().removeprefix('www.')
+    except ValueError:
+        return False
+    if not host:
+        return False
+    for config in SCRAPER_CONFIG.values():
+        for domain in config.get('domains', ()):
+            normalized_domain = str(domain or '').lower().removeprefix('www.')
+            if host == normalized_domain or host.endswith(f'.{normalized_domain}'):
+                return True
+    return False
+
+
+def url_prefers_botarus(url: str) -> bool:
+    if not is_supported_supplier_url(url):
+        return False
+    scraper_key, _ = get_scraper_for_url(url)
+    return scraper_prefers_botarus(scraper_key)
+
+
+def scraper_requires_sku(scraper_key: str) -> bool:
+    if str(os.getenv('SCRAPER_REQUIRE_SKU', '1') or '').strip().lower() in {'0', 'false', 'no', 'off'}:
+        return False
+    return str(scraper_key or '').strip().lower() in REQUIRED_SKU_SCRAPER_KEYS
+
+
+def item_requires_sku(item) -> bool:
+    item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
+    url = str(item_dict.get('url') or '').strip()
+    if not is_supported_supplier_url(url):
+        return False
+    scraper_key, _ = get_scraper_for_url(url)
+    return scraper_requires_sku(scraper_key)
+
+
 def format_category_label_from_url(url: str) -> str:
     """Turn a category URL tail into a readable model/category label."""
     parsed = urlparse(str(url or '').strip())
@@ -829,13 +886,17 @@ def _is_cloudflare_or_error_title(title: str | None) -> bool:
     ))
 
 
-def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use_curl: bool, enrich_details: bool = True, logger=None, use_browser: bool = False, progress_callback=None, stop_check=None, session_cookies_by_engine=None):
+def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use_curl: bool, enrich_details: bool = True, logger=None, use_browser: bool | None = None, progress_callback=None, stop_check=None, session_cookies_by_engine=None):
     """Open each unique product detail page and merge richer metadata into scrape results."""
     if not enrich_details or not items:
         return items, 0
 
     browser_fallback_setting = str(os.getenv('SCRAPER_LOCAL_BROWSER_FALLBACK') or '').strip().lower()
-    browser_fallback_enabled = bool(use_browser) or browser_fallback_setting in {'1', 'true', 'yes', 'on'}
+    browser_fallback_enabled = (
+        bool(use_browser)
+        or use_browser is None
+        or browser_fallback_setting in {'1', 'true', 'yes', 'on'}
+    )
     browser_fallback_engines = set(SCRAPER_MODULES)
     browser_batch_enabled = browser_fallback_enabled and _detail_browser_batch_enabled()
     browser_batch_size = _detail_browser_batch_size()
@@ -846,12 +907,11 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             if hasattr(item, 'extra') and isinstance(item.extra, dict):
                 item.extra.setdefault('sku_status', 'found')
             continue
-        # Checkpointed terminal outcomes are complete work.  In particular,
-        # phase-2 resume workers must not enqueue products already confirmed
-        # unavailable or not published; doing so both wastes requests and
-        # makes the displayed completion count drift on every resume.
+        # Checkpointed permanent outcomes are complete work. Missing required
+        # SKU states remain retryable during the same job instead of becoming
+        # a normal "resume later" path.
         item_status = str((getattr(item, 'extra', {}) or {}).get('sku_status') or '').strip().lower()
-        if item_status in {'not_published', 'unavailable'}:
+        if item_status == 'unavailable' and not item_requires_sku(item):
             continue
         item_url = normalize_compare_text(getattr(item, 'url', ''))
         if item_url:
@@ -920,7 +980,6 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 else:
                     return enrich_standard_item_details(get_thread_session(engine_type), item, rules, logger)
 
-        # Fast Safari 15.5 TLS detail enrichment
         enriched = item
         engine_type, _ = get_scraper_for_url(item_url)
         http_error = None
@@ -928,24 +987,41 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         browser_succeeded = False
         status_code = 0
         detail_session = None
-        direct_batch = browser_batch_enabled and _is_mobilesentrix_detail_engine(engine_type)
+        direct_batch = browser_batch_enabled and _is_mobilesentrix_detail_engine(engine_type) and is_supported_supplier_url(item_url)
+        prefer_browser_first = bool(use_browser) or (
+            use_browser is None
+            and is_supported_supplier_url(item_url)
+            and scraper_prefers_botarus(engine_type)
+        )
         if not direct_batch:
             try:
                 _check_stop()
-                candidate = _do_enrich(False)
+                candidate = _do_enrich(prefer_browser_first)
                 if candidate:
                     enriched = candidate
             except Exception as http_exc:
                 http_error = http_exc
                 if logger:
-                    logger.debug(f"[detail] HTTP enrichment skipped for {item_url}: {http_exc}")
+                    method_label = 'Botarus' if prefer_browser_first else 'HTTP'
+                    logger.debug(f"[detail] {method_label} enrichment skipped for {item_url}: {http_exc}")
                 enriched = item
+
+            if prefer_browser_first and not str(getattr(enriched, 'sku', '') or '').strip():
+                try:
+                    _check_stop()
+                    candidate = _do_enrich(False)
+                    if candidate:
+                        enriched = candidate
+                except Exception as http_exc:
+                    http_error = http_error or http_exc
+                    if logger:
+                        logger.debug(f"[detail] HTTP recovery after Botarus failed for {item_url}: {http_exc}")
 
         # Every supplier keeps the fast Safari HTTP request primary. If the
         # detail response is blocked, transient, or omits the SKU, retry the
         # same URL in a bounded browser slot. A confirmed 404/410 is treated
         # as unavailable and is never turned into a fabricated identifier.
-        per_url_browser_fallback = not (browser_batch_enabled and _is_mobilesentrix_detail_engine(engine_type))
+        per_url_browser_fallback = not (browser_batch_enabled and _is_mobilesentrix_detail_engine(engine_type) and is_supported_supplier_url(item_url))
         if browser_fallback_enabled and per_url_browser_fallback and engine_type in browser_fallback_engines:
             try:
                 detail_session = get_thread_session(engine_type)
@@ -975,15 +1051,14 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 )
             )
             missing_sku = not str(getattr(enriched, 'sku', '') or '').strip()
-            # A successful HTTP product page that genuinely omits a SKU is
-            # already enough evidence for a not-published result. Do not pay
-            # the browser startup cost for every such item; rendered fallback
-            # is reserved for blocked/transient HTTP responses. Operators can
-            # opt back in for dynamic SKU pages when needed.
-            retry_missing_sku = missing_sku and status_code != 200
+            retry_missing_sku = missing_sku and (
+                item_requires_sku(enriched)
+                or (is_supported_supplier_url(item_url) and status_code != 200)
+            )
             if str(os.getenv('SCRAPER_BROWSER_FALLBACK_ON_MISSING_SKU') or '').strip().lower() in {'1', 'true', 'yes', 'on'}:
                 retry_missing_sku = missing_sku
-            if status_code not in {404, 410} and (browser_retryable_error or retry_missing_sku):
+            needs_alternate_method = (not prefer_browser_first) and status_code not in {404, 410} and (browser_retryable_error or retry_missing_sku)
+            if needs_alternate_method:
                 try:
                     _check_stop()
                     browser_attempted = True
@@ -1010,9 +1085,10 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             final_sku = str(getattr(enriched, 'sku', '') or '').strip()
             if final_sku:
                 enriched.extra.update({'sku': final_sku, 'sku_status': 'found', 'sku_source': 'product_detail'})
+                enriched.extra.pop('sku_error', None)
             elif status_code in {404, 410}:
                 enriched.extra.update({'sku_status': 'unavailable', 'sku_error': f'HTTP {status_code}'})
-            elif browser_succeeded or status_code == 200:
+            elif (browser_succeeded or status_code == 200) and not item_requires_sku(enriched):
                 enriched.extra.update({'sku_status': 'not_published'})
             else:
                 fetch_error = str(http_error or '')
@@ -1076,7 +1152,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         if not browser_batch_enabled or not enriched_data:
             return False
         engine_type, _ = get_scraper_for_url(item_url)
-        if not _is_mobilesentrix_detail_engine(engine_type):
+        if not _is_mobilesentrix_detail_engine(engine_type) or not is_supported_supplier_url(item_url):
             return False
         extra = enriched_data.get('extra') if isinstance(enriched_data.get('extra'), dict) else {}
         sku = normalize_compare_text(enriched_data.get('sku') or extra.get('sku'))
@@ -1094,6 +1170,55 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         })
         failed['extra'] = extra
         return failed
+
+    def _has_required_sku_gap(enriched_data: Dict[str, object] | None) -> bool:
+        if not enriched_data:
+            return False
+        extra = enriched_data.get('extra') if isinstance(enriched_data.get('extra'), dict) else {}
+        if normalize_compare_text(enriched_data.get('sku') or extra.get('sku')):
+            return False
+        return item_requires_sku(enriched_data)
+
+    def _single_browser_recovery(item_url: str, item, first_pass_data: Dict[str, object]) -> Dict[str, object]:
+        engine_type, _ = get_scraper_for_url(item_url)
+        try:
+            with browser_fetch_mode(True):
+                if engine_type == 'xcell':
+                    recovered = xcell_scraper_engine.enrich_item_details(get_thread_session(engine_type), item, rules, logger)
+                elif engine_type == 'txparts':
+                    recovered = txparts_scraper_engine.enrich_item_details(get_thread_session(engine_type), item, rules, logger)
+                elif engine_type == 'parts4cells':
+                    recovered = parts4cells_scraper_engine.enrich_item_details(get_thread_session(engine_type), item, rules, logger)
+                elif engine_type == 'phonelcdparts':
+                    recovered = phonelcdparts_scraper_engine.enrich_item_details(get_thread_session(engine_type), item, rules, logger)
+                elif engine_type == 'gadgetfix':
+                    recovered = gadgetfix_scraper_engine.enrich_item_details(get_thread_session(engine_type), item, rules, logger)
+                else:
+                    recovered = enrich_standard_item_details(get_thread_session(engine_type), item, rules, logger)
+            recovered_data = (
+                asdict(recovered)
+                if hasattr(recovered, '__dataclass_fields__')
+                else dict(recovered or first_pass_data or {})
+            )
+            extra = dict(recovered_data.get('extra') if isinstance(recovered_data.get('extra'), dict) else {})
+            final_sku = normalize_compare_text(recovered_data.get('sku') or extra.get('sku'))
+            if final_sku:
+                recovered_data['sku'] = recovered_data.get('sku') or final_sku
+                extra.update({'sku': final_sku, 'sku_status': 'found', 'sku_source': 'single_browser_recovery'})
+                extra.pop('sku_error', None)
+            else:
+                extra.update({
+                    'sku_status': 'unresolved',
+                    'sku_error': extra.get('sku_error') or 'single browser recovery did not produce a SKU',
+                })
+            extra['sku_browser_fallback'] = True
+            extra['sku_single_browser_recovery'] = True
+            recovered_data['extra'] = extra
+            return recovered_data
+        except Exception as exc:
+            if logger:
+                logger.warning('[detail] Single Botarus recovery failed for %s: %s', item_url, exc)
+            return _browser_batch_failure_data(item_url, first_pass_data, str(exc))
 
     def _enrich_mobilesentrix_from_detail_result(item_url: str, item, result) -> Dict[str, object]:
         error = str(getattr(result, 'error', '') or '').strip()
@@ -1160,6 +1285,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         is_cf_block = status_code in {403, 429, 503} or _is_cloudflare_or_error_title(detail.get('title'))
         if final_sku:
             enriched.extra.update({'sku': final_sku, 'sku_status': 'found', 'sku_source': 'product_detail'})
+            enriched.extra.pop('sku_error', None)
         elif not is_cf_block and status_code == 200 and detail.get('title'):
             enriched.extra.update({'sku_status': 'not_published'})
         else:
@@ -1231,6 +1357,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         is_cf_block = status_code in {403, 429, 503} or _is_cloudflare_or_error_title(detail.get('title'))
         if final_sku:
             enriched.extra.update({'sku': final_sku, 'sku_status': 'found', 'sku_source': 'product_detail'})
+            enriched.extra.pop('sku_error', None)
         elif not is_cf_block and status_code == 200 and detail.get('title'):
             enriched.extra.update({'sku_status': 'not_published'})
         else:
@@ -1309,6 +1436,13 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                     if logger:
                         logger.warning('[detail] Failed to parse batched browser detail %s: %s', item_url, exc)
                     enriched_data = _browser_batch_failure_data(item_url, first_pass_data, str(exc))
+
+                if _has_required_sku_gap(enriched_data):
+                    enriched_data = _single_browser_recovery(
+                        item_url,
+                        items[indexes[0]],
+                        enriched_data or first_pass_data,
+                    )
 
                 for idx in indexes:
                     apply_enriched_item_data(items[idx], enriched_data)
@@ -1761,6 +1895,8 @@ def summarize_sku_resolution(items) -> Dict[str, int]:
         status = normalize_compare_text(extra.get('sku_status')).lower()
         if sku or status == 'found':
             counts['sku_found'] += 1
+        elif item_requires_sku(item_dict):
+            counts['sku_unresolved'] += 1
         elif status == 'not_published':
             counts['sku_not_published'] += 1
         elif status == 'unavailable':
@@ -1768,6 +1904,32 @@ def summarize_sku_resolution(items) -> Dict[str, int]:
         else:
             counts['sku_unresolved'] += 1
     return counts
+
+
+def find_required_sku_gaps(items, *, limit: int = 50) -> List[Dict[str, object]]:
+    """Return usable product rows that still miss a required SKU."""
+    gaps: List[Dict[str, object]] = []
+    for item in items or []:
+        if not is_usable_scraped_item(item):
+            continue
+        item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
+        if normalize_compare_text(item_dict.get('sku')):
+            continue
+        extra = item_dict.get('extra') if isinstance(item_dict.get('extra'), dict) else {}
+        if normalize_compare_text(extra.get('sku')):
+            continue
+        if not item_requires_sku(item_dict):
+            continue
+        gaps.append({
+            'url': str(item_dict.get('url') or '').strip(),
+            'title': str(item_dict.get('title') or '').strip(),
+            'site': str(item_dict.get('site') or '').strip(),
+            'sku_status': normalize_compare_text(extra.get('sku_status')) or 'missing',
+            'sku_error': str(extra.get('sku_error') or '').strip(),
+        })
+        if len(gaps) >= limit:
+            break
+    return gaps
 
 
 def serialize_scraped_item(item) -> Dict[str, object]:
@@ -2555,7 +2717,7 @@ def execute_scrape_workflow(
     *,
     crawl_pagination: bool = True,
     max_pages: int = 10,
-    delay_ms: int = 50,
+    delay_ms: int = int(os.getenv("SCRAPER_DEFAULT_DELAY_MS", "0") or 0),
     retries: int = 1,
     verify_ssl: bool = True,
     use_curl: bool = False,
@@ -2604,7 +2766,7 @@ def execute_scrape_workflow(
             "urls": [],
         }
 
-    effective_browser_mode = bool(use_browser) if use_browser is not None else False
+    effective_browser_mode = bool(use_browser) if use_browser is not None else any(url_prefers_botarus(url) for url in urls)
 
     previous_history = previous_history_override if previous_history_override is not None else db_manager.get_latest_history_for_urls(urls)
     items: List[Item] = list(restored_items)
@@ -2780,7 +2942,8 @@ def execute_scrape_workflow(
 
         def _scrape_single(url: str):
             _check_stop()
-            with browser_fetch_mode(effective_browser_mode):
+            url_browser_mode = bool(use_browser) if use_browser is not None else url_prefers_botarus(url)
+            with browser_fetch_mode(url_browser_mode):
                 if uses_curl:
                     sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl, use_curl=True)
                 else:
@@ -3119,10 +3282,114 @@ def execute_scrape_workflow(
     items, enriched_count = enrich_scraped_items(
         items, rules, retries, verify_ssl, use_curl, enrich_details=effective_enrich_details, logger=app.logger, use_browser=use_browser, progress_callback=progress_callback, stop_check=stop_check, session_cookies_by_engine=session_cookies_by_engine
     )
+    recovery_rounds = 0
+    if effective_enrich_details:
+        try:
+            max_recovery_rounds = max(0, min(5, int(os.getenv('SCRAPER_REQUIRED_SKU_RECOVERY_ROUNDS') or '2')))
+        except (TypeError, ValueError):
+            max_recovery_rounds = 2
+        while recovery_rounds < max_recovery_rounds:
+            required_sku_gaps = find_required_sku_gaps(items, limit=100000)
+            if not required_sku_gaps:
+                break
+            gap_url_keys = {
+                normalize_compare_url(gap.get('url') or '')
+                for gap in required_sku_gaps
+            }
+            recovery_rounds += 1
+            for item in items:
+                item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
+                url_key = normalize_compare_url(item_dict.get('url') or '')
+                if url_key not in gap_url_keys:
+                    continue
+                extra = getattr(item, 'extra', None)
+                if not isinstance(extra, dict):
+                    extra = {}
+                    try:
+                        setattr(item, 'extra', extra)
+                    except Exception:
+                        continue
+                extra['sku_status'] = 'retrying'
+                extra['sku_recovery_round'] = recovery_rounds
+            if progress_callback:
+                progress_callback({
+                    'phase': 2,
+                    'phase_name': 'Phase 2: Product SKU & Detail Scan',
+                    'activity_label': 'Recovering missing SKUs',
+                    'status_message': f'Retrying {len(required_sku_gaps)} product detail page(s) with alternate recovery.',
+                    'phase2_completed': max(0, enriched_count),
+                    'phase2_total': max(1, enriched_count + len(required_sku_gaps)),
+                    'current_items': len(items),
+                    'sku_retrying': len(required_sku_gaps),
+                    'sku_recovery_round': recovery_rounds,
+                })
+            retry_use_browser = True if use_browser is not False else None
+            items, retry_count = enrich_scraped_items(
+                items,
+                rules,
+                retries,
+                verify_ssl,
+                use_curl,
+                enrich_details=True,
+                logger=app.logger,
+                use_browser=retry_use_browser,
+                progress_callback=progress_callback,
+                stop_check=stop_check,
+                session_cookies_by_engine=session_cookies_by_engine,
+            )
+            enriched_count += retry_count
+            if retry_count <= 0:
+                break
     items, duplicate_rows_removed = deduplicate_scraped_items(items)
     if duplicate_rows_removed:
         app.logger.info(f"[dedupe] Consolidated {duplicate_rows_removed} repeated product row(s) before saving")
     sku_summary = summarize_sku_resolution(items)
+    required_sku_gaps = find_required_sku_gaps(items, limit=100)
+    if required_sku_gaps:
+        sku_summary['sku_unresolved'] = max(int(sku_summary.get('sku_unresolved') or 0), len(required_sku_gaps))
+        run_validation.setdefault('reasons', []).append(
+            f'{len(required_sku_gaps)} product(s) still lack required SKU after {recovery_rounds} recovery round(s).'
+        )
+        run_validation['approved'] = False
+        run_validation['status'] = 'Rejected by Required Field Validation'
+        error_text = (
+            f"Required SKU validation failed: {len(required_sku_gaps)} product(s) still lack SKU after automatic recovery."
+        )
+        app.logger.error("[validation] %s", error_text)
+        return {
+            "error": error_text,
+            "rules": rules,
+            "count": len(items),
+            "drop_pct": drop_pct,
+            "price_drops": [],
+            "comparison": build_session_comparison(
+                previous_history,
+                items,
+                current_target_urls=urls,
+                run_validation=run_validation,
+                target_errors=target_fetch_errors,
+            ),
+            "run_validation": run_validation,
+            "using_curl": using_curl,
+            "using_browser": True if (use_browser or any(url_prefers_botarus(url) for url in urls)) else bool(use_browser),
+            "using_parallel": use_parallel and len(urls) > 1,
+            "engines_used": engine_used,
+            "enrich_details": effective_enrich_details,
+            "enrich_details_requested": enrich_details,
+            "auto_enrich_details": auto_enrich_details,
+            "details_hydrated_from_history": hydrated_from_history,
+            "details_enriched": enriched_count,
+            **sku_summary,
+            "required_sku_gaps": required_sku_gaps,
+            "sku_recovery_rounds": recovery_rounds,
+            "items": [serialize_scraped_item(i) for i in items],
+            "history_id": "",
+            "history_public_id": "",
+            "history_saved": False,
+            "urls": urls,
+            "target_errors": target_fetch_errors,
+            "duplicate_rows_removed": duplicate_rows_removed,
+        }
     if progress_callback:
         progress_callback({
             'phase': 3,
@@ -4142,9 +4409,8 @@ def api_health():
         'status': 'healthy',
         'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'browser_engine': 'botasaurus',
-        'scraper_mode': 'http_first_browser_fallback',
+        'scraper_mode': 'botarus_primary_for_dynamic_suppliers_with_http_recovery',
         'active_automation_jobs': len(AUTOMATION_ACTIVE_JOBS),
-        'auth_configured': is_auth_configured(),
     })
 
 
@@ -4168,53 +4434,14 @@ def readyz():
     return jsonify({'status': status, 'database': 'ok' if db_ok else 'error'}), code
 
 
-# ---------------------------------------------------------------------------
-# Auth routes â€” always accessible (no @require_login on these)
-# ---------------------------------------------------------------------------
-@app.route('/login', methods=['GET', 'POST'])
-def auth_login():
-    """Login page. Redirects authenticated users straight to /automation."""
-    if current_user.is_authenticated:
-        return redirect(url_for('automation'))
-    if not is_auth_configured():
-        # Auth not configured — skip login and go straight to automation.
-        return redirect(url_for('automation'))
-
-    error = None
-    if request.method == 'POST':
-        username = (request.form.get('username') or '').strip()
-        password = request.form.get('password') or ''
-        user = validate_credentials(username, password)
-        if user:
-            login_user(user, remember=bool(request.form.get('remember')))
-            flask_session.permanent = True
-            next_url = request.args.get('next') or request.form.get('next') or url_for('automation')
-            # Guard against open-redirect: only allow relative URLs.
-            from urllib.parse import urlparse as _urlparse
-            parsed_next = _urlparse(next_url)
-            if parsed_next.netloc:
-                next_url = url_for('automation')
-            return redirect(next_url)
-        error = "Invalid username or password."
-    return render_template('login.html', error=error, next=request.args.get('next', ''))
-
-
-@app.get('/logout')
-def auth_logout():
-    logout_user()
-    return redirect(url_for('auth_login'))
-
-
 @app.get('/')
 @app.get('/automation')
-@require_login
 def automation():
     return render_template('automation.html')
 
 
 @app.get('/extractor')
 @app.get('/index')
-@require_login
 def extractor():
     return render_template('index.html')
 
@@ -4252,7 +4479,6 @@ def robots():
     return Response(content, mimetype='text/plain')
 
 @app.get('/history')
-@require_login
 def history():
     return render_template('history.html')
 
@@ -4260,7 +4486,6 @@ def history():
 
 
 @app.get('/menu-map')
-@require_login
 def menu_map():
     return render_template('menu_map.html')
 
@@ -4619,7 +4844,6 @@ def build_menu_map_link_rows(
 
 
 @app.get('/api/menu-map/sites')
-@require_login
 def api_menu_map_sites():
     include_tree = parse_boolish(request.args.get('include_tree'))
     try:
@@ -4633,8 +4857,6 @@ def api_menu_map_sites():
 
 
 @app.post('/api/menu-map/output/clear')
-@require_login
-@require_role('admin')
 def api_menu_map_output_clear():
     data = request.get_json(silent=True) or {}
     requested_sites = data.get('sites') or []
@@ -4678,7 +4900,6 @@ def api_menu_map_output_clear():
 
 
 @app.post('/api/menu-map/links/export')
-@require_login
 def api_menu_map_links_export():
     data = request.get_json(silent=True) or {}
     requested_sites = data.get('sites') or []
@@ -4820,7 +5041,6 @@ def run_menu_map_job(job_id: str, sites: List[str], options: Dict[str, object]) 
 
 
 @app.post('/api/menu-map/run')
-@require_login
 def api_menu_map_run():
     data = request.get_json(silent=True) or {}
     requested_sites = data.get('sites') or list(MENU_MAP_SITES)
@@ -4871,7 +5091,6 @@ def api_menu_map_run():
 
 
 @app.get('/api/menu-map/jobs/<job_id>')
-@require_login
 def api_menu_map_job(job_id):
     with MENU_MAP_JOBS_LOCK:
         job = MENU_MAP_JOBS.get(job_id)
@@ -4881,7 +5100,6 @@ def api_menu_map_job(job_id):
 
 
 @app.get('/api/menu-map/file/<site>/<path:filename>')
-@require_login
 def api_menu_map_file(site, filename):
     if site not in MENU_MAP_SITES:
         return jsonify({'error': 'Unknown site'}), 404
@@ -4911,7 +5129,6 @@ def api_menu_map_file(site, filename):
 
 
 @app.get('/api/history')
-@require_login
 def api_history():
     """Return history data from database"""
     try:
@@ -4930,7 +5147,6 @@ def api_history():
         return jsonify({'error': str(e)}), 500
 
 @app.get('/api/history/<history_id>')
-@require_login
 def api_history_detail(history_id):
     """Return specific history entry from database"""
     try:
@@ -4942,7 +5158,6 @@ def api_history_detail(history_id):
         return jsonify({'error': str(e)}), 500
 
 @app.post('/api/history/<history_id>/export/xlsx')
-@require_login
 def api_history_export(history_id):
     """Export a specific history entry to XLSX"""
     try:
@@ -5011,23 +5226,18 @@ def _delete_history_response(history_id):
         return jsonify({'error': str(e)}), 500
 
 @app.delete('/api/history/<history_id>')
-@require_login
-@require_role('admin')
 @require_destructive_confirmation
 def api_delete_history(history_id):
     """Delete history entry from database"""
     return _delete_history_response(history_id)
 
 @app.post('/api/history/<history_id>/delete')
-@require_login
-@require_role('admin')
 @require_destructive_confirmation
 def api_delete_history_fallback(history_id):
     """Delete history entry from database (POST fallback when DELETE is blocked)"""
     return _delete_history_response(history_id)
 
 @app.get('/api/statistics')
-@require_login
 def api_statistics():
     """Get database statistics"""
     try:
@@ -5037,7 +5247,6 @@ def api_statistics():
         return jsonify({'error': str(e)}), 500
 
 @app.post('/api/search')
-@require_login
 def api_search():
     """Search items in database"""
     try:
@@ -5059,7 +5268,6 @@ def api_search():
 
 
 @app.get('/api/automation/overview')
-@require_login
 def api_automation_overview():
     try:
         overview = db_manager.get_automation_overview()
@@ -5073,7 +5281,6 @@ def api_automation_overview():
 
 
 @app.post('/api/automation/discover')
-@require_login
 def api_automation_discover():
     try:
         data = request.get_json(silent=True) or {}
@@ -5111,7 +5318,6 @@ def api_automation_discover():
 
 
 @app.get('/api/automation/jobs')
-@require_login
 def api_automation_jobs():
     try:
         include_targets = coerce_bool(request.args.get('include_targets'), default=False)
@@ -5125,7 +5331,6 @@ def api_automation_jobs():
 
 
 @app.post('/api/automation/jobs')
-@require_login
 def api_automation_jobs_save():
     try:
         data = request.get_json(silent=True) or {}
@@ -5164,7 +5369,6 @@ def api_automation_jobs_save():
 
 
 @app.get('/api/automation/jobs/<int:job_id>')
-@require_login
 def api_automation_job_detail(job_id):
     try:
         job = db_manager.get_automation_job(job_id, include_targets=True)
@@ -5179,8 +5383,6 @@ def api_automation_job_detail(job_id):
 
 
 @app.delete('/api/automation/jobs/<int:job_id>')
-@require_login
-@require_role('admin')
 @require_destructive_confirmation
 def api_automation_job_delete(job_id):
     try:
@@ -5192,7 +5394,6 @@ def api_automation_job_delete(job_id):
 
 
 @app.post('/api/automation/jobs/<int:job_id>/toggle')
-@require_login
 def api_automation_job_toggle(job_id):
     try:
         data = request.get_json(silent=True) or {}
@@ -5210,7 +5411,6 @@ def api_automation_job_toggle(job_id):
 
 
 @app.post('/api/automation/jobs/<int:job_id>/refresh-targets')
-@require_login
 def api_automation_job_refresh_targets(job_id):
     try:
         job = db_manager.get_automation_job(job_id, include_targets=True)
@@ -5245,7 +5445,6 @@ def api_automation_job_refresh_targets(job_id):
 
 
 @app.post('/api/automation/jobs/<int:job_id>/targets')
-@require_login
 def api_automation_job_targets(job_id):
     try:
         job = db_manager.get_automation_job(job_id, include_targets=False)
@@ -5283,7 +5482,6 @@ def api_automation_job_targets(job_id):
 
 
 @app.post('/api/automation/jobs/<int:job_id>/run')
-@require_login
 def api_automation_job_run(job_id):
     try:
         if not db_manager.get_automation_job(job_id, include_targets=False):
@@ -5326,7 +5524,6 @@ def api_automation_job_run(job_id):
 
 
 @app.get('/api/automation/runs')
-@require_login
 def api_automation_runs():
     try:
         job_id = request.args.get('job_id')
@@ -5402,8 +5599,6 @@ def invalidate_run_detail_cache(run_id: int = None) -> None:
 
 
 @app.delete('/api/automation/runs/<int:run_id>')
-@require_login
-@require_role('admin')
 @require_destructive_confirmation
 def api_delete_automation_run(run_id):
     try:
@@ -5417,8 +5612,6 @@ def api_delete_automation_run(run_id):
 
 
 @app.post('/api/automation/runs/<int:run_id>/delete')
-@require_login
-@require_role('admin')
 @require_destructive_confirmation
 def api_delete_automation_run_fallback(run_id):
     try:
@@ -5432,7 +5625,6 @@ def api_delete_automation_run_fallback(run_id):
 
 
 @app.post('/api/automation/runs/<int:run_id>/pause')
-@require_login
 def api_pause_automation_run(run_id):
     try:
         invalidate_run_detail_cache(run_id)
@@ -5451,7 +5643,6 @@ def api_pause_automation_run(run_id):
 
 
 @app.post('/api/automation/runs/<int:run_id>/resume')
-@require_login
 def api_resume_automation_run(run_id):
     try:
         invalidate_run_detail_cache(run_id)
@@ -5464,7 +5655,6 @@ def api_resume_automation_run(run_id):
 
 
 @app.get('/api/automation/runs/<int:run_id>')
-@require_login
 def api_automation_run_detail(run_id):
     try:
         run = db_manager.get_automation_run(run_id)
@@ -5771,7 +5961,6 @@ def api_automation_run_detail(run_id):
 
 
 @app.get('/api/automation/runs/<int:run_id>/products')
-@require_login
 def api_automation_run_products(run_id):
     """Return all deduplicated products for a run in compact format for the Product Explorer."""
     try:
@@ -5879,7 +6068,6 @@ def api_automation_run_products(run_id):
 
 
 @app.get('/api/automation/verification-products')
-@require_login
 def api_automation_verification_products():
     """Return products from the latest one-child verification scrape for dashboard preview."""
     try:
@@ -5934,7 +6122,6 @@ def api_automation_verification_products():
         return jsonify({'error': str(e)}), 500
 
 @app.get('/api/watchlist')
-@require_login
 def api_watchlist():
     """Return all saved watchlist items across site databases."""
     try:
@@ -5949,7 +6136,6 @@ def api_watchlist():
         return jsonify({'error': str(e)}), 500
 
 @app.post('/api/watchlist')
-@require_login
 def api_watchlist_save():
     """Save or update a watchlist item snapshot."""
     try:
@@ -5974,7 +6160,6 @@ def api_watchlist_save():
         return jsonify({'error': str(e)}), 500
 
 @app.delete('/api/watchlist')
-@require_login
 def api_watchlist_delete():
     """Remove one watchlist item by URL."""
     try:
@@ -5996,8 +6181,6 @@ def api_watchlist_delete():
         return jsonify({'error': str(e)}), 500
 
 @app.post('/api/watchlist/clear')
-@require_login
-@require_role('admin')
 @require_destructive_confirmation
 def api_watchlist_clear():
     """Clear the entire shared watchlist."""
@@ -6012,8 +6195,6 @@ def api_watchlist_clear():
         return jsonify({'error': str(e)}), 500
 
 @app.post('/api/cleanup')
-@require_login
-@require_role('admin')
 @require_destructive_confirmation
 def api_cleanup():
     """Cleanup old database entries"""
@@ -6042,7 +6223,6 @@ def api_cleanup():
 
 
 @app.get('/api/image-proxy')
-@require_login
 def proxy_remote_image():
     """Proxy remote images through the app to avoid browser-side hotlink failures."""
     image_url = (request.args.get('url') or '').strip()
@@ -6076,7 +6256,6 @@ def proxy_remote_image():
     return res
 
 @app.post('/api/scrape')
-@require_login
 def api_scrape():
     data = request.get_json(silent=True) or {}
     urls_raw = data.get('urls') or ''
@@ -6092,7 +6271,7 @@ def api_scrape():
     crawl_pagination = coerce_bool(data.get('crawl_pagination'), default=True)
     max_pages = coerce_int(data.get('max_pages') or 10, 10, min_value=1, max_value=20)
 
-    delay_ms = coerce_int(data.get('delay_ms') or 50, 50, min_value=0, max_value=5000)
+    delay_ms = coerce_int(data.get('delay_ms') if data.get('delay_ms') is not None else int(os.getenv('SCRAPER_DEFAULT_DELAY_MS', '0') or 0), 0, min_value=0, max_value=5000)
     retries = coerce_int(data.get('retries') or 1, 1, min_value=1, max_value=5)
     verify_ssl = coerce_bool(data.get('verify_ssl'), default=True)
     use_curl = coerce_bool(data.get('use_curl'), default=True)
@@ -6125,7 +6304,6 @@ def api_scrape():
     return jsonify(result), 200
 
 @app.post('/api/export/xlsx')
-@require_login
 def export_xlsx():
     data = request.get_json(silent=True) or {}
     rows = data.get('rows') or []
@@ -6176,7 +6354,6 @@ def export_xlsx():
 
 
 @app.post('/api/comparison/upload')
-@require_login
 def upload_comparison_file():
     """Accept a CSV/XLSX file and return normalized comparison rows."""
     uploaded = request.files.get('file')
@@ -6316,88 +6493,6 @@ def find_free_port(start=5000, end=5050):
             except OSError:
                 continue
     return 0
-
-# ===== USERS MANAGEMENT ROUTES =====
-
-@app.route('/users')
-@require_role('admin')
-def users_page():
-    """Render the Users management UI."""
-    return render_template('users.html', current_route='users')
-
-@app.route('/api/users', methods=['GET'])
-@require_role('admin')
-def get_users():
-    """List all users."""
-    from database import db_manager
-    users = db_manager.get_all_users()
-    # Don't send password_hash!
-    for u in users:
-        u.pop('password_hash', None)
-    return jsonify(users)
-
-@app.route('/api/users', methods=['POST'])
-@require_role('admin')
-def create_user():
-    """Create a new user."""
-    data = request.json or {}
-    username = data.get('username', '').strip()
-    password = data.get('password', '')
-    role = data.get('role', 'viewer')
-
-    if not username or not password:
-        return jsonify({'error': 'Username and password are required'}), 400
-
-    from werkzeug.security import generate_password_hash
-    password_hash = generate_password_hash(password)
-
-    from database import db_manager
-    db = db_manager
-    if db.get_user_by_username(username):
-        return jsonify({'error': 'Username already exists'}), 409
-
-    user_id = db.add_user(username, password_hash, role)
-    if not user_id:
-        return jsonify({'error': 'Database error'}), 500
-
-    return jsonify({'id': user_id, 'username': username, 'role': role}), 201
-
-@app.route('/api/users/<int:user_id>', methods=['PUT'])
-@require_role('admin')
-def update_user(user_id):
-    """Update a user's role or password."""
-    data = request.json or {}
-    role = data.get('role')
-    password = data.get('password')
-
-    password_hash = None
-    if password:
-        from werkzeug.security import generate_password_hash
-        password_hash = generate_password_hash(password)
-
-    from database import db_manager
-    success = db_manager.update_user(user_id, role=role, password_hash=password_hash)
-    if success:
-        # Prevent demoting the superadmin entirely from UI
-        # But this is just basic protection, let's keep it simple.
-        return jsonify({'success': True})
-    return jsonify({'error': 'Failed to update'}), 500
-
-@app.route('/api/users/<int:user_id>', methods=['DELETE'])
-@require_role('admin')
-def delete_user(user_id):
-    """Delete a user."""
-    # Prevent self-deletion
-    from flask_login import current_user
-    if str(user_id) == str(current_user.id):
-        return jsonify({'error': 'Cannot delete yourself'}), 400
-
-    from database import db_manager
-    success = db_manager.delete_user(user_id)
-    if success:
-        return jsonify({'success': True})
-    return jsonify({'error': 'Failed to delete'}), 500
-
 
 if __name__ == '__main__':
     # Use PORT when provided, otherwise keep the app on the default local port.

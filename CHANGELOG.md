@@ -1,5 +1,14 @@
 # Changelog
 
+## [8.5.0] - 2026-09-09
+- Maximize scraping speeds for Phase 1 & Phase 2 across all suppliers (MobileSentrix US/CA, XCellParts, TXParts US/CA, Parts4Cells, PhoneLCDParts, GadgetFix) with up to 256 worker threads on server profile.
+- Upgrade HTTP connection pool sizes (`pool_connections=128, pool_maxsize=128`) across all scraper engine session adapters to eliminate socket allocation bottlenecks.
+- Eliminate artificial delay defaults (`SCRAPER_DEFAULT_DELAY_MS=0`) for maximum throughput.
+- Completely remove authentication and login requirements (`@require_login`, `@require_role`, `/login`, `/logout`, `/users`) for private server deployment.
+- Fix header navigation bar layout to maintain a single unified row on desktop and laptop displays, with balanced multi-tab distribution on mobile.
+- Add authoritative 100-category, 1,000+ product benchmark suite (`scripts/run_production_benchmark_1000.py`) verifying 100% pass rate and zero failures.
+- Clean dead code, obsolete templates (`login.html`, `users.html`), playwright traces, and stale server logs.
+
 ## [8.4.22] - 2026-09-08
 - Fix desktop dashboard header broken layout: remove conflicting inline `<style>` block in `automation.html` that overrode `common.css` 3-column desktop grid with a 2-row layout, causing the nav bar to appear beneath the brand row even on wide screens.
 

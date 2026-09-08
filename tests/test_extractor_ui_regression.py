@@ -29,7 +29,7 @@ def test_extractor_template_groups_and_dialog_accessibility():
 
 
 def test_shared_footer_holds_version_and_maintainer_details():
-    template_names = ("index.html", "history.html", "automation.html", "menu_map.html", "login.html", "users.html")
+    template_names = ("index.html", "history.html", "automation.html", "menu_map.html")
     footer = (ROOT / "templates" / "_footer.html").read_text(encoding="utf-8")
 
     assert "{{ app_version }}" in footer
@@ -166,7 +166,7 @@ def test_automation_live_runs_keep_visible_progress_through_finalizing():
     assert "env.setdefault('XCELL_MAX_WORKERS', '24')" in app_source
     assert "env.setdefault('SCRAPER_XCELL_DETAIL_WORKERS', '64')" in app_source
     assert "use_curl=True" in resume_helper
-    assert 'use_browser=_truthy_value(job.get("use_browser", False))' in resume_helper
+    assert 'use_browser=_truthy_value(job["use_browser"]) if "use_browser" in job else None' in resume_helper
     assert "'status_message': 'Writing scraped products, comparison metadata, and run history to the database.'" in app_source
     assert ".automation-run-progress__track" in automation_styles
     assert ".automation-run-progress__label" in automation_styles
@@ -229,27 +229,6 @@ def test_automation_product_filters_keep_unknown_prices_blank():
     assert "escapeHtml(original || '-')" in script
 
 
-def test_users_modal_has_accessible_dialog_contract():
-    template = (ROOT / "templates" / "users.html").read_text(encoding="utf-8")
-    script = (ROOT / "static" / "js" / "users.js").read_text(encoding="utf-8")
-    soup = BeautifulSoup(template, "html.parser")
-
-    modal = soup.find(id="userModal")
-    dialog = modal.find(attrs={"role": "dialog"})
-
-    assert modal.get("aria-hidden") == "true"
-    assert dialog is not None
-    assert dialog.get("aria-modal") == "true"
-    assert dialog.get("aria-labelledby") == "modalTitle"
-    assert dialog.get("tabindex") == "-1"
-    assert soup.find("label", attrs={"for": "username"}) is not None
-    assert soup.find("label", attrs={"for": "password"}) is not None
-    assert soup.find("label", attrs={"for": "role"}) is not None
-    assert "function openUserModal(" in script
-    assert "function closeUserModal()" in script
-    assert "modalReturnFocus.focus()" in script
-    assert "e.key === 'Escape'" in script
-    assert "e.key !== 'Tab'" in script
 
 
 def test_automation_ui_cleanup_removes_stale_overlay_and_discover_button_refs():

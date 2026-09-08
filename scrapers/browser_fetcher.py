@@ -246,6 +246,71 @@ def _looks_like_browser_challenge(html: str) -> bool:
     ))
 
 
+def _html_has_product_signal(html: str) -> bool:
+    sample = (html or "").lower()
+    return any(marker in sample for marker in (
+        'itemprop="sku"',
+        "application/ld+json",
+        "product_addtocart_form",
+        "product-info-main",
+        "product-info-stock-sku",
+        "product-listing",
+        "product-item-info",
+        "product-card",
+    ))
+
+
+_READINESS_JS = r"""
+(() => {
+  const bodyText = (document.body && document.body.innerText || '').replace(/\s+/g, ' ').trim();
+  const productSelectors = [
+    '[itemprop="sku"]',
+    'script[type="application/ld+json"]',
+    'form#product_addtocart_form',
+    '.product-info-main',
+    '.product-info-stock-sku',
+    'ul.product-listing li.item',
+    'ol.products li.product-item',
+    'div.product-item-info',
+    'div.product-card',
+    'li.product'
+  ];
+  return {
+    readyState: document.readyState,
+    bodyLength: bodyText.length,
+    productSignals: productSelectors.reduce((count, selector) => count + document.querySelectorAll(selector).length, 0),
+  };
+})()
+"""
+
+
+def _wait_for_rendered_readiness(driver, *, deadline: float, logger=None, url: str = "") -> None:
+    """Wait until rendered content is present without relying on a blind sleep."""
+    last_body_length = -1
+    stable_ticks = 0
+    while time.time() < deadline:
+        try:
+            state = driver.run_js(_READINESS_JS) or {}
+        except Exception:
+            return
+        body_length = int((state or {}).get("bodyLength") or 0)
+        product_signals = int((state or {}).get("productSignals") or 0)
+        ready_state = str((state or {}).get("readyState") or "")
+        if product_signals > 0 and body_length > 100:
+            return
+        if ready_state == "complete" and body_length > 1000:
+            if abs(body_length - last_body_length) < 20:
+                stable_ticks += 1
+            else:
+                stable_ticks = 0
+            if stable_ticks >= 2:
+                return
+        last_body_length = body_length
+        driver.sleep(0.25)
+    if logger:
+        logger.warning("[botasaurus] Rendered readiness timed out for %s; using current DOM", url)
+
+
 def fetch_html(
     url: str,
     *,
@@ -288,7 +353,7 @@ def fetch_html(
                 profile_dir,
             )
 
-        fetcher_key = str(profile_dir)
+        fetcher_key = f"{profile_dir}:{id(browser)}"
         with _REUSABLE_FETCHERS_LOCK:
             cached_fetcher = _REUSABLE_FETCHERS.get(fetcher_key)
 
@@ -335,6 +400,12 @@ def fetch_html(
                 if data.get("wait_seconds", wait_time) > 0:
                     driver.sleep(data.get("wait_seconds", wait_time))
                 _dismiss_canada_prompt(driver.run_js, driver.sleep, url=data["url"], logger=logger)
+                _wait_for_rendered_readiness(
+                    driver,
+                    deadline=time.time() + max(1.0, min(10.0, float(data.get("timeout", timeout)) / 3.0)),
+                    logger=logger,
+                    url=data["url"],
+                )
 
                 html = driver.page_html or ""
                 challenge_deadline = time.time() + max(0.0, challenge_wait_seconds)
@@ -343,7 +414,11 @@ def fetch_html(
                     html = driver.page_html or ""
 
                 final_url = driver.current_url or data["url"]
-                if _should_use_botasaurus_request_html() and not _looks_like_browser_challenge(html):
+                if (
+                    _should_use_botasaurus_request_html()
+                    and not _looks_like_browser_challenge(html)
+                    and not _html_has_product_signal(html)
+                ):
                     try:
                         response = driver.requests.get(data["url"])
                         response_text = getattr(response, "text", "") or ""
@@ -440,7 +515,7 @@ def fetch_html_many(
                 profile_dir,
             )
 
-        fetcher_key = f"batch:{profile_dir}"
+        fetcher_key = f"batch:{profile_dir}:{id(browser)}"
         with _REUSABLE_FETCHERS_LOCK:
             cached_fetcher = _REUSABLE_FETCHERS.get(fetcher_key)
 
@@ -484,6 +559,12 @@ def fetch_html_many(
                 if data.get("wait_seconds", wait_time) > 0:
                     driver.sleep(data.get("wait_seconds", wait_time))
                 _dismiss_canada_prompt(driver.run_js, driver.sleep, url=seed_url, logger=logger, attempts=1)
+                _wait_for_rendered_readiness(
+                    driver,
+                    deadline=time.time() + max(1.0, min(6.0, float(data.get("timeout", timeout)) / 3.0)),
+                    logger=logger,
+                    url=seed_url,
+                )
                 responses = driver.requests.get_many(
                     links,
                     referer=seed_url,
@@ -810,7 +891,7 @@ def fetch_product_details_many(
     with _local_browser_slot() as slot:
         profile_dir = _local_browser_profile_dir() / f"process-{os.getpid()}" / f"detail-batch-{slot}"
         profile_dir.mkdir(parents=True, exist_ok=True)
-        fetcher_key = f"detail-batch:{profile_dir}"
+        fetcher_key = f"detail-batch:{profile_dir}:{id(browser)}"
         with _REUSABLE_FETCHERS_LOCK:
             cached_fetcher = _REUSABLE_FETCHERS.get(fetcher_key)
 
@@ -853,6 +934,12 @@ def fetch_product_details_many(
                 if data.get("wait_seconds", wait_time) > 0:
                     driver.sleep(data.get("wait_seconds", wait_time))
                 _dismiss_canada_prompt(driver.run_js, driver.sleep, url=seed_url, logger=logger, attempts=1)
+                _wait_for_rendered_readiness(
+                    driver,
+                    deadline=time.time() + max(1.0, min(6.0, float(data.get("timeout", timeout)) / 3.0)),
+                    logger=logger,
+                    url=seed_url,
+                )
                 concurrency = int(data.get("concurrency") or os.getenv("SCRAPER_MOBILESENTRIX_BATCH_CONCURRENCY") or 6)
                 stagger_ms = int(data.get("stagger_ms") or os.getenv("SCRAPER_MOBILESENTRIX_BATCH_STAGGER_MS") or 25)
                 return driver.run_js(

@@ -246,6 +246,7 @@ class DatabaseManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id INTEGER NOT NULL,
                 item_index INTEGER NOT NULL,
+                product_url_key TEXT,
                 item_json TEXT NOT NULL,
                 created_at DATETIME NOT NULL,
                 FOREIGN KEY (run_id) REFERENCES automation_runs (id) ON DELETE CASCADE,
@@ -395,6 +396,7 @@ class DatabaseManager:
         self._ensure_history_columns()
         self._ensure_item_columns()
         self._ensure_watchlist_columns()
+        self._ensure_automation_run_item_columns()
 
         # Create indexes for better performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_history_timestamp ON fetch_history (timestamp)')
@@ -411,6 +413,7 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_runs_job ON automation_runs (job_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_runs_started ON automation_runs (started_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_run_items_run ON automation_run_items (run_id, item_index)')
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_automation_run_items_product ON automation_run_items (run_id, product_url_key) WHERE product_url_key IS NOT NULL AND product_url_key != ""')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_run_targets_run ON automation_run_completed_targets (run_id, target_url_key)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_run_details_run ON automation_run_product_details (run_id, product_url_key)')
 
@@ -466,6 +469,9 @@ class DatabaseManager:
         self._ensure_column('watchlist_items', 'image_url', 'TEXT')
         self._ensure_column('watchlist_items', 'created_at', 'DATETIME')
         self._ensure_column('watchlist_items', 'updated_at', 'DATETIME')
+
+    def _ensure_automation_run_item_columns(self):
+        self._ensure_column('automation_run_items', 'product_url_key', 'TEXT')
 
     @staticmethod
     def build_urls_key(urls: List[str]) -> str:
@@ -1646,9 +1652,23 @@ class DatabaseManager:
         for item in items or []:
             if not isinstance(item, dict):
                 continue
-            rows.append(json.dumps(item, ensure_ascii=True, separators=(',', ':')))
+            url = str(item.get('url') or '').strip()
+            product_url_key = self._normalize_automation_url(url)
+            rows.append((product_url_key, item, json.dumps(item, ensure_ascii=True, separators=(',', ':'))))
         if not rows:
             return 0
+
+        def item_quality(snapshot: Dict[str, Any]) -> tuple:
+            extra = snapshot.get('extra') if isinstance(snapshot.get('extra'), dict) else {}
+            return (
+                bool(str(snapshot.get('sku') or extra.get('sku') or '').strip()),
+                bool(str(snapshot.get('stock_status') or extra.get('stock_status') or '').strip()),
+                bool(str(snapshot.get('description') or extra.get('description') or '').strip()),
+                bool(str(snapshot.get('title') or '').strip()),
+                bool(str(snapshot.get('site') or '').strip()),
+                len(str(snapshot.get('description') or extra.get('description') or '')),
+                len(str(snapshot.get('title') or '')),
+            )
 
         conn = None
         try:
@@ -1658,15 +1678,42 @@ class DatabaseManager:
             row = cursor.fetchone()
             start_index = int((row['max_index'] if row else -1) or -1) + 1
             now_iso = get_pakistan_time().isoformat()
-            cursor.executemany('''
-                INSERT INTO automation_run_items (run_id, item_index, item_json, created_at)
-                VALUES (?, ?, ?, ?)
-            ''', [
-                (normalized_run_id, start_index + offset, item_json, now_iso)
-                for offset, item_json in enumerate(rows)
-            ])
+            inserted_or_updated = 0
+            next_index = start_index
+            for product_url_key, item, item_json in rows:
+                existing_row = None
+                if product_url_key:
+                    cursor.execute('''
+                        SELECT id, item_json
+                        FROM automation_run_items
+                        WHERE run_id = ? AND product_url_key = ?
+                        LIMIT 1
+                    ''', (normalized_run_id, product_url_key))
+                    existing_row = cursor.fetchone()
+                if existing_row:
+                    existing_item = self._parse_json_text(existing_row['item_json'], {})
+                    if not isinstance(existing_item, dict) or item_quality(item) >= item_quality(existing_item):
+                        cursor.execute('''
+                            UPDATE automation_run_items
+                            SET item_json = ?
+                            WHERE id = ?
+                        ''', (item_json, existing_row['id']))
+                    inserted_or_updated += 1
+                    continue
+                cursor.execute('''
+                    INSERT INTO automation_run_items (run_id, item_index, product_url_key, item_json, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    normalized_run_id,
+                    next_index,
+                    product_url_key or None,
+                    item_json,
+                    now_iso,
+                ))
+                next_index += 1
+                inserted_or_updated += 1
             conn.commit()
-            return len(rows)
+            return inserted_or_updated
         except Exception as e:
             print(f"Error appending automation run items: {e}")
             if conn:
@@ -1758,9 +1805,29 @@ class DatabaseManager:
         product_url_key = self._normalize_automation_url(product_url)
         if not product_url_key:
             return False
+        def item_quality(snapshot: Dict[str, Any]) -> tuple:
+            extra = snapshot.get('extra') if isinstance(snapshot.get('extra'), dict) else {}
+            return (
+                bool(str(snapshot.get('sku') or extra.get('sku') or '').strip()),
+                bool(str(snapshot.get('stock_status') or extra.get('stock_status') or '').strip()),
+                bool(str(snapshot.get('description') or extra.get('description') or '').strip()),
+                len(str(snapshot.get('description') or extra.get('description') or '')),
+                len(str(snapshot.get('title') or '')),
+            )
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
+            cursor.execute('''
+                SELECT item_json
+                FROM automation_run_product_details
+                WHERE run_id = ? AND product_url_key = ?
+                LIMIT 1
+            ''', (normalized_run_id, product_url_key))
+            existing_row = cursor.fetchone()
+            if existing_row:
+                existing_item = self._parse_json_text(existing_row['item_json'], {})
+                if isinstance(existing_item, dict) and item_quality(existing_item) > item_quality(item):
+                    return True
             cursor.execute('''
                 INSERT INTO automation_run_product_details (
                     run_id, product_url, product_url_key, item_json, updated_at
@@ -1796,6 +1863,15 @@ class DatabaseManager:
             return 0
 
         rows = []
+        def item_quality(snapshot: Dict[str, Any]) -> tuple:
+            extra = snapshot.get('extra') if isinstance(snapshot.get('extra'), dict) else {}
+            return (
+                bool(str(snapshot.get('sku') or extra.get('sku') or '').strip()),
+                bool(str(snapshot.get('stock_status') or extra.get('stock_status') or '').strip()),
+                bool(str(snapshot.get('description') or extra.get('description') or '').strip()),
+                len(str(snapshot.get('description') or extra.get('description') or '')),
+                len(str(snapshot.get('title') or '')),
+            )
         now_str = get_pakistan_time().isoformat()
         for entry in items_with_urls:
             if isinstance(entry, tuple):
@@ -1819,6 +1895,7 @@ class DatabaseManager:
                 normalized_run_id,
                 product_url,
                 product_url_key,
+                item,
                 json.dumps(item, ensure_ascii=True, separators=(',', ':')),
                 now_str,
             ))
@@ -1829,17 +1906,33 @@ class DatabaseManager:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            cursor.executemany('''
-                INSERT INTO automation_run_product_details (
-                    run_id, product_url, product_url_key, item_json, updated_at
-                ) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(run_id, product_url_key) DO UPDATE SET
-                    product_url = excluded.product_url,
-                    item_json = excluded.item_json,
-                    updated_at = excluded.updated_at
-            ''', rows)
+            saved = 0
+            for row in rows:
+                _, product_url, product_url_key, item, item_json, now_value = row
+                cursor.execute('''
+                    SELECT item_json
+                    FROM automation_run_product_details
+                    WHERE run_id = ? AND product_url_key = ?
+                    LIMIT 1
+                ''', (normalized_run_id, product_url_key))
+                existing_row = cursor.fetchone()
+                if existing_row:
+                    existing_item = self._parse_json_text(existing_row['item_json'], {})
+                    if isinstance(existing_item, dict) and item_quality(existing_item) > item_quality(item):
+                        saved += 1
+                        continue
+                cursor.execute('''
+                    INSERT INTO automation_run_product_details (
+                        run_id, product_url, product_url_key, item_json, updated_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(run_id, product_url_key) DO UPDATE SET
+                        product_url = excluded.product_url,
+                        item_json = excluded.item_json,
+                        updated_at = excluded.updated_at
+                ''', (normalized_run_id, product_url, product_url_key, item_json, now_value))
+                saved += 1
             conn.commit()
-            return len(rows)
+            return saved
         except Exception as e:
             print(f"Error saving automation product detail checkpoint batch: {e}")
             return 0
@@ -1909,7 +2002,7 @@ class DatabaseManager:
                     if detail:
                         base_extra = parsed.get('extra') if isinstance(parsed.get('extra'), dict) else {}
                         detail_extra = detail.get('extra') if isinstance(detail.get('extra'), dict) else {}
-                        parsed = {**parsed, **detail, 'extra': {**detail_extra, **base_extra}}
+                        parsed = {**parsed, **detail, 'extra': {**base_extra, **detail_extra}}
                     items.append(parsed)
             return items
         except Exception as e:

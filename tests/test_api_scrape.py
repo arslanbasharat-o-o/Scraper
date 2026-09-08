@@ -246,6 +246,7 @@ def test_xcell_listing_does_not_auto_enable_slow_detail_scan(tmp_path, monkeypat
         return [app_module.xcell_scraper_engine.Item(
             title="Outer OLED Assembly for Samsung ZFold 7 5G",
             url="https://xcellparts.com/product/outter-oled-assembly-without-frame-for-samsung-zfold-7-5g/",
+            sku="XCELL-LISTING-SKU",
             original=12.0,
             discounted=12.0,
             original_formatted="$12.00",
@@ -467,8 +468,8 @@ def test_phase_two_reuses_phase_one_supplier_cookies(tmp_path, monkeypatch):
     assert observed_cookies == [{"supplier_session": "ready"}]
 
 
-def test_mobilesentrix_sku_missing_after_http_is_retried_in_browser(tmp_path, monkeypatch):
-    """MobileSentrix keeps HTTP/Safari primary but retries a blocked detail page in a browser."""
+def test_mobilesentrix_detail_prefers_browser_for_required_sku(tmp_path, monkeypatch):
+    """MobileSentrix uses Botarus first for required SKU detail extraction."""
     monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
     monkeypatch.setenv("SCRAPER_DETAIL_BROWSER_BATCH", "0")
     app_module = _fresh_app(tmp_path, monkeypatch)
@@ -518,7 +519,7 @@ def test_mobilesentrix_sku_missing_after_http_is_retried_in_browser(tmp_path, mo
         enrich_details=True,
     )
 
-    assert calls == [False, True]
+    assert calls == [True]
     assert enriched[0].sku == "MS-BROWSER-SKU"
 
 
@@ -708,6 +709,91 @@ def test_resume_checkpoint_items_skip_completed_targets_and_still_enrich(tmp_pat
     assert set(enriched_urls) == {checkpoint_item["url"], f"{pending_url}/product-b"}
     assert result["count"] == 2
     assert all(item["sku"] for item in result["items"])
+
+
+def test_required_supplier_sku_gap_blocks_history_save_after_recovery(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCRAPER_REQUIRED_SKU_RECOVERY_ROUNDS", "1")
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    class Session:
+        def close(self):
+            return None
+
+    def fake_scrape(_session, url, *_args, **_kwargs):
+        return [app_module.Item(
+            url=f"{url.rstrip('/')}/product-a",
+            site="mobilesentrix.com",
+            title="Product Without SKU",
+            price_value=2.0,
+            price_currency="USD",
+            price_text="$2.00",
+            discounted_value=2.0,
+            discounted_formatted="$2.00",
+            original_formatted="$2.00",
+            source="test",
+            image_url="",
+        )]
+
+    def fake_enrich(_session, item, *_args, **_kwargs):
+        item.extra["sku_status"] = "not_published"
+        return item
+
+    monkeypatch.setattr(app_module, "build_session", lambda **_kwargs: (Session(), False))
+    monkeypatch.setattr(app_module, "scrape_url", fake_scrape)
+    monkeypatch.setattr(app_module, "enrich_standard_item_details", fake_enrich)
+
+    result = app_module.execute_scrape_workflow(
+        ["https://www.mobilesentrix.com/category-a"],
+        use_browser=False,
+        use_parallel=False,
+        enrich_details=True,
+    )
+
+    assert result["history_saved"] is False
+    assert "Required SKU validation failed" in result["error"]
+    assert result["sku_unresolved"] == 1
+    assert result["required_sku_gaps"][0]["url"].endswith("/product-a")
+
+
+def test_automation_run_item_checkpoints_are_idempotent_by_product_url(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    job = app_module.db_manager.save_automation_job(
+        {
+            "name": "Checkpoint Idempotency",
+            "scraper_key": "standard",
+            "category_query": "iphones",
+            "root_url": "https://www.mobilesentrix.com/",
+            "interval_minutes": 1440,
+            "enabled": True,
+        },
+        targets=[{"label": "One", "url": "https://www.mobilesentrix.com/one", "active": True}],
+    )
+    run = app_module.db_manager.create_automation_run(
+        job["id"],
+        trigger_type="manual",
+        target_urls=["https://www.mobilesentrix.com/one"],
+    )
+    base_item = {
+        "url": "https://www.mobilesentrix.com/product-a",
+        "title": "Product A",
+        "site": "mobilesentrix.com",
+        "extra": {},
+    }
+    rich_item = {
+        **base_item,
+        "sku": "SKU-A",
+        "description": "Rich detail",
+        "extra": {"sku": "SKU-A", "sku_status": "found"},
+    }
+
+    assert app_module.db_manager.append_automation_run_items(run["id"], [base_item]) == 1
+    assert app_module.db_manager.append_automation_run_items(run["id"], [rich_item]) == 1
+
+    items = app_module.db_manager.get_automation_run_items(run["id"])
+
+    assert len(items) == 1
+    assert items[0]["sku"] == "SKU-A"
+    assert items[0]["extra"]["sku_status"] == "found"
 
 
 def test_progress_writes_are_throttled_but_phase_boundaries_are_forced(tmp_path, monkeypatch):

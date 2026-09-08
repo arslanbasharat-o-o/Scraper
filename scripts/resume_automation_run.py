@@ -296,7 +296,7 @@ def resume_run(run_id: int) -> int:
             retries=job.get("retries", 1),
             verify_ssl=job.get("verify_ssl", True),
             use_curl=True,
-            use_browser=_truthy_value(job.get("use_browser", False)),
+            use_browser=_truthy_value(job["use_browser"]) if "use_browser" in job else None,
             use_parallel=job.get("use_parallel", True),
             enrich_details=job.get("enrich_details", True),
             rules=job.get("rules", {}),
@@ -360,7 +360,7 @@ def resume_run(run_id: int) -> int:
     sku_unresolved = int(result.get("sku_unresolved") or 0)
     sku_error = (
         f"SKU recovery incomplete: {sku_unresolved} product detail page(s) remain unresolved. "
-        "The run is resumable and will retry these pages."
+        "Automatic retries were exhausted; inspect the recorded product errors before using Resume as an emergency recovery action."
         if result.get("enrich_details") and sku_unresolved > 0
         else ""
     )

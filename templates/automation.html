@@ -171,17 +171,8 @@
         <a href="/menu-map" class="nav-link">Menu Map</a>
         <a href="/history" class="nav-link">History</a>
         <a href="/extractor" class="nav-link">Extractor</a>
-          {% if current_user.is_authenticated and current_user.has_role("admin") %}
-          <a href="/users" class="nav-link">Users & Roles</a>
-          {% endif %}
       </nav>
       <div class="header-right">
-        {% if current_user.is_authenticated %}
-        <div class="user-auth-badge">
-          <span>Signed in as <strong>{{ current_user.username }}</strong> <small>({{ current_user.role }})</small></span>
-          <a href="/logout" title="Log Out">Logout</a>
-        </div>
-        {% endif %}
 
         <div class="theme-switch" aria-label="Color theme">
           <span class="theme-label">Light</span>

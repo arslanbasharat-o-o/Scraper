@@ -151,7 +151,7 @@ def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = Tr
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=frozenset(['GET', 'HEAD', 'OPTIONS']),
     )
-    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=10)
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=128, pool_maxsize=128)
     session.mount('https://', adapter)
     session.mount('http://', adapter)
     session.verify = verify_ssl

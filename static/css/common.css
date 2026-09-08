@@ -184,11 +184,11 @@ body {
 /* ── Header ──────────────────────────────────────────────────── */
 .app-header {
   display: grid;
-  grid-template-columns: minmax(250px, 1fr) auto minmax(180px, 1fr);
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 1rem;
-  min-height: 76px;
-  padding: .75rem 1rem;
+  gap: 1.25rem;
+  min-height: 70px;
+  padding: .75rem 1.25rem;
   position: relative;
   overflow: visible;
   box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
@@ -1902,13 +1902,14 @@ body.modal-open {
 }
 
 /* ── Responsive ──────────────────────────────────────────────── */
-@media (max-width: 1050px) {
+@media (max-width: 768px) {
   .app-header {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       "brand actions"
       "nav nav";
     gap: .65rem 1rem;
+    padding: .75rem;
   }
 
   .header-left {
@@ -1924,11 +1925,7 @@ body.modal-open {
     grid-area: nav;
     width: 100%;
     display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
+    justify-content: stretch;
     gap: .25rem;
     padding: .25rem;
   }
@@ -1939,17 +1936,9 @@ body.modal-open {
 
   .nav-link {
     flex: 1 1 0;
-    min-width: max-content;
     text-align: center;
-    padding: .42rem .75rem;
+    padding: .42rem .5rem;
     font-size: .8rem;
-  }
-}
-
-@media (max-width: 768px) {
-  .app-header {
-    padding: .75rem;
-    gap: .65rem .75rem;
   }
 
   .toolbar-row {

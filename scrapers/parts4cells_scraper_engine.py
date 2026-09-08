@@ -99,7 +99,11 @@ def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = Tr
         except Exception:
             pass
     import requests
+    from requests.adapters import HTTPAdapter
     session = requests.Session()
+    adapter = HTTPAdapter(pool_connections=128, pool_maxsize=128)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
     session.verify = verify_ssl
     return session, False
 
