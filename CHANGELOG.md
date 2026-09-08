@@ -1,5 +1,8 @@
 # Changelog
 
+## [8.4.19] - 2026-09-08
+- Reorder primary navigation tabs across all templates to `Automation`, `Menu Map`, `History`, `Extractor`.
+
 ## [8.4.18] - 2026-09-08
 - Add comprehensive production fallback benchmark suite (`scripts/production_fallback_benchmark.py`) covering 4 scenarios: HTTP Happy Path, 100% Botasaurus Fallback, Mixed Ratio Matrix (90/10, 80/20, 70/30, 50/50), and Android/Mobile stress testing.
 - Quantify Botasaurus cold start vs warm reuse latency and project 40 GB server concurrency at 12 browser windows (~1,220 products/minute).
