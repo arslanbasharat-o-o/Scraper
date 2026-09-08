@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.4.18] - 2026-09-08
+- Add comprehensive production fallback benchmark suite (`scripts/production_fallback_benchmark.py`) covering 4 scenarios: HTTP Happy Path, 100% Botasaurus Fallback, Mixed Ratio Matrix (90/10, 80/20, 70/30, 50/50), and Android/Mobile stress testing.
+- Quantify Botasaurus cold start vs warm reuse latency and project 40 GB server concurrency at 12 browser windows (~1,220 products/minute).
+- Verify graceful automatic fallback recovery and 100% SKU resolution on throttled mobile and Android endpoints.
+
 ## [8.4.17] - 2026-09-08
 - Fix persistent "Failed to fetch" error notifications on background polling in Automation and History views with exponential retry backoff and silent error handling.
 - Fix UI toast/notification positioning across all pages by hoisting `#toastContainer` to viewport level and removing CSS animation transform containment.
