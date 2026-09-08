@@ -1,5 +1,8 @@
 # Changelog
 
+## [8.4.20] - 2026-09-08
+- Make Automation (`/automation`) the default landing page for root `/` and authentication redirects, establishing `/extractor` for the Extractor view.
+
 ## [8.4.19] - 2026-09-08
 - Reorder primary navigation tabs across all templates to `Automation`, `Menu Map`, `History`, `Extractor`.
 

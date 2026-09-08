@@ -45,7 +45,7 @@ from flask_login import current_user, login_user, logout_user
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.4.19'
+APP_VERSION = '8.4.20'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -4173,12 +4173,12 @@ def readyz():
 # ---------------------------------------------------------------------------
 @app.route('/login', methods=['GET', 'POST'])
 def auth_login():
-    """Login page. Redirects authenticated users straight to / ."""
+    """Login page. Redirects authenticated users straight to /automation."""
     if current_user.is_authenticated:
-        return redirect(url_for('index'))
+        return redirect(url_for('automation'))
     if not is_auth_configured():
-        # Auth not configured â€” skip login and go straight to the app.
-        return redirect(url_for('index'))
+        # Auth not configured — skip login and go straight to automation.
+        return redirect(url_for('automation'))
 
     error = None
     if request.method == 'POST':
@@ -4188,12 +4188,12 @@ def auth_login():
         if user:
             login_user(user, remember=bool(request.form.get('remember')))
             flask_session.permanent = True
-            next_url = request.args.get('next') or request.form.get('next') or url_for('index')
+            next_url = request.args.get('next') or request.form.get('next') or url_for('automation')
             # Guard against open-redirect: only allow relative URLs.
             from urllib.parse import urlparse as _urlparse
             parsed_next = _urlparse(next_url)
             if parsed_next.netloc:
-                next_url = url_for('index')
+                next_url = url_for('automation')
             return redirect(next_url)
         error = "Invalid username or password."
     return render_template('login.html', error=error, next=request.args.get('next', ''))
@@ -4206,9 +4206,21 @@ def auth_logout():
 
 
 @app.get('/')
+@app.get('/automation')
 @require_login
-def index():
+def automation():
+    return render_template('automation.html')
+
+
+@app.get('/extractor')
+@app.get('/index')
+@require_login
+def extractor():
     return render_template('index.html')
+
+
+def index():
+    return automation()
 
 
 @app.get('/sitemap.xml')
@@ -4243,11 +4255,6 @@ def robots():
 @require_login
 def history():
     return render_template('history.html')
-
-@app.get('/automation')
-@require_login
-def automation():
-    return render_template('automation.html')
 
 
 

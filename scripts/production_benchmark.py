@@ -146,9 +146,10 @@ def benchmark_live_endpoints() -> dict:
     endpoints = [
         ("GET", "/api/health", 200),
         ("GET", "/", 200),
-        ("GET", "/history", 200),
         ("GET", "/automation", 200),
         ("GET", "/menu-map", 200),
+        ("GET", "/history", 200),
+        ("GET", "/extractor", 200),
         ("GET", "/livez", 200),
         ("GET", "/readyz", 200),
         ("GET", "/api/history", 200),

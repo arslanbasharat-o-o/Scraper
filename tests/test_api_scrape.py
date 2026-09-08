@@ -187,7 +187,7 @@ def test_extractor_locks_botasaurus_rendering_on(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
 
     with app_module.app.test_client() as client:
-        response = client.get("/")
+        response = client.get("/extractor")
 
     html = response.get_data(as_text=True)
 
