@@ -1,5 +1,8 @@
 # Changelog
 
+## [8.4.22] - 2026-09-08
+- Fix desktop dashboard header broken layout: remove conflicting inline `<style>` block in `automation.html` that overrode `common.css` 3-column desktop grid with a 2-row layout, causing the nav bar to appear beneath the brand row even on wide screens.
+
 ## [8.4.21] - 2026-09-08
 - Fix mobile responsiveness across all pages: eliminate 2x2 broken navigation grid on narrow screens and replace with a sleek segmented control with smooth touch scrolling.
 - Refactor mobile header into a balanced 2-row layout keeping the brand on top left and theme switch on top right with zero empty vertical space.
