@@ -68,7 +68,7 @@ def resume_run(run_id: int) -> int:
     previous_history = db_manager.get_history_detail(previous_history_id) if previous_history_id else None
     total_target_count = len(target_urls)
     original_summary = run.get("summary") if isinstance(run.get("summary"), dict) else {}
-    resume_from_checkpoint = _truthy_env("RESUME_FROM_CHECKPOINT")
+    resume_from_checkpoint = _truthy_env("RESUME_FROM_CHECKPOINT", default=True)
     base_completed_targets = 0
     completed_target_urls = []
     base_items_count = 0
@@ -392,8 +392,11 @@ def resume_run(run_id: int) -> int:
     return 0 if not final_error_text else 2
 
 
-def _truthy_env(name: str) -> bool:
-    return str(os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+def _truthy_env(name: str, default: bool = False) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return str(val).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _truthy_value(value) -> bool:

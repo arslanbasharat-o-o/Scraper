@@ -2,9 +2,15 @@
 Database module for Parts Extractor
 Handles persistent storage of scraping history and items
 """
+import os
+import sys
 
-from dotenv import load_dotenv
-load_dotenv()
+if 'pytest' not in sys.modules and not os.getenv('PYTEST_CURRENT_TEST'):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
 
 import sqlite3
 import json

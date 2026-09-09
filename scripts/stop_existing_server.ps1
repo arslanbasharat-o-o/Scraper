@@ -61,7 +61,7 @@ foreach ($processId in $processIds) {
     $mentionsWorkspace = $commandLine.IndexOf($workspacePath, [StringComparison]::OrdinalIgnoreCase) -ge 0
     $mentionsAppPy = $commandLine -match '(^|\s|\\|")app\.py("|\s|$)'
 
-    if ($isPython -and ($fromWorkspaceVenv -or $mentionsWorkspace -or ($fromWorkspaceVenv -and $mentionsAppPy))) {
+    if ($isPython -and ($fromWorkspaceVenv -or $mentionsWorkspace -or $mentionsAppPy)) {
         $safeToStop += $processId
     } else {
         $unsafe += [pscustomobject]@{

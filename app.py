@@ -1,5 +1,12 @@
-from dotenv import load_dotenv
-load_dotenv()
+import os
+import sys
+
+if 'pytest' not in sys.modules and not os.getenv('PYTEST_CURRENT_TEST'):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
 
 from flask import Flask, request, jsonify, render_template, send_file, url_for, Response, make_response
 import atexit
