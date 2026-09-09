@@ -3,6 +3,9 @@ Database module for Parts Extractor
 Handles persistent storage of scraping history and items
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import sqlite3
 import json
 import datetime
