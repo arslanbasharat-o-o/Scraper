@@ -546,18 +546,50 @@ def _extract_product(li, base_url: str) -> Optional[Item]:
 def _parse_total_and_limit(soup) -> tuple:
     """
     Parse the Magento toolbar to get (total_products, products_per_page).
-    Toolbar text example: "Items 1-12 of 64"
+    Toolbar text examples:
+      - "Items 1-12 of 64"
+      - "Items1-12of119"
+      - "3Items"
+      - "12 Items"
     """
+    if not soup:
+        return None, 12
+
     toolbar = soup.select_one('.toolbar-amount')
     if toolbar:
-        t = toolbar.get_text(strip=True)
-        m = re.search(r'(\d+)\s*-\s*(\d+)\s+of\s+(\d+)', t)
+        t = toolbar.get_text(' ', strip=True)
+        # 1. Range match: "1-12 of 64" or "1-12of64"
+        m = re.search(r'(\d+)\s*-\s*(\d+)\s*of\s*(\d+)', t, re.I)
         if m:
             start = int(m.group(1))
             end = int(m.group(2))
             total = int(m.group(3))
-            per_page = end - start + 1
+            per_page = max(1, end - start + 1)
             return total, per_page
+
+        # 2. Single total match: "3 Items" or "3Items"
+        m_single = re.search(r'(\d+)\s*items?', t, re.I)
+        if m_single:
+            total = int(m_single.group(1))
+            return total, 12
+
+        # 3. Inspect individual .toolbar-number elements
+        numbers = [
+            int(clean_num) for clean_num in
+            (re.sub(r'[^\d]', '', el.get_text(strip=True)) for el in toolbar.select('.toolbar-number'))
+            if clean_num.isdigit()
+        ]
+        if len(numbers) >= 3:
+            return numbers[2], max(1, numbers[1] - numbers[0] + 1)
+        elif numbers:
+            return numbers[-1], 12
+
+    # 4. If there is no pagination block on the page, this is the only page!
+    if not soup.select_one('.pages, .pagination, .pager, ul.pages-items, .toolbar-pages'):
+        product_count = len(soup.select('li.product-item, li.item.product, .product-item'))
+        if product_count > 0:
+            return product_count, max(1, product_count)
+
     return None, 12   # default Magento page size
 
 
@@ -638,7 +670,7 @@ def _scrape_one_page(url: str, rules: dict, logger=None,
 # ── Multi-page Scraper ────────────────────────────────────────────────────────
 
 def _scrape_all_pages(base_url: str, rules: dict,
-                      max_pages: int = 20, delay_ms: int = 300,
+                      max_pages: int = 20, delay_ms: int = 0,
                       logger=None,
                       first_page_html: Optional[str] = None,
                       first_page_soup: Optional[BeautifulSoup] = None,
@@ -669,9 +701,10 @@ def _scrape_all_pages(base_url: str, rules: dict,
         if logger:
             logger.info(f"[parts4cells] {total} total products → {num_pages} pages of {per_page}")
     else:
-        num_pages = max_pages
+        has_pager = bool(soup and soup.select_one('.pages, .pagination, .pager, ul.pages-items, .toolbar-pages'))
+        num_pages = max_pages if has_pager else 1
         if logger:
-            logger.info(f"[parts4cells] Could not determine total — will scrape up to {max_pages} pages")
+            logger.info(f"[parts4cells] {num_pages} page(s) to scrape (pager={'yes' if has_pager else 'no'})")
 
     canonical_listing_url = _extract_canonical_url(soup, page_url) if soup else page_url
 
@@ -712,7 +745,7 @@ def _scrape_all_pages(base_url: str, rules: dict,
 def scrape_url(session, url: str, rules: dict,
                crawl_pagination: bool = True,
                max_pages: int = 20,
-               delay_ms: int = 300,
+               delay_ms: int = 0,
                logger=None) -> List[Item]:
     """Entry point called by app.py."""
     if logger:

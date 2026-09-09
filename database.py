@@ -64,11 +64,11 @@ class DatabaseManager:
 
         conn = connections.get(self._connection_key)
         if conn is None:
-            conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
+            conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=60.0)
             conn.row_factory = sqlite3.Row  # Enable dict-like access
             try:
                 conn.execute('PRAGMA foreign_keys = ON')
-                conn.execute('PRAGMA busy_timeout = 30000')
+                conn.execute('PRAGMA busy_timeout = 60000')
                 conn.execute('PRAGMA journal_mode = WAL')
                 conn.execute('PRAGMA synchronous = NORMAL')
             except Exception:
@@ -103,6 +103,18 @@ class DatabaseManager:
         """Initialize database tables"""
         conn = self.get_connection()
         cursor = conn.cursor()
+
+        # Fast path: skip full DDL and insert if baseline is already applied
+        try:
+            cursor.execute('SELECT version FROM _schema_version WHERE version = 1 LIMIT 1')
+            if cursor.fetchone():
+                self._ensure_history_columns()
+                self._ensure_item_columns()
+                self._ensure_watchlist_columns()
+                self._ensure_automation_run_item_columns()
+                return
+        except Exception:
+            pass
 
         # Create schema version tracking table
         cursor.execute('''
@@ -436,12 +448,23 @@ class DatabaseManager:
     def _ensure_column(self, table: str, column: str, definition: str):
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute(f'PRAGMA table_info({table})')
-        existing = {row['name'] for row in cursor.fetchall()}
-        if column in existing:
-            return
-        cursor.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
-        conn.commit()
+        try:
+            cursor.execute(f'PRAGMA table_info({table})')
+            existing = {row['name'] for row in cursor.fetchall()}
+            if column in existing:
+                return
+            cursor.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+            conn.commit()
+        except sqlite3.OperationalError as e:
+            if 'duplicate column' in str(e).lower():
+                return
+            if 'locked' in str(e).lower():
+                time.sleep(0.5)
+                try:
+                    cursor.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+                    conn.commit()
+                except Exception:
+                    pass
 
     def _ensure_history_columns(self):
         self._ensure_column('fetch_history', 'urls_key', 'TEXT')

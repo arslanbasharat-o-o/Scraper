@@ -85,6 +85,22 @@ foreach ($processId in ($safeToStop | Select-Object -Unique)) {
     Stop-Process -Id $processId -Force -ErrorAction Stop
 }
 
+# Stop any orphaned workspace background workers
+try {
+    $workerProcs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -match '^pythonw?\.exe$' -and (
+            $_.CommandLine -match 'resume_automation_run\.py' -or
+            $_.CommandLine -match 'enrich_completed_runs\.py' -or
+            $_.CommandLine -match 'full_pipeline_fast\.py'
+        ) -and $_.CommandLine.IndexOf($workspacePath, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    }
+    foreach ($wp in $workerProcs) {
+        Write-Host "Stopping background scraper worker PID $($wp.ProcessId)"
+        Stop-Process -Id $wp.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+} catch {
+}
+
 $deadline = (Get-Date).AddSeconds(6)
 do {
     Start-Sleep -Milliseconds 250
