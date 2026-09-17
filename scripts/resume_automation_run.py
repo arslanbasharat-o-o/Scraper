@@ -22,6 +22,8 @@ from app import (  # noqa: E402
     make_automation_run_stop_checker,
     save_automation_partial_history,
     validate_supplier_remote_urls,
+    count_items_by_target,
+    target_counts_from_history,
 )
 
 
@@ -111,6 +113,16 @@ def resume_run(run_id: int) -> int:
             completed_target_urls = []
             base_completed_targets = 0
             base_items_count = 0
+        elif base_preview_items and target_urls:
+            # If a specific target was marked completed but yielded 0 products in checkpoint
+            # while a previous baseline had products, do not skip it on resume.
+            checkpoint_target_counts = count_items_by_target(base_preview_items, target_urls=target_urls)
+            prev_counts = target_counts_from_history(previous_history, target_urls=target_urls) if previous_history else {}
+            completed_target_urls = [
+                url for url in completed_target_urls
+                if checkpoint_target_counts.get(url, 0) > 0 or prev_counts.get(url, 0) == 0
+            ]
+            base_completed_targets = len(completed_target_urls)
     completed_target_keys = {
         str(url or "").strip().rstrip("/").lower()
         for url in completed_target_urls

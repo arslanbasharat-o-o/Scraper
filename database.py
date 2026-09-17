@@ -1725,6 +1725,19 @@ class DatabaseManager:
                 if existing_row:
                     existing_item = self._parse_json_text(existing_row['item_json'], {})
                     if not isinstance(existing_item, dict) or item_quality(item) >= item_quality(existing_item):
+                        if isinstance(existing_item, dict) and isinstance(item, dict):
+                            ex_extra = existing_item.get('extra') or {}
+                            new_extra = item.get('extra') or {}
+                            ex_t = str(ex_extra.get('target_url') or '').strip().rstrip('/').lower()
+                            new_t = str(new_extra.get('target_url') or '').strip().rstrip('/').lower()
+                            if ex_t and new_t and ex_t != new_t and ex_t.startswith(new_t + '/'):
+                                new_extra['target_url'] = ex_extra.get('target_url')
+                                if ex_extra.get('target_label'):
+                                    new_extra['target_label'] = ex_extra.get('target_label')
+                                if ex_extra.get('model_label'):
+                                    new_extra['model_label'] = ex_extra.get('model_label')
+                                item['extra'] = new_extra
+                                item_json = json.dumps(item, ensure_ascii=True, separators=(',', ':'))
                         cursor.execute('''
                             UPDATE automation_run_items
                             SET item_json = ?

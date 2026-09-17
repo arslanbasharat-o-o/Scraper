@@ -766,6 +766,7 @@ def annotate_items_with_target(items, target_url: str, target_label: str = '', a
     """Attach the originating category URL/label so later comparisons can group by model."""
     normalized_url = str(target_url or '').strip()
     normalized_label = str(target_label or '').strip() or format_category_label_from_url(normalized_url)
+    norm_url_clean = normalized_url.rstrip('/').lower()
     for item in items or []:
         extra = getattr(item, 'extra', None)
         if not isinstance(extra, dict):
@@ -774,10 +775,23 @@ def annotate_items_with_target(items, target_url: str, target_label: str = '', a
                 setattr(item, 'extra', extra)
             except Exception:
                 continue
-        extra['target_url'] = normalized_url
-        extra['target_label'] = normalized_label
-        if normalized_label:
-            extra['model_label'] = normalized_label
+        existing_target = str(extra.get('target_url') or '').strip()
+        existing_clean = existing_target.rstrip('/').lower()
+        is_downgrade = bool(
+            existing_clean
+            and norm_url_clean
+            and existing_clean != norm_url_clean
+            and existing_clean.startswith(norm_url_clean + '/')
+        )
+        if not is_downgrade:
+            extra['target_url'] = normalized_url
+            extra['target_label'] = normalized_label
+            if normalized_label:
+                extra['model_label'] = normalized_label
+        elif not extra.get('target_label'):
+            extra['target_label'] = format_category_label_from_url(existing_target)
+            if not extra.get('model_label'):
+                extra['model_label'] = extra['target_label']
         if automation_job:
             extra['automation_job_id'] = automation_job.get('id')
             extra['automation_job_name'] = automation_job.get('name')
@@ -2372,27 +2386,83 @@ def normalize_guard_url(value: str) -> str:
     return parsed._replace(path=path, params='', query='', fragment='').geturl().lower()
 
 
-def target_counts_from_history(history: Dict | None) -> Dict[str, int]:
+def resolve_target_url_from_targets(
+    item_url: str,
+    current_target_url: str,
+    sorted_targets: List[str],
+    parent_targets: set,
+) -> str:
+    target_url = normalize_guard_url(current_target_url)
+    item_url_norm = normalize_guard_url(item_url)
+    if sorted_targets and item_url_norm and (not target_url or target_url in parent_targets):
+        item_base = re.sub(r'\.html$', '', item_url_norm)
+        item_parts = item_base.split('/')
+
+        # Pass 1: exact prefix match (ignoring .html)
+        for cand in sorted_targets:
+            if cand not in parent_targets:
+                cand_base = re.sub(r'\.html$', '', cand.rstrip('/'))
+                if item_base.startswith(cand_base + '/') or item_base == cand_base:
+                    return cand
+
+        # Pass 2: segment prefix match with hyphen variants (e.g. iphone-12-pro-6-1 vs iphone-12-pro, ipad-pro-12-9-5th-2021 vs ipad-pro-12-9-5th)
+        for cand in sorted_targets:
+            if cand not in parent_targets:
+                cand_base = re.sub(r'\.html$', '', cand.rstrip('/'))
+                cand_parts = cand_base.split('/')
+                if len(item_parts) >= len(cand_parts) and cand_parts[:-1] == item_parts[:len(cand_parts)-1]:
+                    s_cand = cand_parts[-1]
+                    s_item = item_parts[len(cand_parts)-1]
+                    if s_item == s_cand or s_item.startswith(s_cand + '-') or s_cand.startswith(s_item + '-'):
+                        return cand
+    return target_url
+
+
+def target_counts_from_history(history: Dict | None, target_urls: List[str] | None = None) -> Dict[str, int]:
     counts: Dict[str, int] = {}
     if not history:
         return counts
+    normalized_targets = [normalize_guard_url(u) for u in (target_urls or []) if str(u or '').strip()]
+    sorted_targets = sorted(set(normalized_targets), key=len, reverse=True) if normalized_targets else []
+    parent_targets = {
+        u for u in sorted_targets
+        if any(other != u and other.startswith(f"{u.rstrip('/')}/") for other in sorted_targets)
+    } if sorted_targets else set()
+
     for item in history.get('items', []) or []:
         snapshot = normalize_item_snapshot(item)
-        target_url = normalize_guard_url(snapshot.get('target_url') or '')
+        target_url = resolve_target_url_from_targets(
+            snapshot.get('url') or '',
+            snapshot.get('target_url') or '',
+            sorted_targets,
+            parent_targets,
+        )
         if not target_url:
             continue
         counts[target_url] = counts.get(target_url, 0) + 1
     return counts
 
 
-def count_items_by_target(items) -> Dict[str, int]:
+def count_items_by_target(items, target_urls: List[str] | None = None) -> Dict[str, int]:
     counts: Dict[str, int] = {}
+    normalized_targets = [normalize_guard_url(u) for u in (target_urls or []) if str(u or '').strip()]
+    sorted_targets = sorted(set(normalized_targets), key=len, reverse=True) if normalized_targets else []
+    parent_targets = {
+        u for u in sorted_targets
+        if any(other != u and other.startswith(f"{u.rstrip('/')}/") for other in sorted_targets)
+    } if sorted_targets else set()
+
     for item in items or []:
         if not is_usable_scraped_item(item):
             continue
         item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
         extra = item_dict.get('extra') if isinstance(item_dict.get('extra'), dict) else {}
-        target_url = normalize_guard_url(item_dict.get('target_url') or extra.get('target_url') or '')
+        target_url = resolve_target_url_from_targets(
+            item_dict.get('url') or '',
+            item_dict.get('target_url') or extra.get('target_url') or '',
+            sorted_targets,
+            parent_targets,
+        )
         if not target_url:
             continue
         counts[target_url] = counts.get(target_url, 0) + 1
@@ -2427,8 +2497,8 @@ def detect_sparse_target_anomalies(
         if any(other != url and other.startswith(f"{url.rstrip('/')}/") for other in normalized_urls)
     }
 
-    previous_counts = target_counts_from_history(previous_history)
-    current_counts = count_items_by_target(current_items)
+    previous_counts = target_counts_from_history(previous_history, target_urls=urls)
+    current_counts = count_items_by_target(current_items, target_urls=urls)
     anomalies = []
     for url in urls or []:
         normalized_url = normalize_guard_url(url)
@@ -2453,10 +2523,22 @@ def detect_sparse_target_anomalies(
     return anomalies
 
 
-def count_comparison_snapshots_by_target(snapshots: List[Dict[str, object]]) -> Dict[str, int]:
+def count_comparison_snapshots_by_target(snapshots: List[Dict[str, object]], target_urls: List[str] | None = None) -> Dict[str, int]:
     counts: Dict[str, int] = {}
+    normalized_targets = [normalize_guard_url(u) for u in (target_urls or []) if str(u or '').strip()]
+    sorted_targets = sorted(set(normalized_targets), key=len, reverse=True) if normalized_targets else []
+    parent_targets = {
+        u for u in sorted_targets
+        if any(other != u and other.startswith(f"{u.rstrip('/')}/") for other in sorted_targets)
+    } if sorted_targets else set()
+
     for snapshot in snapshots or []:
-        target_url = normalize_guard_url(snapshot.get('target_url') or '')
+        target_url = resolve_target_url_from_targets(
+            snapshot.get('url') or '',
+            snapshot.get('target_url') or '',
+            sorted_targets,
+            parent_targets,
+        )
         if not target_url:
             continue
         counts[target_url] = counts.get(target_url, 0) + 1
@@ -2551,8 +2633,8 @@ def validate_scrape_completeness(
         for url in normalized_urls
         if any(other != url and other.startswith(f"{url.rstrip('/')}/") for other in normalized_urls)
     }
-    previous_counts = count_comparison_snapshots_by_target(previous_snapshots)
-    current_counts = count_comparison_snapshots_by_target(current_snapshots)
+    previous_counts = count_comparison_snapshots_by_target(previous_snapshots, target_urls=urls)
+    current_counts = count_comparison_snapshots_by_target(current_snapshots, target_urls=urls)
     for url in normalized_urls:
         if url in parent_target_urls:
             continue

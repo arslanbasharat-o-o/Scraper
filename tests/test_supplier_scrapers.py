@@ -575,3 +575,80 @@ def test_supplier_fetch_failures_are_visible_to_completeness_guard(monkeypatch):
             session.get = lambda *_args, **_kwargs: SimpleNamespace(status_code=200, text='<html><body>Product category</body></html>')
             assert fetch(module, session)
             assert getattr(session, prefix + '_last_error') == ''
+
+
+def test_phonelcdparts_subcategories_tag_child_target_url(monkeypatch):
+    import app as app_module
+    from scrapers import phonelcdparts_scraper_engine
+
+    parent_html = """
+    <html><body>
+      <main>
+        <ul class="subcategories">
+          <li><a href="https://www.phonelcdparts.com/apple/ipad-parts/ipad-pro-13-8th-gen-2025">iPad Pro 13</a></li>
+        </ul>
+      </main>
+    </body></html>
+    """
+    child_html = """
+    <html><body>
+      <main>
+        <ol class="products list items product-items">
+          <li class="item product product-item">
+            <div class="product-item-info">
+              <strong class="product name product-item-name">
+                <a class="product-item-link" href="https://www.phonelcdparts.com/apple/ipad-parts/ipad-pro-13-8th-gen-2025/screen-1">OLED for iPad Pro 13</a>
+              </strong>
+              <div class="price-box"><span class="price" data-price-amount="100.00">$100.00</span></div>
+            </div>
+          </li>
+        </ol>
+      </main>
+    </body></html>
+    """
+
+    def fake_get_html(_session, url, _logger=None):
+        if url == "https://www.phonelcdparts.com/apple/ipad-parts":
+            return parent_html
+        if "ipad-pro-13-8th-gen-2025" in url:
+            return child_html
+        return None
+
+    monkeypatch.setattr(phonelcdparts_scraper_engine, "get_html", fake_get_html)
+    items = phonelcdparts_scraper_engine.scrape_category_all_pages(
+        SimpleNamespace(),
+        "https://www.phonelcdparts.com/apple/ipad-parts",
+        {},
+    )
+    assert len(items) == 1
+    # Check that child items have target_url preserved as the child URL
+    assert items[0].extra.get("target_url") == "https://www.phonelcdparts.com/apple/ipad-parts/ipad-pro-13-8th-gen-2025"
+
+    # When annotate_items_with_target runs with the parent URL, it should NOT downgrade the child target_url
+    app_module.annotate_items_with_target(items, "https://www.phonelcdparts.com/apple/ipad-parts", "iPad Parts")
+    assert items[0].extra.get("target_url") == "https://www.phonelcdparts.com/apple/ipad-parts/ipad-pro-13-8th-gen-2025"
+
+
+def test_count_items_by_target_resolves_child_urls():
+    import app as app_module
+    from scrapers.phonelcdparts_scraper_engine import Item
+
+    targets = [
+        "https://www.phonelcdparts.com/apple/ipad-parts",
+        "https://www.phonelcdparts.com/apple/ipad-parts/ipad-pro-13-8th-gen-2025",
+    ]
+    # An item that was tagged with the parent URL, but its product URL is under the child target
+    item = Item(
+        url="https://www.phonelcdparts.com/apple/ipad-parts/ipad-pro-13-8th-gen-2025/sample-screen",
+        site="phonelcdparts.com",
+        title="Sample Screen",
+        original=100.0,
+        discounted=100.0,
+        discounted_formatted="$100.00",
+        original_formatted="$100.00",
+        image_url="",
+        extra={"target_url": "https://www.phonelcdparts.com/apple/ipad-parts"},
+    )
+    counts = app_module.count_items_by_target([item], target_urls=targets)
+    assert counts.get("https://www.phonelcdparts.com/apple/ipad-parts/ipad-pro-13-8th-gen-2025") == 1
+    assert counts.get("https://www.phonelcdparts.com/apple/ipad-parts", 0) == 0

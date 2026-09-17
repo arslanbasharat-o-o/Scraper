@@ -269,6 +269,32 @@ def _best_image_from_card(card, base_url: str) -> str:
     return ""
 
 
+def extract_sku_from_title_and_url(title: str, url: str) -> str:
+    slug = str(url or '').rstrip('/').split('/')[-1]
+    slug = re.sub(r'\.html$', '', slug).lower()
+
+    words = re.findall(r'[a-zA-Z0-9]+', str(title or '').lower())
+    if not words:
+        return ''
+
+    for i in range(len(words) - 1, max(-1, len(words) - 5), -1):
+        w = words[i]
+        idx = slug.rfind('-' + w + '-')
+        if idx != -1:
+            potential_sku = slug[idx + len(w) + 2:].strip('-')
+            if potential_sku and len(potential_sku) >= 2:
+                return clean_sku(potential_sku.upper())
+        idx_end = slug.rfind('-' + w)
+        if idx_end != -1 and idx_end + len(w) + 1 < len(slug):
+            potential_sku = slug[idx_end + len(w) + 2:].strip('-')
+            if potential_sku and len(potential_sku) >= 2:
+                return clean_sku(potential_sku.upper())
+    parts = slug.split('-')
+    if len(parts) >= 2:
+        return clean_sku(parts[-1].upper())
+    return ''
+
+
 def extract_product_from_listing(card, base_url: str) -> Optional[Item]:
     link = (
         card.select_one('a.product-item-link[href]')
@@ -314,6 +340,8 @@ def extract_product_from_listing(card, base_url: str) -> Optional[Item]:
         sku_match = re.search(r"\$store\.cart\.getQty\('([^']+)'\)", str(card))
         if sku_match:
             item.sku = clean_text(sku_match.group(1).encode('utf-8').decode('unicode_escape'))
+    if not item.sku and item.url and item.title:
+        item.sku = extract_sku_from_title_and_url(item.title, item.url)
 
     stock_text = clean_text(card.get_text(' ', strip=True))
     if 'out of stock' in stock_text.lower() or 'out-of-stock' in ' '.join(card.get('class', [])).lower():
@@ -425,6 +453,9 @@ def scrape_category_all_pages(session, url: str, rules: dict, max_pages: int = 2
                     expand_subcategories=False,
                 )
                 for item in child_items:
+                    if getattr(item, 'extra', None) is None or not isinstance(item.extra, dict):
+                        item.extra = {}
+                    item.extra.setdefault('target_url', child_url)
                     items_by_url[item.url] = item
             break
 
