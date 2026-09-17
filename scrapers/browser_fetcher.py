@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import contextvars
 import os
+import shutil
 import threading
 import time
 from dataclasses import dataclass
@@ -21,6 +23,94 @@ _LOCAL_BROWSER_SEMAPHORE_SIZE = 0
 _LOCAL_BROWSER_AVAILABLE_SLOTS: list[int] = []
 _REUSABLE_FETCHERS: dict[str, object] = {}
 _REUSABLE_FETCHERS_LOCK = threading.Lock()
+_SHARED_SUPPLIER_COOKIES: dict[str, dict[str, str]] = {}
+_SHARED_SUPPLIER_COOKIES_LOCK = threading.Lock()
+_STALE_CLEANUP_ONCE = False
+_STALE_CLEANUP_LOCK = threading.Lock()
+
+
+def get_shared_supplier_cookies(url_or_domain: str) -> dict[str, str]:
+    """Retrieve cookies captured from previous browser sessions for a domain."""
+    from urllib.parse import urlparse
+    raw = str(url_or_domain or "").strip()
+    domain = urlparse(raw).netloc.lower().removeprefix("www.") if "://" in raw else raw.lower().removeprefix("www.")
+    with _SHARED_SUPPLIER_COOKIES_LOCK:
+        return dict(_SHARED_SUPPLIER_COOKIES.get(domain, {}))
+
+
+def store_shared_supplier_cookies(url_or_domain: str, cookies: dict[str, str] | list[dict]) -> None:
+    """Store cookies from a successful browser session for reuse by HTTP clients."""
+    if not cookies:
+        return
+    from urllib.parse import urlparse
+    raw = str(url_or_domain or "").strip()
+    domain = urlparse(raw).netloc.lower().removeprefix("www.") if "://" in raw else raw.lower().removeprefix("www.")
+    cookie_dict: dict[str, str] = {}
+    if isinstance(cookies, list):
+        for c in cookies:
+            if isinstance(c, dict) and c.get("name") and c.get("value"):
+                cookie_dict[str(c["name"])] = str(c["value"])
+    elif isinstance(cookies, dict):
+        cookie_dict = {str(k): str(v) for k, v in cookies.items() if str(v)}
+    if cookie_dict:
+        with _SHARED_SUPPLIER_COOKIES_LOCK:
+            _SHARED_SUPPLIER_COOKIES.setdefault(domain, {}).update(cookie_dict)
+
+
+def cleanup_stale_browser_profiles() -> None:
+    """Purge orphaned Chrome browser profiles from dead processes or profiles older than 2 hours."""
+    try:
+        root = _local_browser_profile_dir()
+        if not root.exists():
+            return
+        now = time.time()
+        for child in list(root.iterdir()):
+            try:
+                if not child.is_dir():
+                    continue
+                name = child.name
+                if name.startswith("process-"):
+                    try:
+                        pid = int(name.removeprefix("process-"))
+                        import psutil
+                        if psutil.pid_exists(pid):
+                            continue
+                        shutil.rmtree(child, ignore_errors=True)
+                        continue
+                    except Exception:
+                        pass
+                mtime = child.stat().st_mtime
+                if now - mtime > 7200:
+                    shutil.rmtree(child, ignore_errors=True)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _cleanup_current_process_browser_profiles() -> None:
+    """Clean up this process's Chrome profile directory on exit."""
+    try:
+        configured = (os.getenv("SCRAPER_LOCAL_BROWSER_PROFILE_DIR") or "").strip()
+        default = Path(configured) if configured else Path.cwd() / "data" / "browser_profiles"
+        proc_dir = default / f"process-{os.getpid()}"
+        if proc_dir.exists():
+            shutil.rmtree(proc_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+
+atexit.register(_cleanup_current_process_browser_profiles)
+
+
+def _ensure_stale_profiles_cleaned() -> None:
+    global _STALE_CLEANUP_ONCE
+    if not _STALE_CLEANUP_ONCE:
+        with _STALE_CLEANUP_LOCK:
+            if not _STALE_CLEANUP_ONCE:
+                _STALE_CLEANUP_ONCE = True
+                threading.Thread(target=cleanup_stale_browser_profiles, name="browser-profile-cleanup", daemon=True).start()
+
 
 
 MOBILESENTRIX_CANADA_POPUP_DISMISS_JS = r"""
@@ -216,6 +306,7 @@ def _local_browser_headless() -> bool:
 
 
 def _local_browser_profile_dir() -> Path:
+    _ensure_stale_profiles_cleaned()
     configured = (os.getenv("SCRAPER_LOCAL_BROWSER_PROFILE_DIR") or "").strip()
     default = Path(configured) if configured else Path.cwd() / "data" / "browser_profiles"
     return resolve_chrome_profile_root(default)
@@ -435,6 +526,15 @@ def fetch_html(
                         if logger:
                             logger.warning("[botasaurus] Browser-backed request failed: %s", exc)
 
+                try:
+                    raw_cookies = driver.get_cookies() if hasattr(driver, "get_cookies") else None
+                    if not raw_cookies and hasattr(driver, "_driver") and hasattr(driver._driver, "get_cookies"):
+                        raw_cookies = driver._driver.get_cookies()
+                    if raw_cookies:
+                        store_shared_supplier_cookies(data["url"], raw_cookies)
+                except Exception:
+                    pass
+
                 return {"final_url": final_url, "html": html}
             finally:
                 # Driver reuse keeps the process warm; Botasaurus owns the
@@ -579,6 +679,14 @@ def fetch_html_many(
                         "html": getattr(response, "text", "") or "",
                         "error": getattr(response, "reason", "") if int(getattr(response, "status_code", 0) or 0) >= 500 else "",
                     })
+                try:
+                    raw_cookies = driver.get_cookies() if hasattr(driver, "get_cookies") else None
+                    if not raw_cookies and hasattr(driver, "_driver") and hasattr(driver._driver, "get_cookies"):
+                        raw_cookies = driver._driver.get_cookies()
+                    if raw_cookies:
+                        store_shared_supplier_cookies(seed_url, raw_cookies)
+                except Exception:
+                    pass
                 return out
             finally:
                 pass
@@ -940,6 +1048,14 @@ def fetch_product_details_many(
                     logger=logger,
                     url=seed_url,
                 )
+                try:
+                    raw_cookies = driver.get_cookies() if hasattr(driver, "get_cookies") else None
+                    if not raw_cookies and hasattr(driver, "_driver") and hasattr(driver._driver, "get_cookies"):
+                        raw_cookies = driver._driver.get_cookies()
+                    if raw_cookies:
+                        store_shared_supplier_cookies(seed_url, raw_cookies)
+                except Exception:
+                    pass
                 concurrency = int(data.get("concurrency") or os.getenv("SCRAPER_MOBILESENTRIX_BATCH_CONCURRENCY") or 6)
                 stagger_ms = int(data.get("stagger_ms") or os.getenv("SCRAPER_MOBILESENTRIX_BATCH_STAGGER_MS") or 25)
                 return driver.run_js(

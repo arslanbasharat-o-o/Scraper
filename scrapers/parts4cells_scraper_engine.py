@@ -12,6 +12,7 @@ Strategy:
 
 import html as html_lib
 import json
+import os
 import re
 import threading
 import time
@@ -90,10 +91,16 @@ _PLACEHOLDERS = ('placeholder', 'magento-menu-logo', 'no_selection', 'no-image',
 
 def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = True, **kwargs):
     """Return (session, using_curl_cffi: bool)."""
+    proxy = (
+        os.getenv("SCRAPER_PROXY_URL")
+        or os.getenv("HTTPS_PROXY")
+        or os.getenv("HTTP_PROXY")
+        or ""
+    ).strip() or None
     if use_curl and _HAS_CURL:
         try:
             with _CURL_LOCK:
-                session = curl_req.Session(impersonate="safari15_5")
+                session = curl_req.Session(impersonate="safari15_5", proxy=proxy) if proxy else curl_req.Session(impersonate="safari15_5")
             session.verify = verify_ssl
             return session, True
         except Exception:

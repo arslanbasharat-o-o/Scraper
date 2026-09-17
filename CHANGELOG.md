@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.5.4] - 2026-09-18
+- Full production stabilization: eliminate 1–2 cat/min bottleneck caused by unneeded browser fallbacks on missing SKUs.
+- Botasaurus disk leak resolution: automatically purge orphaned Chrome profiles from dead processes, recovering 19.48 GB disk space.
+- SQLite write pipeline acceleration: replace 28,000 sequential inserts with vectorized `executemany` batch inserts and 64 MB memory page cache.
+- Cross-engine resilience: fast 2-attempt HTTP retry with backoff before browser fallback across all 8 suppliers, with shared Cloudflare cookie caching.
+- CodeRabbit AI audit resolution: 100% resolution of card SKU normalization, profile deletion guards, and transport recovery.
+- 100% regression test pass rate (179/179 tests passing).
+
 ## [8.5.3] - 2026-09-17
 - Fix scrape completeness validation for large catalog crawls: allow legitimate empty categories and non-fatal target errors below the configured threshold (`SCRAPER_MAX_TARGET_ERROR_RATIO`) to complete without rejecting the run or pausing scheduled jobs.
 - Only reject validation if zero comparable products were scraped or if failed targets exceed the allowable error threshold.

@@ -11,6 +11,7 @@ Created for: TXParts
 """
 
 import html as html_lib
+import time
 import requests
 import re
 import json
@@ -284,13 +285,16 @@ def get_html(session, url: str) -> Optional[str]:
             session.txparts_last_status = 200
         return result.html
     if session is not None:
-        try:
-            r = session.get(url, timeout=25)
-            session.txparts_last_status = int(getattr(r, 'status_code', 0) or 0)
-            if r.status_code == 200 and r.text and not _looks_like_block_page(r.text):
-                return r.text
-        except Exception:
-            pass
+        for attempt in range(2):
+            try:
+                if attempt > 0:
+                    time.sleep(0.3)
+                r = session.get(url, timeout=25)
+                session.txparts_last_status = int(getattr(r, 'status_code', 0) or 0)
+                if r.status_code == 200 and r.text and not _looks_like_block_page(r.text):
+                    return r.text
+            except Exception:
+                pass
     if should_use_browser_fetch():
         try:
             browser_html = fetch_html_with_browser(url).html

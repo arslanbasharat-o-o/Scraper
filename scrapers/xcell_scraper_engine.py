@@ -97,8 +97,15 @@ def apply_price_rules(price: float, rules: dict | None = None) -> float:
 
 def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = True) -> tuple:
     """Build HTTP session with retry logic"""
+    proxy = (
+        os.getenv("SCRAPER_PROXY_URL")
+        or os.getenv("HTTPS_PROXY")
+        or os.getenv("HTTP_PROXY")
+        or ""
+    ).strip() or None
+
     if use_curl and HAS_CURL:
-        session = curl_requests.Session(impersonate="safari15_5")
+        session = curl_requests.Session(impersonate="safari15_5", proxy=proxy) if proxy else curl_requests.Session(impersonate="safari15_5")
         session.verify = verify_ssl
         session.xcell_last_error = ''
         return session, True
@@ -465,6 +472,17 @@ def get_html(session, url: str) -> Optional[str]:
                 except Exception:
                     pass
         except Exception as curl_exc:
+            try:
+                time.sleep(0.3)
+                retry_response = session.get(url, timeout=20, allow_redirects=True)
+                retry_code = int(getattr(retry_response, 'status_code', 0) or 0)
+                session.xcell_last_status = retry_code
+                retry_text = getattr(retry_response, 'text', '') or ''
+                if retry_code == 200 and is_html_document(retry_text):
+                    session.xcell_last_error = ''
+                    return retry_text
+            except Exception:
+                pass
             session.xcell_last_error = f"curl fetch error: {curl_exc}"
 
     if should_use_browser_fetch():

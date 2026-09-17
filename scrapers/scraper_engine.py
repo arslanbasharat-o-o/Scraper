@@ -23,7 +23,13 @@ from urllib.parse import urlparse, urljoin, parse_qs, urlencode, urlunparse
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Set, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_mode, browser_fetch_requested
+from .browser_fetcher import (
+    fetch_html as fetch_html_with_browser,
+    should_use_browser_fetch,
+    browser_fetch_mode,
+    browser_fetch_requested,
+    get_shared_supplier_cookies,
+)
 
 # Optional curl_cffi for better Cloudflare bypass
 try:
@@ -234,6 +240,15 @@ def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
         result = fetch_html_with_browser(url, timeout=max(timeout, 60))
         _set_fetch_metadata(sess, status_code=200, final_url=result.final_url, blocked=False)
         return result.final_url, result.html
+
+    # Reuse cookies solved by browser sessions
+    shared_cookies = get_shared_supplier_cookies(url)
+    if shared_cookies and hasattr(sess, 'cookies'):
+        try:
+            sess.cookies.update(shared_cookies)
+        except Exception:
+            pass
+
     try:
         # Fast Safari TLS HTTP request first
         r = sess.get(url, timeout=timeout, allow_redirects=True)
@@ -245,24 +260,18 @@ def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
         # even when the challenge body is returned with HTTP 200.
         cf_challenge = str(response_headers.get('cf-mitigated') or '').strip().lower() == 'challenge'
         blocked = cf_challenge or _looks_like_antibot_challenge(status_code, html)
-        if blocked and HAS_CURL:
-            # Fast alternate Safari TLS recovery before expensive browser fallback
-            for alt_imp in ('safari18_0', 'safari15_5'):
-                try:
-                    alt_sess, _ = build_session(retries=0, verify_ssl=getattr(sess, 'verify', True), use_curl=True, impersonate=alt_imp)
-                    alt_r = alt_sess.get(url, timeout=timeout, allow_redirects=True)
-                    alt_code = int(getattr(alt_r, 'status_code', 0) or 0)
-                    alt_html = getattr(alt_r, 'text', '') or ''
-                    if alt_code == 200 and not _looks_like_antibot_challenge(alt_code, alt_html):
-                        _set_fetch_metadata(sess, status_code=200, final_url=str(getattr(alt_r, 'url', '') or url), blocked=False)
-                        return (str(getattr(alt_r, 'url', '') or url), alt_html)
-                except Exception:
-                    pass
         _set_fetch_metadata(sess, status_code=status_code, final_url=final_url, blocked=blocked)
         if blocked:
             if should_use_browser_fetch() or _browser_fallback_enabled():
                 logger.info(f"[fetch] HTTP {status_code} blocked on {url} - falling back to browser")
                 result = fetch_html_with_browser(url, timeout=max(timeout, 60))
+                # Feed browser cookies back to session
+                fresh_cookies = get_shared_supplier_cookies(url)
+                if fresh_cookies and hasattr(sess, 'cookies'):
+                    try:
+                        sess.cookies.update(fresh_cookies)
+                    except Exception:
+                        pass
                 _set_fetch_metadata(sess, status_code=200, final_url=result.final_url, blocked=False)
                 return result.final_url, result.html
             logger.warning(f"[fetch] HTTP {status_code} blocked on {url} - browser fallback disabled")
@@ -270,10 +279,31 @@ def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
         r.raise_for_status()
         return (final_url, html)
     except Exception as exc:
-        if (should_use_browser_fetch() or _browser_fallback_enabled()) and not isinstance(exc, (KeyboardInterrupt, SystemExit)):
+        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+            raise
+        # Fast HTTP retry on transient network hiccups before expensive browser fallback
+        for retry_attempt in range(2):
+            try:
+                time.sleep(0.3 * (retry_attempt + 1))
+                r = sess.get(url, timeout=timeout, allow_redirects=True)
+                retry_code = int(getattr(r, 'status_code', 0) or 0)
+                retry_url = str(getattr(r, 'url', '') or url)
+                retry_html = getattr(r, 'text', '') or ''
+                if retry_code == 200 and not _looks_like_antibot_challenge(retry_code, retry_html):
+                    _set_fetch_metadata(sess, status_code=200, final_url=retry_url, blocked=False)
+                    return (retry_url, retry_html)
+            except Exception:
+                pass
+        if (should_use_browser_fetch() or _browser_fallback_enabled()):
             logger.info(f"[fetch] HTTP error ({type(exc).__name__}) on {url} - falling back to browser")
             try:
                 result = fetch_html_with_browser(url, timeout=max(timeout, 60))
+                fresh_cookies = get_shared_supplier_cookies(url)
+                if fresh_cookies and hasattr(sess, 'cookies'):
+                    try:
+                        sess.cookies.update(fresh_cookies)
+                    except Exception:
+                        pass
                 _set_fetch_metadata(sess, status_code=200, final_url=result.final_url, blocked=False)
                 return result.final_url, result.html
             except Exception as browser_exc:
@@ -954,6 +984,22 @@ def scrape_category_page(sess, final_url: str, html: str, rules: Dict, logger=No
         add_percent = float(rules.get('add_percent') or 0.0)
         final_price = apply_rules(price_val, percent_off, absolute_off, add_percent)
 
+        # Extract SKU directly from card markup if present
+        sku = ''
+        sku_el = card.select_one('[data-product-sku], [data-sku], .sku, [itemprop="sku"]')
+        if sku_el:
+            sku = clean_text(
+                sku_el.get('data-product-sku')
+                or sku_el.get('data-sku')
+                or sku_el.get('content')
+                or sku_el.get('value')
+                or sku_el.get_text()
+                or ''
+            )
+            sku = re.sub(r'^sku\s*[:#-]?\s*', '', sku, flags=re.IGNORECASE).strip()
+            if sku.lower() in {'sku', 'item', 'item#'}:
+                sku = ''
+
         out.append(Item(
             url=prod_url,
             site=host,
@@ -965,7 +1011,8 @@ def scrape_category_page(sess, final_url: str, html: str, rules: Dict, logger=No
             discounted_formatted=fmt_price(final_price, None, host) if final_price is not None else '',
             original_formatted=fmt_price(price_val, None, host),
             source='category-card',
-            image_url=image
+            image_url=image,
+            sku=sku,
         ))
 
     if logger:

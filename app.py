@@ -53,7 +53,7 @@ from automation_service import discover_category_targets
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.5.3'
+APP_VERSION = '8.5.4'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -963,15 +963,15 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             return sessions[engine_type]
 
         if engine_type == 'xcell':
-            session, _ = xcell_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
+            session, _ = xcell_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
         elif engine_type == 'txparts':
-            session, _ = txparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
+            session, _ = txparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
         elif engine_type == 'parts4cells':
-            session, _ = parts4cells_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
+            session, _ = parts4cells_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
         elif engine_type == 'phonelcdparts':
-            session, _ = phonelcdparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
+            session, _ = phonelcdparts_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
         elif engine_type == 'gadgetfix':
-            session, _ = gadgetfix_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl)
+            session, _ = gadgetfix_scraper_engine.build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
         else:
             session, _ = build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
 
@@ -1011,11 +1011,16 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         browser_succeeded = False
         status_code = 0
         detail_session = None
-        direct_batch = browser_batch_enabled and _is_mobilesentrix_detail_engine(engine_type) and is_supported_supplier_url(item_url)
         prefer_browser_first = bool(use_browser) or (
             use_browser is None
             and is_supported_supplier_url(item_url)
             and scraper_prefers_botarus(engine_type)
+        )
+        direct_batch = (
+            browser_batch_enabled
+            and (prefer_browser_first or use_browser is True)
+            and _is_mobilesentrix_detail_engine(engine_type)
+            and is_supported_supplier_url(item_url)
         )
         if not direct_batch:
             try:
@@ -1042,7 +1047,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                         logger.debug(f"[detail] HTTP recovery after Botarus failed for {item_url}: {http_exc}")
 
         # Every supplier keeps the fast Safari HTTP request primary. If the
-        # detail response is blocked, transient, or omits the SKU, retry the
+        # detail response is blocked or transient, retry the
         # same URL in a bounded browser slot. A confirmed 404/410 is treated
         # as unavailable and is never turned into a fabricated identifier.
         per_url_browser_fallback = not (browser_batch_enabled and _is_mobilesentrix_detail_engine(engine_type) and is_supported_supplier_url(item_url))
@@ -1056,6 +1061,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 'mobilesentrix_last_status',
                 'xcell_last_status',
                 'txparts_last_status',
+                'parts4cells_last_status',
                 'phonelcdparts_last_status',
                 'gadgetfix_last_status',
             ):
@@ -1075,12 +1081,11 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 )
             )
             missing_sku = not str(getattr(enriched, 'sku', '') or '').strip()
+            allow_missing_sku_browser = str(os.getenv('SCRAPER_BROWSER_FALLBACK_ON_MISSING_SKU') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
             retry_missing_sku = missing_sku and (
-                item_requires_sku(enriched)
-                or (is_supported_supplier_url(item_url) and status_code != 200)
+                (status_code != 200 and item_requires_sku(enriched))
+                or allow_missing_sku_browser
             )
-            if str(os.getenv('SCRAPER_BROWSER_FALLBACK_ON_MISSING_SKU') or '').strip().lower() in {'1', 'true', 'yes', 'on'}:
-                retry_missing_sku = missing_sku
             needs_alternate_method = (not prefer_browser_first) and status_code not in {404, 410} and (browser_retryable_error or retry_missing_sku)
             if needs_alternate_method:
                 try:
@@ -1120,6 +1125,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                     'mobilesentrix_last_error',
                     'xcell_last_error',
                     'txparts_last_error',
+                    'parts4cells_last_error',
                     'phonelcdparts_last_error',
                     'gadgetfix_last_error',
                 ):
@@ -3064,18 +3070,20 @@ def execute_scrape_workflow(
                         sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl)
                     for attempt in range(2):
                         try:
-                            # Retry a failed target inside this run. HTTP-first
-                            # recovery also helps when a rendered page is blocked.
-                            with browser_fetch_mode(url_browser_mode if attempt == 0 else False):
+                            # Retry a failed target inside this run. Alternate
+                            # transport recovery helps when a page requires alternate fetch.
+                            with browser_fetch_mode(url_browser_mode if attempt == 0 else (not url_browser_mode)):
                                 scraped_items = scrape_url_fn(sess, url, rules, crawl_pagination, max_pages, effective_delay_ms if effective_delay_ms is not None else delay_ms, app.logger)
+                            had_error = any(getattr(item, 'source', '') == 'error' for item in scraped_items)
+                            had_session_error = any(getattr(sess, key, '') for key in (
+                                'xcell_last_error', 'gadgetfix_last_error', 'mobilesentrix_last_error',
+                                'txparts_last_error', 'parts4cells_last_error', 'phonelcdparts_last_error',
+                                'xcell_incomplete',
+                            ))
                             failed = (
-                                not _count_valid_items(scraped_items)
-                                or any(getattr(item, 'source', '') == 'error' for item in scraped_items)
-                                or any(getattr(sess, key, '') for key in (
-                                    'xcell_last_error', 'gadgetfix_last_error', 'mobilesentrix_last_error',
-                                    'txparts_last_error', 'parts4cells_last_error', 'phonelcdparts_last_error',
-                                    'xcell_incomplete',
-                                ))
+                                had_error
+                                or had_session_error
+                                or _count_valid_items(scraped_items) == 0
                             )
                             if not failed or attempt == 1:
                                 break
