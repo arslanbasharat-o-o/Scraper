@@ -142,7 +142,7 @@ def _get_scraper_proxy() -> str | None:
     return proxy if proxy else None
 
 
-def build_session(retries: int = 1, verify_ssl: bool = True, use_curl: bool = True):
+def build_session(retries: int = 1, verify_ssl: bool = True, use_curl: bool = True, impersonate: str = "safari17_0"):
     """
     Build HTTP session with retries and proper headers.
     Returns (session, is_curl_session)
@@ -160,7 +160,7 @@ def build_session(retries: int = 1, verify_ssl: bool = True, use_curl: bool = Tr
     if use_curl and HAS_CURL:
         try:
             with _CURL_LOCK:
-                s = curl_requests.Session(impersonate="safari17_0", proxy=proxy) if proxy else curl_requests.Session(impersonate="safari17_0")
+                s = curl_requests.Session(impersonate=impersonate, proxy=proxy) if proxy else curl_requests.Session(impersonate=impersonate)
             s.headers.update(headers)
             s.verify = verify_ssl
             s.timeout = 30
@@ -245,6 +245,19 @@ def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
         # even when the challenge body is returned with HTTP 200.
         cf_challenge = str(response_headers.get('cf-mitigated') or '').strip().lower() == 'challenge'
         blocked = cf_challenge or _looks_like_antibot_challenge(status_code, html)
+        if blocked and HAS_CURL:
+            # Fast alternate Safari TLS recovery before expensive browser fallback
+            for alt_imp in ('safari18_0', 'safari15_5'):
+                try:
+                    alt_sess, _ = build_session(retries=0, verify_ssl=getattr(sess, 'verify', True), use_curl=True, impersonate=alt_imp)
+                    alt_r = alt_sess.get(url, timeout=timeout, allow_redirects=True)
+                    alt_code = int(getattr(alt_r, 'status_code', 0) or 0)
+                    alt_html = getattr(alt_r, 'text', '') or ''
+                    if alt_code == 200 and not _looks_like_antibot_challenge(alt_code, alt_html):
+                        _set_fetch_metadata(sess, status_code=200, final_url=str(getattr(alt_r, 'url', '') or url), blocked=False)
+                        return (str(getattr(alt_r, 'url', '') or url), alt_html)
+                except Exception:
+                    pass
         _set_fetch_metadata(sess, status_code=status_code, final_url=final_url, blocked=blocked)
         if blocked:
             if should_use_browser_fetch() or _browser_fallback_enabled():
