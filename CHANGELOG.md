@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.5.2] - 2026-09-17
+- Fix PhoneLCDParts parent-child category attribution where subcategory products were attributed to parent landing pages, causing sparse target anomaly guard rejections.
+- Implement two-pass target resolution supporting `.html` normalization and hyphenated model/year slug variations (e.g., `ipad-pro-12-9-5th-2021` vs `ipad-pro-12-9-5th`, `iphone-12-pro` vs `iphone-12-pro-6-1`).
+- Preserve specific child `target_url`s during SQLite upserts in `append_automation_run_items`.
+- Implement automated SKU extraction fallback from title and URL slugs in `phonelcdparts_scraper_engine.py` for listing cards missing DOM SKU attributes, achieving 100% SKU coverage.
+- Harden resume workflow target completion against false drops on empty categories and prevent re-querying complete checkpoints.
+
 ## [8.5.1] - 2026-09-17
 - Upgrade MobileSentrix session engine to Safari 17.0 TLS impersonation with matching headers, eliminating Cloudflare HTTP 403 access blocks and restoring ~300ms category response times.
 - Ensure Phase 1 category crawling for MobileSentrix operates HTTP-first at full thread concurrency without forcing Botasaurus browser verification timeouts or single-window semaphore queue stalls.
