@@ -556,3 +556,22 @@ def test_gadgetfix_product_detail_uses_metadata_when_h1_is_empty(monkeypatch):
     assert item.title == "Incell Display for iPhone 15"
     assert item.sku == "10269"
     assert item.original == 18.95
+
+
+def test_supplier_fetch_failures_are_visible_to_completeness_guard(monkeypatch):
+    from scrapers import parts4cells_scraper_engine
+    from scrapers.browser_fetcher import browser_fetch_mode
+    cases = [
+        (txparts_scraper_engine, 'txparts', lambda mod, session: mod.get_html(session, 'https://example.test/category?p=2')),
+        (phonelcdparts_scraper_engine, 'phonelcdparts', lambda mod, session: mod.get_html(session, 'https://example.test/category?p=2')),
+        (parts4cells_scraper_engine, 'parts4cells', lambda mod, session: mod._fetch('https://example.test/category?p=2', session=session)),
+    ]
+    for module, prefix, fetch in cases:
+        monkeypatch.setattr(parts4cells_scraper_engine.time, 'sleep', lambda *_: None)
+        session = SimpleNamespace(get=lambda *_args, **_kwargs: SimpleNamespace(status_code=503, text='Unavailable'))
+        with browser_fetch_mode(False):
+            assert fetch(module, session) is None
+            assert '?p=2' in getattr(session, prefix + '_last_error')
+            session.get = lambda *_args, **_kwargs: SimpleNamespace(status_code=200, text='<html><body>Product category</body></html>')
+            assert fetch(module, session)
+            assert getattr(session, prefix + '_last_error') == ''

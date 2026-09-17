@@ -179,6 +179,8 @@ def _looks_like_block_page(html: str) -> bool:
 
 def get_html(session, url: str, logger=None) -> Optional[str]:
     """Fetch HTML with Safari TLS curl_cffi session, fallback to browser if blocked."""
+    if session is not None:
+        session.phonelcdparts_last_error = ""
     if browser_fetch_requested():
         return fetch_html_with_browser(url, logger=logger).html
     if session is not None:
@@ -199,6 +201,8 @@ def get_html(session, url: str, logger=None) -> Optional[str]:
         except Exception as exc:
             if logger:
                 logger.warning(f"[phonelcdparts] Fetch failed for {url}: {exc}")
+    if session is not None:
+        session.phonelcdparts_last_error = f"Failed to fetch {url}: blocked, empty, or unsuccessful response"
     return None
 
 

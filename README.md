@@ -30,7 +30,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 Copy-Item .env.local-10gb.example .env  # local 10 GB workstation
-# Hostinger 40 GB deployments should use .env.server-40gb.example instead.
+# Server deployments can start from .env.example and tune for their hardware.
 ```
 
 Edit `.env` before running in production. At minimum, set a strong `SECRET_KEY` and admin credentials.

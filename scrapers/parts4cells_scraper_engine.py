@@ -128,6 +128,8 @@ def _looks_like_block_page(html: str) -> bool:
 
 def _fetch(url: str, session=None, logger=None) -> Optional[str]:
     """Fetch Parts4Cells HTTP-first, with the bounded browser fallback."""
+    if session is not None:
+        session.parts4cells_last_error = ""
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -159,6 +161,8 @@ def _fetch(url: str, session=None, logger=None) -> Optional[str]:
         except Exception as exc:
             if logger:
                 logger.warning("[parts4cells] Browser fallback failed for %s: %s", url, exc)
+    if session is not None:
+        session.parts4cells_last_error = f"Failed to fetch {url}: blocked, empty, or unsuccessful response"
     return None
 
 

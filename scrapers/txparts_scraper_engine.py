@@ -275,6 +275,8 @@ def _looks_like_block_page(html: str) -> bool:
 def get_html(session, url: str) -> Optional[str]:
     """Fetch HTML with Safari TLS curl_cffi session, fallback to browser if blocked."""
     if session is not None:
+        session.txparts_last_error = ""
+    if session is not None:
         session.txparts_last_status = 0
     if browser_fetch_requested():
         result = fetch_html_with_browser(url)
@@ -296,6 +298,8 @@ def get_html(session, url: str) -> Optional[str]:
                 return browser_html
         except Exception as exc:
             print(f"[txparts] Fetch failed for {url}: {exc}")
+    if session is not None:
+        session.txparts_last_error = f"Failed to fetch {url}: blocked, empty, or unsuccessful response"
     return None
 
 

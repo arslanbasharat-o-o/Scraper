@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 
 # Keep the audit isolated from the developer's live database.
 os.environ.setdefault("DATABASES_DIR", str(ROOT / ".tmp" / "live-audit-dbs"))
+os.environ.setdefault("AUTOMATION_SCHEDULER_DISABLED", "1")
 os.environ.setdefault("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
 os.environ.setdefault("SCRAPER_LOCAL_BROWSER_MAX_WINDOWS", "1")
 os.environ.setdefault("SCRAPER_LOCAL_BROWSER_WAIT_SECONDS", "0.3")
@@ -45,7 +46,7 @@ TEST_CATEGORIES = [
     ("TXParts US", "https://txparts.com/shop/iphone"),
     ("TXParts Canada", "https://txpartscanada.ca/shop/iphone-15"),
     ("Parts4Cells", "https://parts4cells.com/apple/iphone.html"),
-    ("PhoneLCDParts", "https://www.phonelcdparts.com/apple/iphone-parts/iphone-17e/lcd-assembly-for-iphone-16e-aftermarket-incell-qv6-ic-transfer-eligible-16e-qv6-inc"),
+    ("PhoneLCDParts", "https://www.phonelcdparts.com/apple/iphone-parts/all-iphone-screens"),
     ("GadgetFix", "https://gadgetfix.com/category/iphone-1559.html"),
 ]
 
@@ -62,15 +63,23 @@ ENGINE_MODULES = {
 
 def _scrape_category(module, url: str, rules: dict):
     session, _ = module.build_session(retries=1, verify_ssl=True, use_curl=True)
+    pages = max(1, int(os.getenv("LIVE_TEST_PAGES", "1")))
+    browser_only = os.getenv("LIVE_TEST_BROWSER", "0") == "1"
     try:
-        with browser_fetch_mode(False):
-            items = module.scrape_url(session, url, rules, False, 1, 0, None)
-        if items:
-            return items, "HTTP/Safari"
+        with browser_fetch_mode(browser_only):
+            items = module.scrape_url(session, url, rules, pages > 1, pages, 0, None)
+        errors = [str(getattr(session, key, '') or '') for key in (
+            'mobilesentrix_last_error', 'xcell_last_error', 'txparts_last_error',
+            'parts4cells_last_error', 'phonelcdparts_last_error', 'gadgetfix_last_error',
+        )]
+        if any(getattr(item, 'title', '') for item in items) and any(errors):
+            raise RuntimeError('; '.join(error for error in errors if error))
+        if any(getattr(item, "title", "") for item in items):
+            return items, "Browser requested" if browser_only else "HTTP-first (fallback allowed)"
         # A category page can be challenged even when detail pages work. This
         # explicit retry still proves HTTP was attempted first.
         with browser_fetch_mode(True):
-            return module.scrape_url(session, url, rules, False, 1, 0, None), "Browser fallback"
+            return module.scrape_url(session, url, rules, pages > 1, pages, 0, None), "Browser fallback"
     finally:
         if session is not None and hasattr(session, "close"):
             try:
@@ -93,6 +102,8 @@ def main() -> int:
         site_label = SCRAPER_CONFIG.get(key, {}).get("label", key)
         try:
             items, crawl_transport = _scrape_category(module, url, rules)
+            if any(getattr(item, "source", "") == "error" for item in items):
+                raise RuntimeError("one or more category pages failed")
             candidates = [item for item in items if getattr(item, "title", "") and getattr(item, "url", "")][:limit]
             if not candidates:
                 raise RuntimeError("category returned no usable products")
@@ -116,7 +127,7 @@ def main() -> int:
             status = "PASS" if passed else "FAIL"
             print(
                 f"[{index}/{len(TEST_CATEGORIES)}] {status} {label} ({site_label}) "
-                f"crawl={crawl_transport}, products={summary['sku_total']}, "
+                f"crawl={crawl_transport}, listing_items={len(items)}, products={summary['sku_total']}, "
                 f"sku={summary['sku_found']}, not_published={summary['sku_not_published']}, "
                 f"unavailable={summary['sku_unavailable']}, unresolved={summary['sku_unresolved']}, "
                 f"elapsed={time.time() - started:.1f}s"

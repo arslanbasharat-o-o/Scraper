@@ -18,6 +18,7 @@ from app import (  # noqa: E402
     build_automation_run_summary,
     db_manager,
     execute_scrape_workflow,
+    is_usable_scraped_item,
     make_automation_run_stop_checker,
     save_automation_partial_history,
     validate_supplier_remote_urls,
@@ -104,6 +105,12 @@ def resume_run(run_id: int) -> int:
         if checkpoint_items:
             base_preview_items = checkpoint_items
             base_items_count = len(checkpoint_items)
+        # Older versions marked failed/empty targets completed. Without any
+        # saved products there is no checkpoint to resume past those targets.
+        if not any(is_usable_scraped_item(item) for item in base_preview_items):
+            completed_target_urls = []
+            base_completed_targets = 0
+            base_items_count = 0
     completed_target_keys = {
         str(url or "").strip().rstrip("/").lower()
         for url in completed_target_urls

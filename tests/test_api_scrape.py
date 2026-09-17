@@ -1368,3 +1368,93 @@ def test_spawn_automation_run_worker_selects_sku_backfill_script(tmp_path, monke
     assert success_std is True
     assert str(standard_script) in popen_cmds[1]
     assert str(standard_run["id"]) in popen_cmds[1]
+
+@pytest.mark.parametrize('parallel', [False, True])
+@pytest.mark.parametrize('failure', ['empty', 'partial', 'exception'])
+def test_failed_targets_are_retryable_and_never_saved_as_complete(tmp_path, monkeypatch, parallel, failure):
+    from types import SimpleNamespace
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    good = 'https://www.mobilesentrix.com/good'
+    bad = 'https://www.mobilesentrix.com/bad'
+    completed, closed, checkpoints = [], [], []
+    monkeypatch.setattr(app_module.db_manager, 'get_automation_run', lambda *_: {})
+    monkeypatch.setattr(app_module.db_manager, 'mark_automation_run_target_completed', lambda _, url: completed.append(url))
+    monkeypatch.setattr(app_module.db_manager, 'append_automation_run_items', lambda _, rows: checkpoints.extend(rows) or len(rows))
+    monkeypatch.setattr(app_module, 'build_session', lambda **_: (SimpleNamespace(close=lambda: closed.append(True)), False))
+
+    def item(url, title='Screen', source='listing'):
+        return app_module.Item(url=url, site='www.mobilesentrix.com', title=title,
+            price_value=10, price_currency='USD', price_text='fetch_failed: page two blocked' if source == 'error' else '$10',
+            discounted_value=10, discounted_formatted='$10', original_formatted='$10', source=source, image_url='', sku='SKU-1')
+
+    def scrape(_session, url, *_args):
+        if url == good:
+            return [item(url + '/product')]
+        if failure == 'exception':
+            raise RuntimeError('connection lost')
+        if failure == 'partial':
+            return [item(url + '/product'), item(url + '?p=2', '', 'error')]
+        return []
+
+    monkeypatch.setattr(app_module, 'scrape_url', scrape)
+    result = app_module.execute_scrape_workflow([good, bad], use_browser=False,
+        use_parallel=parallel, enrich_details=False, automation_job={'_active_run_id': 123})
+    assert completed == [good]
+    assert len(closed) == 2
+    assert checkpoints
+    assert result['history_saved'] is False
+    assert result['error']
+    assert result['target_errors'][0]['url'] == bad
+    assert app_module.db_manager.get_history_list(limit=10) == []
+
+
+def test_first_run_rejects_fetch_errors_even_without_baseline_guard(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_module, 'baseline_protection_enabled', lambda: False)
+    result = app_module.validate_scrape_completeness(['https://example.com'], [], None,
+        [{'url': 'https://example.com', 'error': 'page two failed'}])
+    assert result['approved'] is False
+
+
+def test_failed_browser_target_recovers_in_same_run(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from scrapers.browser_fetcher import browser_fetch_requested
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    modes, closed = [], []
+    monkeypatch.setattr(app_module, 'build_session', lambda **_: (SimpleNamespace(close=lambda: closed.append(True)), False))
+    def scrape(_session, url, *_args):
+        modes.append(browser_fetch_requested())
+        if len(modes) == 1:
+            raise RuntimeError('browser verification page')
+        return [app_module.Item(url=url + '/product', site='www.mobilesentrix.com', title='Screen',
+            price_value=10, price_currency='USD', price_text='$10', discounted_value=10,
+            discounted_formatted='$10', original_formatted='$10', source='listing', image_url='', sku='SKU-1')]
+    monkeypatch.setattr(app_module, 'scrape_url', scrape)
+    monkeypatch.setattr(app_module, 'enrich_scraped_items', lambda items, *_args, **_kwargs: (items, 0))
+    result = app_module.execute_scrape_workflow(['https://www.mobilesentrix.com/example'],
+        use_browser=True, enrich_details=False)
+    assert modes == [True, False]
+    assert closed == [True]
+    assert result['history_saved'] is True
+    assert not result['target_errors']
+
+
+def test_resume_retries_legacy_completed_markers_without_products(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    url = 'https://www.mobilesentrix.com/replacement-parts/apple/iphone-parts/iphone-15'
+    job = app_module.db_manager.save_automation_job({
+        'name': 'Legacy empty checkpoint', 'scraper_key': 'standard', 'category_query': 'iphone',
+        'root_url': 'https://www.mobilesentrix.com/', 'interval_minutes': 1440, 'enabled': False,
+    }, targets=[{'label': 'iPhone 15', 'url': url, 'active': True}])
+    run = app_module.db_manager.create_automation_run(job['id'], trigger_type='manual', target_urls=[url])
+    app_module.db_manager.mark_automation_run_target_completed(run['id'], url)
+    sys.modules.pop('scripts.resume_automation_run', None)
+    resume = importlib.import_module('scripts.resume_automation_run')
+    observed = {}
+    def workflow(urls, **kwargs):
+        observed.update(kwargs)
+        raise app_module.AutomationRunPaused('Test stops before network access')
+    monkeypatch.setattr(resume, 'execute_scrape_workflow', workflow)
+    assert resume.resume_run(run['id']) == 0
+    assert observed['skip_target_urls'] == []
+    assert observed['initial_items'] == []

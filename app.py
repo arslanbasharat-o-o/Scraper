@@ -2511,6 +2511,14 @@ def validate_scrape_completeness(
         'target_anomalies': [],
         'target_errors': list(target_errors or [])[:50],
     }
+    # Transport/pagination failures invalidate even the first run. Baseline
+    # thresholds only apply to count changes in otherwise successful crawls.
+    if target_errors:
+        validation['approved'] = False
+        validation['status'] = 'Rejected by Validation'
+        validation['reasons'].append(
+            f'{len(target_errors)} target(s) did not finish scraping successfully.'
+        )
     if not baseline_protection_enabled() or not previous_history:
         return validation
 
@@ -2883,7 +2891,7 @@ def execute_scrape_workflow(
                 app.logger.warning(f"[detail] Cache hydration error: {cache_exc}")
         return target_items
 
-    def _report_progress(target_url: str, scraped_items) -> None:
+    def _report_progress(target_url: str, scraped_items, *, succeeded: bool = True) -> None:
         valid_items_count = _count_valid_items(scraped_items)
         preview_items = [
             serialize_scraped_item(item)
@@ -2897,9 +2905,10 @@ def execute_scrape_workflow(
                     preview_items,
                 )
                 progress_state['checkpoint_items'] += persisted_count
-            if active_run_id_for_progress > 0:
+            if succeeded and active_run_id_for_progress > 0:
                 db_manager.mark_automation_run_target_completed(active_run_id_for_progress, target_url)
-            progress_state['completed_targets'] += 1
+            if succeeded:
+                progress_state['completed_targets'] += 1
             progress_state['items_found'] += valid_items_count
             if preview_items and len(progress_state['preview_items']) < AUTOMATION_CHECKPOINT_ITEM_LIMIT:
                 remaining = AUTOMATION_CHECKPOINT_ITEM_LIMIT - len(progress_state['preview_items'])
@@ -2953,41 +2962,84 @@ def execute_scrape_workflow(
         def _scrape_single(url: str):
             _check_stop()
             url_browser_mode = bool(use_browser) if use_browser is not None else url_prefers_botarus(url)
-            with browser_fetch_mode(url_browser_mode):
-                if uses_curl:
-                    sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl, use_curl=True)
-                else:
-                    sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl)
-                scraped_items = scrape_url_fn(sess, url, rules, crawl_pagination, max_pages, effective_delay_ms if effective_delay_ms is not None else delay_ms, app.logger)
-                cookie_jar = getattr(sess, 'cookies', None)
-                if cookie_jar is not None:
+            sess = None
+            try:
+                with browser_fetch_mode(url_browser_mode):
+                    if uses_curl:
+                        sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl, use_curl=True)
+                    else:
+                        sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl)
+                    for attempt in range(2):
+                        try:
+                            # Retry a failed target inside this run. HTTP-first
+                            # recovery also helps when a rendered page is blocked.
+                            with browser_fetch_mode(url_browser_mode if attempt == 0 else False):
+                                scraped_items = scrape_url_fn(sess, url, rules, crawl_pagination, max_pages, effective_delay_ms if effective_delay_ms is not None else delay_ms, app.logger)
+                            failed = (
+                                not _count_valid_items(scraped_items)
+                                or any(getattr(item, 'source', '') == 'error' for item in scraped_items)
+                                or any(getattr(sess, key, '') for key in (
+                                    'xcell_last_error', 'gadgetfix_last_error', 'mobilesentrix_last_error',
+                                    'txparts_last_error', 'parts4cells_last_error', 'phonelcdparts_last_error',
+                                    'xcell_incomplete',
+                                ))
+                            )
+                            if not failed or attempt == 1:
+                                break
+                        except AutomationRunPaused:
+                            raise
+                        except Exception:
+                            if attempt == 1:
+                                raise
+                        _check_stop()
+                        app.logger.warning('[engine] Retrying incomplete target with HTTP-first recovery: %s', url)
+                    cookie_jar = getattr(sess, 'cookies', None)
+                    if cookie_jar is not None:
+                        try:
+                            if hasattr(cookie_jar, 'get_dict'):
+                                cookie_snapshot = dict(cookie_jar.get_dict() or {})
+                            elif hasattr(cookie_jar, 'items'):
+                                cookie_snapshot = dict(cookie_jar.items())
+                            else:
+                                cookie_snapshot = {}
+                            if cookie_snapshot:
+                                scraper_key, _ = get_scraper_for_url(url)
+                                with session_cookies_lock:
+                                    session_cookies_by_engine[scraper_key] = cookie_snapshot
+                        except Exception:
+                            pass
+                annotate_items_with_target(scraped_items, url, _target_label_for(url), automation_job)
+                _check_stop()
+                _enrich_target_items_if_needed(scraped_items, sess)
+                blocked = bool(getattr(sess, 'xcell_blocked', False) or getattr(sess, 'gadgetfix_blocked', False))
+                last_error = str(
+                    getattr(sess, 'xcell_last_error', '')
+                    or getattr(sess, 'gadgetfix_last_error', '')
+                    or getattr(sess, 'mobilesentrix_last_error', '')
+                    or getattr(sess, 'txparts_last_error', '')
+                    or getattr(sess, 'parts4cells_last_error', '')
+                    or getattr(sess, 'phonelcdparts_last_error', '')
+                    or ''
+                )
+                page_errors = [
+                    str(getattr(item, 'price_text', '') or 'A page failed to scrape.')
+                    for item in scraped_items or []
+                    if getattr(item, 'source', '') == 'error'
+                ]
+                if page_errors:
+                    last_error = '; '.join(page_errors)
+                diagnostics = {
+                    'xcell_incomplete': bool(getattr(sess, 'xcell_incomplete', False)),
+                    'xcell_page_stats': list(getattr(sess, 'xcell_page_stats', []) or []),
+                    'fetch_incomplete': bool(page_errors or last_error),
+                }
+                return url, scraped_items, local_using_curl, blocked, last_error, diagnostics
+            finally:
+                if sess is not None and callable(getattr(sess, "close", None)):
                     try:
-                        if hasattr(cookie_jar, 'get_dict'):
-                            cookie_snapshot = dict(cookie_jar.get_dict() or {})
-                        elif hasattr(cookie_jar, 'items'):
-                            cookie_snapshot = dict(cookie_jar.items())
-                        else:
-                            cookie_snapshot = {}
-                        if cookie_snapshot:
-                            scraper_key, _ = get_scraper_for_url(url)
-                            with session_cookies_lock:
-                                session_cookies_by_engine[scraper_key] = cookie_snapshot
+                        sess.close()
                     except Exception:
-                        pass
-            annotate_items_with_target(scraped_items, url, _target_label_for(url), automation_job)
-            _check_stop()
-            _enrich_target_items_if_needed(scraped_items, sess)
-            blocked = bool(getattr(sess, 'xcell_blocked', False) or getattr(sess, 'gadgetfix_blocked', False))
-            last_error = str(
-                getattr(sess, 'xcell_last_error', '')
-                or getattr(sess, 'gadgetfix_last_error', '')
-                or ''
-            )
-            diagnostics = {
-                'xcell_incomplete': bool(getattr(sess, 'xcell_incomplete', False)),
-                'xcell_page_stats': list(getattr(sess, 'xcell_page_stats', []) or []),
-            }
-            return url, scraped_items, local_using_curl, blocked, last_error, diagnostics
+                        app.logger.debug("Could not close scraper session for %s", url, exc_info=True)
 
         if use_parallel and not force_sequential and len(batch_urls) > 1:
             executor = ThreadPoolExecutor(max_workers=min(max_workers, len(batch_urls)))
@@ -2999,8 +3051,11 @@ def execute_scrape_workflow(
                         source_url, scraped_items, local_using_curl, _blocked, _last_error, _diagnostics = future.result()
                         using_curl = using_curl or bool(local_using_curl)
                         items.extend(scraped_items)
-                        _report_progress(source_url, scraped_items)
-                        if _diagnostics.get('xcell_incomplete'):
+                        succeeded = bool(_count_valid_items(scraped_items)) and not (
+                            _diagnostics.get('xcell_incomplete') or _diagnostics.get('fetch_incomplete')
+                        )
+                        _report_progress(source_url, scraped_items, succeeded=succeeded)
+                        if _diagnostics.get('xcell_incomplete') or _diagnostics.get('fetch_incomplete'):
                             target_fetch_errors.append({
                                 'url': source_url,
                                 'engine': engine_name,
@@ -3019,7 +3074,10 @@ def execute_scrape_workflow(
                                 'engine': engine_name,
                                 'error': 'No usable products were returned for this target.',
                             })
-                        app.logger.info(f"[engine] Completed scraping {source_url}: {_count_valid_items(scraped_items)} items")
+                        if succeeded:
+                            app.logger.info(f"[engine] Completed scraping {source_url}: {_count_valid_items(scraped_items)} items")
+                        else:
+                            app.logger.warning(f"[engine] Incomplete target {source_url}: {_count_valid_items(scraped_items)} usable items; target remains retryable")
                     except AutomationRunPaused:
                         for pending_future in future_to_url:
                             pending_future.cancel()
@@ -3035,7 +3093,7 @@ def execute_scrape_workflow(
                         failed_items = _make_failed_item(url, exc)
                         annotate_items_with_target(failed_items, url, _target_label_for(url), automation_job)
                         items.extend(failed_items)
-                        _report_progress(url, [])
+                        _report_progress(url, [], succeeded=False)
             except AutomationRunPaused:
                 for pending_future in future_to_url:
                     pending_future.cancel()
@@ -3049,8 +3107,11 @@ def execute_scrape_workflow(
                     source_url, scraped_items, local_using_curl, blocked, last_error, diagnostics = _scrape_single(url)
                     using_curl = using_curl or bool(local_using_curl)
                     items.extend(scraped_items)
-                    _report_progress(source_url, scraped_items)
-                    if diagnostics.get('xcell_incomplete'):
+                    succeeded = bool(_count_valid_items(scraped_items)) and not (
+                        diagnostics.get('xcell_incomplete') or diagnostics.get('fetch_incomplete')
+                    )
+                    _report_progress(source_url, scraped_items, succeeded=succeeded)
+                    if diagnostics.get('xcell_incomplete') or diagnostics.get('fetch_incomplete'):
                         target_fetch_errors.append({
                             'url': source_url,
                             'engine': engine_name,
@@ -3069,7 +3130,10 @@ def execute_scrape_workflow(
                             'engine': engine_name,
                             'error': 'No usable products were returned for this target.',
                         })
-                    app.logger.info(f"[engine] Completed scraping {source_url}: {_count_valid_items(scraped_items)} items")
+                    if succeeded:
+                        app.logger.info(f"[engine] Completed scraping {source_url}: {_count_valid_items(scraped_items)} items")
+                    else:
+                        app.logger.warning(f"[engine] Incomplete target {source_url}: {_count_valid_items(scraped_items)} usable items; target remains retryable")
                     if blocked and stop_on_block:
                         app.logger.warning(
                             f"[engine] Stopping {engine_name} batch after site block: {last_error or source_url}"
@@ -3087,7 +3151,7 @@ def execute_scrape_workflow(
                     failed_items = _make_failed_item(url, exc)
                     annotate_items_with_target(failed_items, url, _target_label_for(url), automation_job)
                     items.extend(failed_items)
-                    _report_progress(url, [])
+                    _report_progress(url, [], succeeded=False)
 
     xcell_urls = []
     txparts_urls = []
