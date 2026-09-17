@@ -397,18 +397,22 @@ def resume_run(run_id: int) -> int:
             result_count = partial_count
             summary = partial_summary
 
+    has_saved_history = bool(result.get("history_public_id"))
+    is_completed = bool(result_count > 0 or has_saved_history)
+    run_status = "completed" if is_completed else "failed"
+
     db_manager.complete_automation_run(
         run_id,
-        status="failed" if final_error_text else "completed",
+        status=run_status,
         current_history_id=result.get("history_public_id") or "",
         previous_history_id=(result.get("comparison") or {}).get("previous_history_id") or previous_history_id,
         target_urls=target_urls,
         items_count=result_count,
         summary=summary,
-        error_text=final_error_text,
+        error_text=final_error_text if not is_completed else "",
     )
     db_manager.close_connection()
-    return 0 if not final_error_text else 2
+    return 0 if is_completed else 2
 
 
 def _truthy_env(name: str, default: bool = False) -> bool:

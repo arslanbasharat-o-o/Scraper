@@ -1,5 +1,11 @@
 # Changelog
 
+## [8.5.3] - 2026-09-17
+- Fix scrape completeness validation for large catalog crawls: allow legitimate empty categories and non-fatal target errors below the configured threshold (`SCRAPER_MAX_TARGET_ERROR_RATIO`) to complete without rejecting the run or pausing scheduled jobs.
+- Only reject validation if zero comparable products were scraped or if failed targets exceed the allowable error threshold.
+- Update automation run completion in `scripts/resume_automation_run.py`: mark runs with scraped products/saved history as `completed` with exit code 0, ensuring recurring job schedules remain active and up-to-date.
+- Maintain full compatibility with baseline safeguards, regression test suites, and multi-supplier crawl pipelines.
+
 ## [8.5.2] - 2026-09-17
 - Fix PhoneLCDParts parent-child category attribution where subcategory products were attributed to parent landing pages, causing sparse target anomaly guard rejections.
 - Implement two-pass target resolution supporting `.html` normalization and hyphenated model/year slug variations (e.g., `ipad-pro-12-9-5th-2021` vs `ipad-pro-12-9-5th`, `iphone-12-pro` vs `iphone-12-pro-6-1`).

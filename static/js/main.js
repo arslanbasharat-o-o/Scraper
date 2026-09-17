@@ -1,5 +1,5 @@
 /**
- * Parts Extractor v8.5.2 - main.js
+ * Parts Extractor v8.5.3 - main.js
  * Single source of truth for all UI logic, filtering, scraping, exports.
  */
 

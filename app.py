@@ -53,7 +53,7 @@ from automation_service import discover_category_targets
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.5.2'
+APP_VERSION = '8.5.3'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -2593,15 +2593,26 @@ def validate_scrape_completeness(
         'target_anomalies': [],
         'target_errors': list(target_errors or [])[:50],
     }
-    # Transport/pagination failures invalidate even the first run. Baseline
-    # thresholds only apply to count changes in otherwise successful crawls.
-    if target_errors:
+    # Transport/pagination failures invalidate if zero items were scraped,
+    # or if target errors exceed acceptable thresholds.
+    if not current_snapshots and target_errors:
         validation['approved'] = False
         validation['status'] = 'Rejected by Validation'
         validation['reasons'].append(
-            f'{len(target_errors)} target(s) did not finish scraping successfully.'
+            f'Current scrape returned zero comparable products and {len(target_errors)} target(s) did not finish scraping successfully.'
         )
     if not baseline_protection_enabled() or not previous_history:
+        if target_errors:
+            failed_target_count = len(target_errors)
+            total_target_count = max(1, len(urls or []))
+            max_err_ratio = parse_guard_float('SCRAPER_MAX_TARGET_ERROR_RATIO', 0.10, lower=0.0, upper=1.0)
+            allowed_errors = int(max_err_ratio * total_target_count)
+            if failed_target_count > allowed_errors:
+                validation['approved'] = False
+                validation['status'] = 'Rejected by Validation'
+                validation['reasons'].append(
+                    f'{failed_target_count} target(s) did not finish scraping successfully.'
+                )
         return validation
 
     previous_count = len(previous_snapshots)
@@ -2611,7 +2622,7 @@ def validate_scrape_completeness(
 
     max_drop_ratio = parse_guard_float('SCRAPER_MAX_TOTAL_DROP_RATIO', 0.03, lower=0.0, upper=0.95)
     max_drop_items = parse_guard_int('SCRAPER_MAX_TOTAL_DROP_ITEMS', 100, lower=1)
-    max_target_error_ratio = parse_guard_float('SCRAPER_MAX_TARGET_ERROR_RATIO', 0.0, lower=0.0, upper=1.0)
+    max_target_error_ratio = parse_guard_float('SCRAPER_MAX_TARGET_ERROR_RATIO', 0.10, lower=0.0, upper=1.0)
     min_target_previous = parse_guard_int('SCRAPER_TARGET_DROP_MIN_PREVIOUS', 10, lower=1)
     target_drop_ratio = parse_guard_float('SCRAPER_TARGET_DROP_RATIO', 0.50, lower=0.01, upper=0.99)
 
@@ -3141,7 +3152,7 @@ def execute_scrape_workflow(
                             target_fetch_errors.append({
                                 'url': source_url,
                                 'engine': engine_name,
-                                'error': _last_error or 'XCell pagination did not finish cleanly.',
+                                'error': _last_error or 'Pagination or target fetch did not finish cleanly.',
                                 'diagnostics': _diagnostics,
                             })
                         elif _last_error and not _count_valid_items(scraped_items):
@@ -3197,7 +3208,7 @@ def execute_scrape_workflow(
                         target_fetch_errors.append({
                             'url': source_url,
                             'engine': engine_name,
-                            'error': last_error or 'XCell pagination did not finish cleanly.',
+                            'error': last_error or 'Pagination or target fetch did not finish cleanly.',
                             'diagnostics': diagnostics,
                         })
                     elif last_error and not _count_valid_items(scraped_items):
