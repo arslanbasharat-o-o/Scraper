@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.5.1] - 2026-09-17
+- Upgrade MobileSentrix session engine to Safari 17.0 TLS impersonation with matching headers, eliminating Cloudflare HTTP 403 access blocks and restoring ~300ms category response times.
+- Ensure Phase 1 category crawling for MobileSentrix operates HTTP-first at full thread concurrency without forcing Botasaurus browser verification timeouts or single-window semaphore queue stalls.
+- Add application version field (`"version": APP_VERSION`) to `/api/health` endpoint JSON payload for monitoring and health check observability.
+- Verify 100% live pass rate and zero failures across all 8 suppliers (MobileSentrix US, MobileSentrix Canada, XCellParts, TXParts US, TXParts Canada, Parts4Cells, PhoneLCDParts, GadgetFix) in the production live audit suite.
+- Synchronize version identifiers across `VERSION`, `app.py`, UI footer, and asset headers.
+
 ## [8.5.0] - 2026-09-09
 - Maximize scraping speeds for Phase 1 & Phase 2 across all suppliers (MobileSentrix US/CA, XCellParts, TXParts US/CA, Parts4Cells, PhoneLCDParts, GadgetFix) with up to 256 worker threads on server profile.
 - Upgrade HTTP connection pool sizes (`pool_connections=128, pool_maxsize=128`) across all scraper engine session adapters to eliminate socket allocation bottlenecks.

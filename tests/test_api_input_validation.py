@@ -89,7 +89,9 @@ def test_health_endpoint_and_security_headers(tmp_path, monkeypatch):
         response = client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.get_json()["browser_engine"] == "botasaurus"
+    payload = response.get_json()
+    assert payload["browser_engine"] == "botasaurus"
+    assert payload["version"] == app_module.APP_VERSION
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "SAMEORIGIN"
     assert response.headers["Cache-Control"] == "no-store"

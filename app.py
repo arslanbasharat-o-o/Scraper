@@ -53,7 +53,7 @@ from automation_service import discover_category_targets
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.5.0'
+APP_VERSION = '8.5.1'
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -2961,7 +2961,7 @@ def execute_scrape_workflow(
 
         def _scrape_single(url: str):
             _check_stop()
-            url_browser_mode = bool(use_browser) if use_browser is not None else url_prefers_botarus(url)
+            url_browser_mode = bool(use_browser) if use_browser is not None else (url_prefers_botarus(url) and detect_scraper_key(url) != 'standard')
             sess = None
             try:
                 with browser_fetch_mode(url_browser_mode):
@@ -4478,9 +4478,10 @@ def fetch_proxied_image(image_url: str) -> Dict[str, object]:
 # -------- Flask Routes --------
 @app.get('/api/health')
 def api_health():
-    """Detailed health check â€” unauthenticated for monitoring systems."""
+    """Detailed health check — unauthenticated for monitoring systems."""
     return jsonify({
         'status': 'healthy',
+        'version': APP_VERSION,
         'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'browser_engine': 'botasaurus',
         'scraper_mode': 'botarus_primary_for_dynamic_suppliers_with_http_recovery',
