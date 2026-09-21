@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.5.5] - 2026-09-21
+- Add automated server setup script (`scripts/setup_server.sh`) with auto-installation of official Google Chrome `.deb` on Ubuntu/Debian Linux VPS.
+- Implement pre-flight system readiness audit (`scrapers/system_check.py`) with Google Chrome detection, version verification, and AppArmor Snap Chromium guard.
+- Expose browser and proxy health status in `/readyz` probe endpoint and startup logs.
+- Standardize `SCRAPER_PROXY_URL` across all scraper engines (`scraper_engine`, `xcell`, `parts4cells`, `phonelcdparts`, `txparts`, `gadgetfix`, and `browser_fetcher`).
+- Provide dedicated 40 GB server configuration template (`.env.server-40gb.example`).
+- 100% test suite pass rate (187/187 tests passing).
+
 ## [8.5.4] - 2026-09-18
 - Full production stabilization: eliminate 1–2 cat/min bottleneck caused by unneeded browser fallbacks on missing SKUs.
 - Botasaurus disk leak resolution: automatically purge orphaned Chrome profiles from dead processes, recovering 19.48 GB disk space.
