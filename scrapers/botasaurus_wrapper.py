@@ -27,6 +27,8 @@ LOGGER = logging.getLogger(__name__)
 def resolve_chrome_executable() -> str | None:
     """Return the Chrome/Chromium executable Botasaurus should launch."""
     configured_candidates = [
+        os.getenv("SCRAPER_CHROME_PATH"),
+        os.getenv("CHROME_PATH"),
         os.getenv("CHROME_BIN"),
         os.getenv("CHROMIUM_BIN"),
         os.getenv("GOOGLE_CHROME_BIN"),
@@ -44,21 +46,45 @@ def resolve_chrome_executable() -> str | None:
         LOGGER.warning("[botasaurus] Configured Chrome executable was not found: %s", path)
 
     discovery_candidates = [
+        # Standard Linux binaries
         "google-chrome-stable",
         "google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
         "chromium",
         "chromium-browser",
-        "/usr/bin/chromium",
-        "/usr/bin/google-chrome",
+        # macOS paths
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        str(Path.home() / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+        # Windows paths
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        # Fallback Snap (warned if picked)
         "/snap/bin/chromium",
     ]
     for candidate in discovery_candidates:
         path = str(candidate or "").strip()
         expanded = os.path.expandvars(os.path.expanduser(path))
         if Path(expanded).is_file():
+            if is_snap_chromium(expanded):
+                LOGGER.warning(
+                    "[botasaurus] Detected Snap Chromium at %s. "
+                    "Snap sandboxing may block DevTools ports on Linux servers. "
+                    "Install official Google Chrome (.deb) via 'bash scripts/setup_server.sh'.",
+                    expanded,
+                )
             return expanded
         resolved = shutil.which(expanded)
         if resolved:
+            if is_snap_chromium(resolved):
+                LOGGER.warning(
+                    "[botasaurus] Detected Snap Chromium at %s. "
+                    "Snap sandboxing may block DevTools ports on Linux servers. "
+                    "Install official Google Chrome (.deb) via 'bash scripts/setup_server.sh'.",
+                    resolved,
+                )
             return resolved
     return None
 

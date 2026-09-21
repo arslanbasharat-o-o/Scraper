@@ -108,6 +108,8 @@ def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = Tr
     import requests
     from requests.adapters import HTTPAdapter
     session = requests.Session()
+    if proxy:
+        session.proxies = {"http": proxy, "https": proxy}
     adapter = HTTPAdapter(pool_connections=128, pool_maxsize=128)
     session.mount("http://", adapter)
     session.mount("https://", adapter)

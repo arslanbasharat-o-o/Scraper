@@ -104,6 +104,7 @@ from scrapers import parts4cells_scraper_engine
 # Import PhoneLCDParts and GadgetFix specialized scrapers
 from scrapers import phonelcdparts_scraper_engine, gadgetfix_scraper_engine
 from scrapers.browser_fetcher import browser_fetch_mode, fetch_html_many, fetch_product_details_many
+from scrapers.system_check import check_chrome, check_proxy, check_environment
 
 SCRAPER_MODULES = {
     'standard': None,
@@ -4180,6 +4181,21 @@ def ensure_automation_scheduler_started():
         AUTOMATION_SCHEDULER_THREAD.start()
         AUTOMATION_SCHEDULER_STARTED = True
         app.logger.info("[automation] Scheduler started")
+        try:
+            chrome_status = check_chrome()
+            proxy_status = check_proxy()
+            if chrome_status["ok"]:
+                app.logger.info(f"[preflight] Google Chrome: {chrome_status['version']} ({chrome_status['path']})")
+            elif chrome_status.get("is_snap"):
+                app.logger.error(f"[preflight] CRITICAL: {chrome_status['error']}")
+            else:
+                app.logger.warning(f"[preflight] {chrome_status['error']}")
+            if proxy_status["configured"]:
+                app.logger.info(f"[preflight] Proxy: Active ({proxy_status['masked_url']})")
+            else:
+                app.logger.info("[preflight] Proxy: Disabled (Direct Connection)")
+        except Exception as preflight_exc:
+            app.logger.warning(f"[preflight] Could not complete startup preflight: {preflight_exc}")
 
 
 def shutdown_background_services():
@@ -4598,16 +4614,42 @@ def livez():
 
 @app.get('/readyz')
 def readyz():
-    """Readiness probe â€” returns 200 if the app can serve requests. No auth required."""
+    """Readiness probe — returns 200 if the app can serve requests. No auth required."""
     try:
-        # Quick DB connectivity check â€” get_history_list with limit=0 is a no-op read.
+        # Quick DB connectivity check — get_history_list with limit=0 is a no-op read.
         db_manager.get_history_list(limit=1)
         db_ok = True
     except Exception:
         db_ok = False
-    status = 'ready' if db_ok else 'not_ready'
-    code = 200 if db_ok else 503
-    return jsonify({'status': status, 'database': 'ok' if db_ok else 'error'}), code
+
+    chrome_status = check_chrome()
+    proxy_status = check_proxy()
+    env_status = check_environment()
+
+    # Reject readiness if database is down or snap chromium is detected
+    ready = db_ok and not chrome_status.get('is_snap', False)
+    status = 'ready' if ready else 'not_ready'
+    code = 200 if ready else 503
+    return jsonify({
+        'status': status,
+        'database': 'ok' if db_ok else 'error',
+        'browser': {
+            'installed': chrome_status.get('ok', False),
+            'version': chrome_status.get('version'),
+            'path': chrome_status.get('path'),
+            'is_snap': chrome_status.get('is_snap', False),
+            'error': chrome_status.get('error'),
+        },
+        'proxy': {
+            'configured': proxy_status.get('configured', False),
+            'status': proxy_status.get('status'),
+            'masked_url': proxy_status.get('masked_url'),
+        },
+        'environment': {
+            'profile': env_status.get('profile'),
+            'warnings': env_status.get('warnings', []),
+        },
+    }), code
 
 
 @app.get('/')

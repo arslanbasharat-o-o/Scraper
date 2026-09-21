@@ -126,6 +126,8 @@ def build_session(retries: int = 2, verify_ssl: bool = True, use_curl: bool = Tr
     }
 
     session = requests.Session()
+    if proxy:
+        session.proxies = {"http": proxy, "https": proxy}
 
     retry_strategy = Retry(
         total=retries,

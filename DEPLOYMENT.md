@@ -10,7 +10,22 @@ This application uses an embedded SQLite database and an in-process background s
 - Chrome or Chromium installed (for Botasaurus browser fallback).
 - Windows (supported), Linux, or macOS.
 
-### Installation
+### Quick Setup on Ubuntu / Linux Server (Recommended)
+
+Run the automated setup script to install dependencies, official Google Chrome (`.deb`), and run the pre-flight verification:
+```bash
+bash scripts/setup_server.sh
+```
+This script will:
+1. Automatically download and install official Google Chrome if missing (avoiding broken Ubuntu Snap packages).
+2. Create and configure `.venv` with Python 3.10–3.12.
+3. Install all Python dependencies from `requirements.txt`.
+4. Initialize `.env` from `.env.server-40gb.example` with a secure random `SECRET_KEY`.
+5. Run the pre-flight readiness audit (`python -m scrapers.system_check`).
+
+---
+
+### Manual Installation (Alternative)
 
 1. Create a virtual environment:
    ```bash
@@ -28,14 +43,14 @@ This application uses an embedded SQLite database and an in-process background s
 
 4. Configure the environment:
    ```bash
-   cp .env.example .env
+   cp .env.server-40gb.example .env
    # Edit .env with your credentials and SECRET_KEY
    ```
-   For a 40 GB Hostinger server, keep the required application/authentication
-   settings from `.env.example`, then apply the values from
-   `.env.server-40gb.example` (`SCRAPER_WORKER_PROFILE=server_40gb` and
-   `SCRAPER_LOCAL_BROWSER_MAX_WINDOWS=4`). The server file is an override
-   reference, not a complete environment file by itself.
+
+5. Verify system readiness:
+   ```bash
+   python -m scrapers.system_check
+   ```
 
 ### Running the Application
 
