@@ -28,12 +28,22 @@ def test_logs_page_renders_ok(client):
 
 
 def test_nav_links_in_all_pages(client):
-    """Verify that every view contains the Server Logs link in its navigation."""
-    for path in ["/", "/automation", "/menu-map", "/history", "/extractor", "/logs"]:
+    """Verify that every view contains the Server Logs link in its navigation, and Extractor is hidden from navbar."""
+    for path in ["/", "/automation", "/menu-map", "/history", "/logs"]:
         res = client.get(path)
         assert res.status_code == 200
         html = res.data.decode("utf-8")
         assert 'href="/logs"' in html
+        assert 'href="/extractor"' not in html
+
+
+def test_extractor_accessible_via_url_only(client):
+    """Verify that /extractor is live and functional via direct URL, but does not show in the navbar."""
+    res = client.get("/extractor")
+    assert res.status_code == 200
+    html = res.data.decode("utf-8")
+    assert "Parts Extractor" in html
+    assert 'href="/extractor"' not in html
 
 
 def test_sitemap_contains_logs_page(client):

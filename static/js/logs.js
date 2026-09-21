@@ -94,7 +94,6 @@
   }
 
   function highlightLine(escapedLine) {
-    // Match common log formats: 2026-09-21 20:53:12,123 LEVEL [logger] message
     let lineClass = 'logs-line';
     let formatted = escapedLine;
 
@@ -110,24 +109,24 @@
       lineClass += ' is-info';
     }
 
-    // Highlight timestamps: YYYY-MM-DD HH:MM:SS or ISO format
+    // Highlight timestamps
     formatted = formatted.replace(
       /^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?)/,
-      '<span class="logs-highlight-ts">$1</span>'
+      '<span class="logs-tag-ts">$1</span>'
     );
 
     // Highlight level tags
     formatted = formatted.replace(
       /\b(ERROR|CRITICAL)\b/g,
-      '<span class="logs-highlight-error">$1</span>'
+      '<span class="logs-tag-error">$1</span>'
     );
     formatted = formatted.replace(
       /\b(WARNING|WARN)\b/g,
-      '<span class="logs-highlight-warn">$1</span>'
+      '<span class="logs-tag-warn">$1</span>'
     );
     formatted = formatted.replace(
       /\b(INFO)\b/g,
-      '<span class="logs-highlight-info">$1</span>'
+      '<span class="logs-tag-info">$1</span>'
     );
 
     return { lineClass, formatted };
@@ -182,8 +181,11 @@
       // Render lines into console
       if (currentRawLines.length === 0) {
         elements.logConsoleBody.innerHTML = `
-          <div class="logs-empty-state">
-            <div class="logs-empty-icon">&#128269;</div>
+          <div class="logs-terminal-empty">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
             <p>No log lines matched the active filters (${escapeHtml(selectedFile)}, Level: ${escapeHtml(level)}${search ? `, Query: "${escapeHtml(search)}"` : ''}).</p>
           </div>
         `;
@@ -196,11 +198,11 @@
           rowDiv.className = lineClass;
 
           const numSpan = document.createElement('span');
-          numSpan.className = 'logs-line-number';
+          numSpan.className = 'logs-line-num';
           numSpan.textContent = String(idx + 1);
 
           const contentSpan = document.createElement('span');
-          contentSpan.className = 'logs-line-content';
+          contentSpan.className = 'logs-line-text';
           contentSpan.innerHTML = formatted;
 
           rowDiv.appendChild(numSpan);
@@ -217,8 +219,12 @@
       }
     } catch (err) {
       elements.logConsoleBody.innerHTML = `
-        <div class="logs-empty-state" style="color: #f43f5e;">
-          <div class="logs-empty-icon">&#9888;</div>
+        <div class="logs-terminal-empty" style="color: #ef4444;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
           <p><strong>Error loading logs:</strong> ${escapeHtml(err.message)}</p>
         </div>
       `;
@@ -238,8 +244,8 @@
           }, 4000);
         }
         if (elements.liveBadge) {
-          elements.liveBadge.className = 'logs-badge-live';
-          elements.liveBadge.innerHTML = '<span class="pulse-dot"></span> LIVE (4s)';
+          elements.liveBadge.className = 'logs-tab-badge is-live';
+          elements.liveBadge.textContent = 'LIVE (4s)';
         }
       } else {
         if (autoRefreshTimer) {
@@ -247,8 +253,8 @@
           autoRefreshTimer = null;
         }
         if (elements.liveBadge) {
-          elements.liveBadge.className = 'logs-badge-paused';
-          elements.liveBadge.innerHTML = 'PAUSED';
+          elements.liveBadge.className = 'logs-tab-badge is-paused';
+          elements.liveBadge.textContent = 'PAUSED';
         }
       }
     }
@@ -308,10 +314,10 @@
         if (currentRawLines.length === 0) return;
         try {
           await navigator.clipboard.writeText(currentRawLines.join('\n'));
-          const orig = elements.copyLogsBtn.innerHTML;
-          elements.copyLogsBtn.innerHTML = '&#10003; Copied!';
+          const orig = elements.copyLogsBtn.textContent;
+          elements.copyLogsBtn.textContent = '✓ Copied!';
           setTimeout(() => {
-            elements.copyLogsBtn.innerHTML = orig;
+            elements.copyLogsBtn.textContent = orig;
           }, 2000);
         } catch (err) {
           console.warn('Clipboard write failed:', err);
