@@ -2,7 +2,7 @@
 
 Parts Extractor is a Flask dashboard for supplier catalog scraping, scheduled product extraction, price-change history, and menu-map discovery.
 
-Version: `8.5.5`
+Version: `8.5.6`
 Last Updated: 2026-09-21
 
 ## Features

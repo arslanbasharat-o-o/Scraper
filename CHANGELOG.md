@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.5.6] - 2026-09-21
+- Add dedicated Server Logs dashboard (`/logs`) in frontend with real-time log tailing, search, and level filtering (ERROR, WARNING, INFO, DEBUG).
+- Add single-click log downloads for active/rotated log files and one-click bulk ZIP download (`/api/logs/download-all`).
+- Refine Server Logs UI styling to eliminate external Bootstrap overrides and match native dark/light theme tokens.
+- Balance and center top navigation bar using 3-column CSS Grid (`1fr auto 1fr`).
+- Hide Extractor navigation link from the visible navbar while keeping it fully live and accessible via URL.
+- 100% test suite pass rate (197/197 tests passing).
+
 ## [8.5.5] - 2026-09-21
 - Add dedicated Server Logs dashboard (`/logs`) in frontend with real-time log tailing, search, and level filtering (ERROR, WARNING, INFO, DEBUG).
 - Add single-click log downloads for active/rotated log files and one-click bulk ZIP download (`/api/logs/download-all`).

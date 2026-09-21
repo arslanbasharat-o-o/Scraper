@@ -54,7 +54,7 @@ from automation_service import discover_category_targets
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.5.5'
+APP_VERSION = '8.5.6'
 
 
 def load_local_env_file(path: str = ".env") -> None:
