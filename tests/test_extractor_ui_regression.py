@@ -29,7 +29,7 @@ def test_extractor_template_groups_and_dialog_accessibility():
 
 
 def test_shared_footer_holds_version_and_maintainer_details():
-    template_names = ("index.html", "history.html", "automation.html", "menu_map.html")
+    template_names = ("index.html", "history.html", "automation.html", "menu_map.html", "logs.html")
     footer = (ROOT / "templates" / "_footer.html").read_text(encoding="utf-8")
 
     assert "{{ app_version }}" in footer

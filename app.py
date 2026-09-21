@@ -33,11 +33,12 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 from dataclasses import asdict
-from typing import Callable, List, Dict, Tuple
+from typing import Callable, List, Dict, Tuple, Optional, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import copy
 from functools import wraps, lru_cache
 import gzip
+import zipfile
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from bs4 import BeautifulSoup
@@ -534,6 +535,13 @@ def build_public_site_pages() -> List[Dict[str, str]]:
             'changefreq': 'daily',
             'priority': '0.8',
             'lastmod': get_template_lastmod('menu_map.html'),
+        },
+        {
+            'path': '/logs',
+            'endpoint': 'server_logs_view',
+            'changefreq': 'daily',
+            'priority': '0.7',
+            'lastmod': get_template_lastmod('logs.html'),
         },
     ]
 
@@ -4708,6 +4716,11 @@ def menu_map():
     return render_template('menu_map.html')
 
 
+@app.get('/logs')
+def server_logs_view():
+    return render_template('logs.html')
+
+
 def get_menu_map_output_root() -> Path:
     configured = Path(os.getenv('MENU_MAP_OUTPUT_DIR', 'output'))
     if not configured.is_absolute():
@@ -6699,6 +6712,281 @@ def upload_comparison_file():
         message += f" (skipped {skipped} rows without title or price)"
 
     return jsonify({'status': 'success', 'message': message, 'rows': extracted})
+
+
+# -------- Server Log Management & Inspection APIs --------
+
+def _format_file_size_human(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+
+
+def _get_allowed_log_directories() -> List[Path]:
+    allowed = [APP_ROOT]
+    for sub in ("logs", "server-logs"):
+        p = APP_ROOT / sub
+        if p.is_dir():
+            allowed.append(p)
+    return allowed
+
+
+def _list_available_server_logs() -> List[Dict[str, object]]:
+    """Scan APP_ROOT, logs/, and server-logs/ for valid server log files."""
+    found: Dict[str, Dict[str, object]] = {}
+    active_log_name = "server.log"
+
+    def _consider_file(p: Path, rel_dir: str = ""):
+        if not p.is_file():
+            return
+        name = p.name
+        # Only accept files matching server.log* or *.log or *.log.*
+        is_server_log = name.startswith("server.log")
+        is_generic_log = name.endswith(".log") or ".log." in name
+        if not (is_server_log or is_generic_log):
+            return
+
+        file_id = f"{rel_dir}/{name}" if rel_dir else name
+        try:
+            stat = p.stat()
+            size_bytes = stat.st_size
+            mtime_dt = datetime.datetime.fromtimestamp(stat.st_mtime, tz=datetime.timezone.utc)
+            mtime_iso = mtime_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        except OSError:
+            size_bytes = 0
+            mtime_iso = ""
+
+        is_active = (name == active_log_name and not rel_dir)
+
+        found[file_id] = {
+            "name": name,
+            "file_id": file_id,
+            "relative_path": file_id,
+            "size_bytes": size_bytes,
+            "size_formatted": _format_file_size_human(size_bytes),
+            "modified_at": mtime_iso,
+            "is_active": is_active,
+        }
+
+    # APP_ROOT
+    try:
+        for p in APP_ROOT.glob("server.log*"):
+            _consider_file(p, "")
+    except Exception:
+        pass
+
+    # Subdirectories logs/ and server-logs/
+    for sub in ("server-logs", "logs"):
+        dir_path = APP_ROOT / sub
+        if dir_path.is_dir():
+            try:
+                for p in dir_path.iterdir():
+                    if p.is_file():
+                        _consider_file(p, sub)
+            except Exception:
+                pass
+
+    # Sort files: active server.log first, then other server.log.* by modified_at desc, then others
+    def sort_key(item: Dict[str, object]):
+        is_act = 0 if item.get("is_active") else 1
+        name = str(item.get("name") or "")
+        is_srv = 0 if name.startswith("server.log") else 1
+        mtime = str(item.get("modified_at") or "")
+        return (is_act, is_srv, "" if not mtime else f"-{mtime}", name)
+
+    results = sorted(found.values(), key=sort_key)
+    return results
+
+
+def _resolve_safe_log_path(raw_filename: str) -> Optional[Path]:
+    """Validate and resolve requested log file path strictly within allowed boundaries."""
+    if not raw_filename or not isinstance(raw_filename, str):
+        return None
+    cleaned = raw_filename.strip()
+    if not cleaned or "\0" in cleaned or ".." in cleaned:
+        return None
+    # Reject Windows drive letters or root slashes
+    if cleaned.startswith("/") or cleaned.startswith("\\") or ":" in cleaned:
+        return None
+
+    # Disallow non-log files
+    file_name = Path(cleaned).name
+    is_server_log = file_name.startswith("server.log")
+    is_generic_log = file_name.endswith(".log") or ".log." in file_name
+    if not (is_server_log or is_generic_log):
+        return None
+
+    try:
+        candidate = (APP_ROOT / cleaned).resolve()
+    except Exception:
+        return None
+
+    # Must be under APP_ROOT
+    try:
+        candidate.relative_to(APP_ROOT)
+    except ValueError:
+        return None
+
+    # Must reside directly in APP_ROOT or directly in allowed subdirs
+    parent = candidate.parent.resolve()
+    allowed_dirs = [d.resolve() for d in _get_allowed_log_directories()]
+    if parent not in allowed_dirs:
+        return None
+
+    if not candidate.is_file():
+        return None
+
+    return candidate
+
+
+def _tail_log_file(
+    file_path: Path,
+    max_lines: int = 500,
+    level_filter: str = "ALL",
+    search_query: str = ""
+) -> Dict[str, object]:
+    """Efficiently read and filter the tail lines of a log file."""
+    if not file_path.is_file():
+        return {"lines": [], "total_lines": 0, "returned_lines": 0}
+
+    level_filter = (level_filter or "ALL").strip().upper()
+    search_query = (search_query or "").strip().lower()
+
+    # Determine file size
+    try:
+        file_size = file_path.stat().st_size
+    except OSError:
+        file_size = 0
+
+    # For very large files (>15MB), read from last 10MB to avoid heavy memory allocation
+    max_read_bytes = 10 * 1024 * 1024
+    seek_pos = max(0, file_size - max_read_bytes)
+
+    raw_lines: List[str] = []
+    try:
+        with file_path.open("rb") as f:
+            if seek_pos > 0:
+                f.seek(seek_pos)
+                # Discard partial first line if we jumped into the middle
+                f.readline()
+            content = f.read().decode("utf-8", errors="replace")
+            raw_lines = content.splitlines()
+    except OSError as exc:
+        return {"lines": [f"[error reading log file: {exc}]"], "total_lines": 1, "returned_lines": 1}
+
+    filtered_lines: List[str] = []
+    level_tokens = {
+        "ERROR": (" ERROR ", "[ERROR]", "ERROR:", "CRITICAL", "[CRITICAL]"),
+        "WARNING": (" WARNING ", "[WARNING]", "WARNING:", " WARN ", "[WARN]"),
+        "INFO": (" INFO ", "[INFO]", "INFO:"),
+        "DEBUG": (" DEBUG ", "[DEBUG]", "DEBUG:"),
+    }
+    match_tokens = level_tokens.get(level_filter) if level_filter != "ALL" else None
+
+    for line in raw_lines:
+        if match_tokens and not any(token in line for token in match_tokens):
+            continue
+        if search_query and search_query not in line.lower():
+            continue
+        filtered_lines.append(line)
+
+    clamped_lines = filtered_lines[-max_lines:] if max_lines > 0 else filtered_lines
+    return {
+        "lines": clamped_lines,
+        "total_lines_inspected": len(raw_lines),
+        "total_matched": len(filtered_lines),
+        "returned_lines": len(clamped_lines),
+    }
+
+
+@app.get('/api/logs/files')
+def api_get_server_log_files():
+    """Return list of available server log files."""
+    files = _list_available_server_logs()
+    return jsonify({
+        'status': 'success',
+        'files': files,
+        'count': len(files),
+    })
+
+
+@app.get('/api/logs/tail')
+def api_tail_server_log():
+    """Tail and filter server log lines."""
+    req_file = request.args.get('file', 'server.log').strip()
+    resolved = _resolve_safe_log_path(req_file)
+    if not resolved:
+        return jsonify({
+            'status': 'error',
+            'error': f"Log file '{html.escape(req_file)}' not found or not permitted."
+        }), 404
+
+    lines_param = coerce_int(request.args.get('lines', '500'), 500, min_value=10, max_value=5000)
+    level_filter = request.args.get('level', 'ALL').strip().upper()
+    search_query = request.args.get('search', '').strip()
+
+    result = _tail_log_file(resolved, max_lines=lines_param, level_filter=level_filter, search_query=search_query)
+    result.update({
+        'status': 'success',
+        'file': req_file,
+        'filename': resolved.name,
+        'size_bytes': resolved.stat().st_size,
+        'size_formatted': _format_file_size_human(resolved.stat().st_size),
+    })
+    return jsonify(result)
+
+
+@app.get('/api/logs/download')
+def api_download_server_log():
+    """Download a single server log file."""
+    req_file = request.args.get('file', 'server.log').strip()
+    resolved = _resolve_safe_log_path(req_file)
+    if not resolved:
+        return jsonify({
+            'status': 'error',
+            'error': f"Log file '{html.escape(req_file)}' not found or not permitted."
+        }), 404
+
+    return send_file(
+        resolved,
+        as_attachment=True,
+        download_name=resolved.name,
+        mimetype='text/plain',
+    )
+
+
+@app.get('/api/logs/download-all')
+def api_download_all_server_logs():
+    """Bundle all available server logs into an in-memory ZIP archive for download."""
+    available_files = _list_available_server_logs()
+    if not available_files:
+        return jsonify({'status': 'error', 'error': 'No server log files found to download.'}), 404
+
+    bio = io.BytesIO()
+    with zipfile.ZipFile(bio, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        for item in available_files:
+            file_id = str(item.get('file_id') or '')
+            resolved = _resolve_safe_log_path(file_id)
+            if resolved and resolved.is_file():
+                # Store in zip using its clean relative path
+                arcname = file_id.replace('\\', '/')
+                zf.write(resolved, arcname=arcname)
+
+    bio.seek(0)
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')
+    zip_filename = f"server-logs-{timestamp}.zip"
+
+    return send_file(
+        bio,
+        as_attachment=True,
+        download_name=zip_filename,
+        mimetype='application/zip',
+    )
+
 
 # -------- Main --------
 def find_free_port(start=5000, end=5050):

@@ -1,12 +1,15 @@
 # Changelog
 
 ## [8.5.5] - 2026-09-21
+- Add dedicated Server Logs dashboard (`/logs`) in frontend with real-time log tailing, search, and level filtering (ERROR, WARNING, INFO, DEBUG).
+- Add single-click log downloads for active/rotated log files and one-click bulk ZIP download (`/api/logs/download-all`).
+- Implement strict path traversal security guards for log inspection and downloads.
 - Add automated server setup script (`scripts/setup_server.sh`) with auto-installation of official Google Chrome `.deb` on Ubuntu/Debian Linux VPS.
 - Implement pre-flight system readiness audit (`scrapers/system_check.py`) with Google Chrome detection, version verification, and AppArmor Snap Chromium guard.
 - Expose browser and proxy health status in `/readyz` probe endpoint and startup logs.
 - Standardize `SCRAPER_PROXY_URL` across all scraper engines (`scraper_engine`, `xcell`, `parts4cells`, `phonelcdparts`, `txparts`, `gadgetfix`, and `browser_fetcher`).
 - Provide dedicated 40 GB server configuration template (`.env.server-40gb.example`).
-- 100% test suite pass rate (187/187 tests passing).
+- 100% test suite pass rate (196/196 tests passing).
 
 ## [8.5.4] - 2026-09-18
 - Full production stabilization: eliminate 1–2 cat/min bottleneck caused by unneeded browser fallbacks on missing SKUs.
