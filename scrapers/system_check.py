@@ -73,6 +73,9 @@ def check_chrome() -> Dict[str, Any]:
     except Exception as exc:
         exec_error = str(exc)
 
+    if not is_snap and version and "snap" in version.lower():
+        is_snap = True
+
     if is_snap:
         return {
             "ok": False,

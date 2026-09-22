@@ -95,15 +95,20 @@ def is_snap_chromium(executable: str | None = None) -> bool:
         or os.getenv("CHROME_BIN")
         or os.getenv("CHROMIUM_BIN")
         or os.getenv("GOOGLE_CHROME_BIN")
-        or resolve_chrome_executable()
         or ""
     )
+    if not raw_path:
+        return False
+    path_str = str(raw_path).replace("\\", "/").lower()
+    if "/snap/" in path_str or path_str.endswith("/snap/bin/chromium"):
+        return True
     try:
-        raw_path = str(Path(raw_path).resolve(strict=False))
+        resolved = str(Path(raw_path).resolve(strict=False)).replace("\\", "/").lower()
+        if "/snap" in resolved or resolved.endswith("/snap"):
+            return True
     except (OSError, RuntimeError):
         pass
-    path = raw_path.replace("\\", "/").lower()
-    return "/snap/bin/chromium" in path or path.endswith("/snap/bin/chromium")
+    return False
 
 
 def resolve_chrome_profile_root(default_root: str | Path) -> Path:

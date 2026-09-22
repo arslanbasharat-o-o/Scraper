@@ -60,6 +60,32 @@ def test_check_chrome_snap_rejected(monkeypatch):
     assert "Snap package" in status["error"]
 
 
+def test_is_snap_chromium_helper():
+    from scrapers.botasaurus_wrapper import is_snap_chromium
+    assert is_snap_chromium("/snap/bin/chromium") is True
+    assert is_snap_chromium("/snap/chromium/current/usr/lib/chromium-browser/chrome") is True
+    assert is_snap_chromium("/usr/bin/google-chrome") is False
+    assert is_snap_chromium("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") is False
+
+
+def test_check_chrome_snap_version_fallback(monkeypatch):
+    import subprocess
+    monkeypatch.setattr("scrapers.system_check.resolve_chrome_executable", lambda: "/usr/bin/chromium")
+    monkeypatch.setattr("scrapers.system_check.is_snap_chromium", lambda _p: False)
+    
+    class FakeProc:
+        returncode = 0
+        stdout = "Chromium 153.0.8010.36 snap"
+        stderr = ""
+        
+    monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: FakeProc())
+
+    status = check_chrome()
+    assert status["ok"] is False
+    assert status["is_snap"] is True
+    assert "Snap package" in status["error"]
+
+
 def test_check_environment_warnings(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "dev-insecure-change-me")
     monkeypatch.setenv("SCRAPER_BOTASAURUS_BYPASS_CLOUDFLARE", "1")

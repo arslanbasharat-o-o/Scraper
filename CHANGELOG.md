@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.5.7] - 2026-09-22
+- Harden Snap Chromium detection in `scrapers/botasaurus_wrapper.py` and `scrapers/system_check.py` to prevent false negatives from Ubuntu `/snap/bin/chromium -> /usr/bin/snap` symlinks.
+- Inspect browser version string for `snap` indicator to ensure sandboxed Snap Chromium cannot falsely pass preflight readiness checks.
+- Add regression test suite covering symlinked Snap paths and version fallback flags.
+
 ## [8.5.6] - 2026-09-21
 - Add dedicated Server Logs dashboard (`/logs`) in frontend with real-time log tailing, search, and level filtering (ERROR, WARNING, INFO, DEBUG).
 - Add single-click log downloads for active/rotated log files and one-click bulk ZIP download (`/api/logs/download-all`).
