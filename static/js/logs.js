@@ -1,6 +1,6 @@
 /**
  * Server Logs Frontend Controller
- * Parts Extractor - v8.5.8
+ * Parts Extractor - v8.5.9
  */
 
 (function () {

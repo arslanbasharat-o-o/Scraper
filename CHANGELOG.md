@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.5.9] - 2026-09-22
+- Expand `scripts/auto_fix.sh` service reloader to automatically scan and restart multiple systemd service variants (`scraper`, `gunicorn`, `parts-extractor`, `flask`, `parts`).
+- Add automatic SIGHUP broadcast (`pkill -HUP -f gunicorn`) to gracefully reload active Gunicorn master/worker processes in-memory without downtime.
+- Add supervisorctl support.
+
 ## [8.5.8] - 2026-09-22
 - Add all-in-one self-healing auto-repair script (`scripts/auto_fix.sh`).
 - Auto-detect and purge stale symlinks / alternatives pointing to Ubuntu Snap Chromium under `/usr/bin/google-chrome`.

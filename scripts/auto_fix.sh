@@ -194,24 +194,41 @@ echo "  [PASS] .env configured for production stability (direct connection ready
 echo ""
 echo "[Step 5/6] Restarting scraper service and querying health probe..."
 
-SERVICE_FOUND=0
+SERVICE_RELOADED=0
 if command -v systemctl >/dev/null 2>&1; then
-    if ${SUDO} systemctl list-unit-files 2>/dev/null | grep -q "scraper.service"; then
-        SERVICE_FOUND=1
-        echo "  --> Restarting systemd service 'scraper'..."
-        ${SUDO} systemctl daemon-reload
-        ${SUDO} systemctl restart scraper
-        sleep 2
-        if ${SUDO} systemctl is-active --quiet scraper; then
-            echo "  [PASS] Scraper service is ACTIVE."
-        else
-            echo "  [WARNING] Scraper service restarted but is not currently active."
+    for s_name in scraper gunicorn parts-extractor flask scraper-app parts parts_extractor; do
+        if ${SUDO} systemctl list-unit-files 2>/dev/null | grep -E -q "^${s_name}\.service"; then
+            SERVICE_RELOADED=1
+            echo "  --> Restarting systemd service '${s_name}'..."
+            ${SUDO} systemctl daemon-reload
+            ${SUDO} systemctl restart "${s_name}"
+            sleep 2
+            if ${SUDO} systemctl is-active --quiet "${s_name}"; then
+                echo "  [PASS] Systemd service '${s_name}' is ACTIVE."
+            fi
         fi
+    done
+fi
+
+if pgrep -f "gunicorn.*app:app" >/dev/null 2>&1 || pgrep -f "gunicorn" >/dev/null 2>&1; then
+    echo "  --> Reloading running Gunicorn worker processes via SIGHUP..."
+    ${SUDO} pkill -HUP -f gunicorn 2>/dev/null || true
+    sleep 2
+    SERVICE_RELOADED=1
+fi
+
+if command -v supervisorctl >/dev/null 2>&1; then
+    if ${SUDO} supervisorctl status 2>/dev/null | grep -E -q "scraper|gunicorn|flask"; then
+        echo "  --> Restarting supervisor worker..."
+        ${SUDO} supervisorctl restart all >/dev/null 2>&1 || true
+        SERVICE_RELOADED=1
     fi
 fi
 
-if [ "${SERVICE_FOUND}" -eq 0 ]; then
-    echo "  [INFO] Systemd 'scraper.service' not registered. If running via Gunicorn, restart your worker."
+if [ "${SERVICE_RELOADED}" -eq 1 ]; then
+    echo "  [PASS] Application worker reloaded successfully."
+else
+    echo "  [INFO] No managed systemd/gunicorn process found. Restart your Python server process to apply updates."
 fi
 
 # Query readiness probe
