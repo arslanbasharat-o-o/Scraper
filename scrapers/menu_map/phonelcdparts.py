@@ -47,6 +47,7 @@ CONFIG = PhoneLcdPartsConfig(
     mobile_menu_selector=".ninjamenus-mobile, .mobile-menu-main:not(.ninjamenus-desktop)",
     parent_open_method="hover",
     sub_child_activation_method="click",
+    prefer_http_fallback=True,
 )
 
 

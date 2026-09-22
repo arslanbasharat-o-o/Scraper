@@ -73,6 +73,7 @@ class SiteConfig:
     parent_open_method: str = "click"
     sub_child_activation_method: str = "dom-inspection"
     http_fallback_extractor: Any = None
+    prefer_http_fallback: bool = False
 
 
 @dataclass(slots=True)
@@ -1025,6 +1026,17 @@ async def run_site(
         Path("data") / "browser_profiles",
         f"menu-map-{config.output_slug}",
     )
+    if not args.inspect_only and config.prefer_http_fallback and config.http_fallback_extractor:
+        try:
+            result.records = await asyncio.to_thread(config.http_fallback_extractor, config, output_dir, logger)
+            if result.records:
+                logger.info(
+                    "Preferred HTTP menu extraction recovered %d records for %s; browser fallback not needed.",
+                    len(result.records),
+                    config.website,
+                )
+        except Exception as exc:
+            logger.warning("Preferred HTTP menu extraction failed; falling back to browser: %s", exc)
     chrome_executable = resolve_chrome_executable()
     logger.info(
         "Starting Botasaurus with Chrome executable %s and profile %s",
@@ -1139,7 +1151,8 @@ async def run_site(
         asyncio.run(_extract())
 
     try:
-        await asyncio.to_thread(_run_with_botasaurus, None)
+        if not result.records:
+            await asyncio.to_thread(_run_with_botasaurus, None)
     except Exception as exc:
         result.errors.append(ScrapeError(
             website=config.website,
