@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.5.8] - 2026-09-22
+- Add all-in-one self-healing auto-repair script (`scripts/auto_fix.sh`).
+- Auto-detect and purge stale symlinks / alternatives pointing to Ubuntu Snap Chromium under `/usr/bin/google-chrome`.
+- Download and install native Google Chrome `.deb` directly from Google with canonical `/opt/google/chrome` symlinks.
+- Run active headless Chrome DevTools remote-debugging smoke test during setup to verify socket connectivity before starting the scraper.
+- Automatically configure and install Git `post-merge` hook so future `git pull` runs self-healing and service restarts automatically.
+- Prioritize `/opt/google/chrome/google-chrome` native binary path in Botasaurus wrapper discovery candidates.
+
 ## [8.5.7] - 2026-09-22
 - Harden Snap Chromium detection in `scrapers/botasaurus_wrapper.py` and `scrapers/system_check.py` to prevent false negatives from Ubuntu `/snap/bin/chromium -> /usr/bin/snap` symlinks.
 - Inspect browser version string for `snap` indicator to ensure sandboxed Snap Chromium cannot falsely pass preflight readiness checks.

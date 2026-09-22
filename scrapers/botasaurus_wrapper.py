@@ -46,6 +46,9 @@ def resolve_chrome_executable() -> str | None:
         LOGGER.warning("[botasaurus] Configured Chrome executable was not found: %s", path)
 
     discovery_candidates = [
+        # Direct native Google Chrome on Linux (.deb install location)
+        "/opt/google/chrome/google-chrome",
+        "/opt/google/chrome/chrome",
         # Standard Linux binaries
         "google-chrome-stable",
         "google-chrome",
@@ -64,28 +67,32 @@ def resolve_chrome_executable() -> str | None:
         # Fallback Snap (warned if picked)
         "/snap/bin/chromium",
     ]
+    snap_fallback: str | None = None
     for candidate in discovery_candidates:
         path = str(candidate or "").strip()
         expanded = os.path.expandvars(os.path.expanduser(path))
         if Path(expanded).is_file():
             if is_snap_chromium(expanded):
-                LOGGER.warning(
-                    "[botasaurus] Detected Snap Chromium at %s. "
-                    "Snap sandboxing may block DevTools ports on Linux servers. "
-                    "Install official Google Chrome (.deb) via 'bash scripts/setup_server.sh'.",
-                    expanded,
-                )
+                if not snap_fallback:
+                    snap_fallback = expanded
+                continue
             return expanded
         resolved = shutil.which(expanded)
         if resolved:
             if is_snap_chromium(resolved):
-                LOGGER.warning(
-                    "[botasaurus] Detected Snap Chromium at %s. "
-                    "Snap sandboxing may block DevTools ports on Linux servers. "
-                    "Install official Google Chrome (.deb) via 'bash scripts/setup_server.sh'.",
-                    resolved,
-                )
+                if not snap_fallback:
+                    snap_fallback = resolved
+                continue
             return resolved
+
+    if snap_fallback:
+        LOGGER.warning(
+            "[botasaurus] Only Snap Chromium was found at %s. "
+            "Snap sandboxing may block DevTools ports on Linux servers. "
+            "Install official Google Chrome (.deb) via 'bash scripts/auto_fix.sh'.",
+            snap_fallback,
+        )
+        return snap_fallback
     return None
 
 

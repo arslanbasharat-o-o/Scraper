@@ -1,34 +1,24 @@
 # Production Server Update & Setup Guide
 
-### Option A: First-Time Setup (Install Chrome & Configure Environment)
-Run this once to pull the new version, automatically install official Google Chrome (`.deb`), and check system health:
+### The All-In-One Fix & Auto-Run (Recommended)
+Run this single command. It will automatically detect any fake/snap Chrome symlinks, install official Google Chrome (`.deb`), verify DevTools remote debugging sockets, update dependencies, restart the scraper service, and verify health:
 
 ```bash
-# 1. Pull latest code from GitHub
-git pull origin main
-
-# 2. Install official Google Chrome & configure virtualenv
-bash scripts/setup_server.sh
-
-# 3. Restart scraper service & verify health
-sudo systemctl restart scraper && curl -s http://localhost:5000/readyz
+git pull origin main && sudo bash scripts/auto_fix.sh
 ```
+
+> [!NOTE]
+> `scripts/auto_fix.sh` automatically installs a Git `post-merge` hook. For **all future updates**, simply running `git pull origin main` will automatically run the heal, update, service restart, and readiness check without any extra commands!
 
 ---
 
-### Option B: Routine Updates (Chrome Already Installed)
-For all future updates where Chrome is already installed on the VPS:
+### Routine Updates (After Hook is Installed)
+For all future updates:
 
 ```bash
-# 1. Pull the latest updates
 git pull origin main
-
-# 2. Restart the scraper service
-sudo systemctl restart scraper
-
-# 3. Verify server readiness
-curl -s http://localhost:5000/readyz
 ```
+*(The post-merge hook will automatically execute `scripts/auto_fix.sh`, restart the service, and verify health)*
 
 ---
 

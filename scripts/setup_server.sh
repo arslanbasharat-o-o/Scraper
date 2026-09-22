@@ -23,7 +23,9 @@ echo ""
 echo "[Step 1/5] Checking Google Chrome installation..."
 
 CHROME_BIN=""
-if command -v google-chrome-stable >/dev/null 2>&1; then
+if [ -f "/opt/google/chrome/google-chrome" ]; then
+    CHROME_BIN="/opt/google/chrome/google-chrome"
+elif command -v google-chrome-stable >/dev/null 2>&1; then
     CHROME_BIN="$(command -v google-chrome-stable)"
 elif command -v google-chrome >/dev/null 2>&1; then
     CHROME_BIN="$(command -v google-chrome)"
@@ -33,14 +35,20 @@ elif [ -f "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
     CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 fi
 
-# Detect and reject Snap Chromium if it is the only browser available
-if [ -z "${CHROME_BIN}" ] && [ -f "/snap/bin/chromium" ]; then
-    echo "  [WARNING] Only Snap Chromium (/snap/bin/chromium) was found."
-    echo "            Ubuntu Snap sandboxing blocks DevTools sockets used by Botasaurus."
-    echo "            Proceeding to install official Google Chrome .deb package..."
+# Detect and reject Snap Chromium or symlinks pointing to snap
+CHROME_IS_SNAP=0
+if [ -n "${CHROME_BIN}" ]; then
+    RESOLVED_TARGET="$(readlink -f "${CHROME_BIN}" 2>/dev/null || echo "${CHROME_BIN}")"
+    VERSION_OUTPUT="$("${CHROME_BIN}" --version 2>&1 || true)"
+    if echo "${RESOLVED_TARGET}" | grep -q "snap" || echo "${VERSION_OUTPUT}" | grep -qi "snap"; then
+        CHROME_IS_SNAP=1
+        echo "  [WARNING] Detected Snap Chromium at ${CHROME_BIN} (resolves to ${RESOLVED_TARGET})."
+        echo "            Ubuntu Snap sandboxing blocks DevTools sockets used by Botasaurus."
+        echo "            Proceeding to replace with official Google Chrome .deb package..."
+    fi
 fi
 
-if [ -z "${CHROME_BIN}" ] || [ "${CHROME_BIN}" = "/snap/bin/chromium" ]; then
+if [ -z "${CHROME_BIN}" ] || [ "${CHROME_IS_SNAP}" -eq 1 ] || [ ! -f "/opt/google/chrome/google-chrome" -a "${OS_TYPE}" = "Linux" ]; then
     if [ "${OS_TYPE}" = "Linux" ]; then
         if [ "${ARCH_TYPE}" != "x86_64" ]; then
             echo "  [ERROR] Google Chrome .deb requires x86_64 architecture (found: ${ARCH_TYPE})."
