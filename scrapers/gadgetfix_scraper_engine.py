@@ -6,6 +6,7 @@ _CURL_LOCK = threading.Lock()
 
 import html as html_lib
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field

@@ -2788,7 +2788,13 @@ class DatabaseManager:
     def _history_rules_mark_baseline_rejected(rules_text: str) -> bool:
         try:
             rules = json.loads(rules_text or '{}')
-            return bool(isinstance(rules, dict) and rules.get('_baseline_rejected'))
+            # Partial snapshots are useful diagnostics, but they must never
+            # become the next comparison baseline. A blocked supplier can
+            # otherwise make all of its products look deleted on the next run.
+            return bool(
+                isinstance(rules, dict)
+                and (rules.get('_baseline_rejected') or rules.get('_automation_partial'))
+            )
         except Exception:
             return False
 

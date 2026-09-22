@@ -2,6 +2,7 @@ import csv
 import json
 
 import app as app_module
+from scripts.run_menu_map_scrapers import site_result_failed
 
 
 def test_menu_map_site_reports_invalid_categories_json(tmp_path, monkeypatch):
@@ -224,6 +225,17 @@ def test_menu_map_ensure_seeded_populates_baseline(tmp_path, monkeypatch):
     assert app_module.ensure_menu_map_seeded("phonelcdparts", output_dir) is False
 
 
+def test_menu_map_runner_marks_seed_restore_without_error_file_as_failed(tmp_path):
+    site_dir = tmp_path / "phonelcdparts"
+    site_dir.mkdir()
+    (site_dir / "categories.json").write_text("[]", encoding="utf-8")
+
+    assert site_result_failed(tmp_path, "phonelcdparts", 0) is True
+
+    (site_dir / "scraping_errors.json").write_text("[]", encoding="utf-8")
+    assert site_result_failed(tmp_path, "phonelcdparts", 0) is False
+
+
 def test_menu_map_restore_from_seed_output(tmp_path):
     from scrapers.menu_map.common import is_valid_nonempty_output, restore_from_seed_output
     import logging
@@ -235,4 +247,3 @@ def test_menu_map_restore_from_seed_output(tmp_path):
     restored = restore_from_seed_output("phonelcdparts", test_dir, logger)
     assert restored is True
     assert is_valid_nonempty_output(test_dir / "categories.json")
-

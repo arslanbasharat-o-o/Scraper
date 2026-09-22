@@ -369,6 +369,9 @@ def resume_run(run_id: int) -> int:
     result_count = int(result.get("count") or 0)
     summary["current_items"] = result_count
     summary["progress_percent"] = round((summary["completed_targets"] / max(1, total_target_count)) * 100, 1)
+    summary["partial_run"] = bool(result.get("partial_run"))
+    summary["warning"] = str(result.get("warning") or "").strip()
+    summary["target_errors"] = list(result.get("target_errors") or [])[:50]
     for key in ("sku_total", "sku_found", "sku_not_published", "sku_unavailable", "sku_unresolved"):
         summary[key] = int(result.get(key) or 0)
     workflow_error = str(result.get("error") or "").strip()
@@ -409,7 +412,9 @@ def resume_run(run_id: int) -> int:
         target_urls=target_urls,
         items_count=result_count,
         summary=summary,
-        error_text=final_error_text if not is_completed else "",
+        # A partial run is operationally completed, but retain its warning so
+        # the UI and retry workflow do not present it as a clean success.
+        error_text=final_error_text if (not is_completed or result.get("partial_run")) else "",
     )
     db_manager.close_connection()
     return 0 if is_completed else 2

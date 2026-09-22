@@ -21,6 +21,11 @@ MODULES = {
     "gadgetfix": "scrapers.menu_map.gadgetfix",
 }
 
+SITE_DEFAULT_TIMEOUTS = {
+    "txparts": 180000,
+    "txparts_canada": 180000,
+}
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
@@ -51,7 +56,10 @@ def command_for(site: str, args: argparse.Namespace) -> list[str]:
         if getattr(args, flag):
             cmd.append("--" + flag.replace("_", "-"))
     for name in ("output_dir", "timeout", "interaction_delay", "scroll_delay", "max_retries", "log_level"):
-        cmd.extend(["--" + name.replace("_", "-"), str(getattr(args, name))])
+        value = getattr(args, name)
+        if name == "timeout" and value == 60000:
+            value = SITE_DEFAULT_TIMEOUTS.get(site, value)
+        cmd.extend(["--" + name.replace("_", "-"), str(value)])
     return cmd
 
 
@@ -105,6 +113,24 @@ def merge_outputs(output_root: Path, sites: list[str]) -> None:
         summary.to_excel(writer, sheet_name="Summary", index=False)
 
 
+def site_result_failed(output_root: Path, site: str, returncode: int) -> bool:
+    """Treat recorded live extraction errors as failures, even if a site restored its seed."""
+    if returncode != 0:
+        return True
+    site_dir = output_root / site
+    error_path = output_root / site / "scraping_errors.json"
+    if not error_path.exists():
+        # A failed run can restore the baseline seed, which intentionally has
+        # no scraping_errors.json. That is safe data preservation, but it is
+        # not a successful live refresh.
+        return (site_dir / "categories.json").exists()
+    try:
+        errors = json.loads(error_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    return bool(errors)
+
+
 async def main() -> None:
     args = build_parser().parse_args()
     sites = selected_sites(args)
@@ -113,14 +139,18 @@ async def main() -> None:
         cmd = command_for(site, args)
         print(f"Running {site}: {' '.join(cmd)}")
         proc = subprocess.run(cmd, text=True)
-        statuses.append({"site": site, "returncode": proc.returncode})
-        if proc.returncode != 0:
-            print(f"{site} failed with exit code {proc.returncode}; continuing.")
+        failed = site_result_failed(Path(args.output_dir), site, proc.returncode) if not args.inspect_only else proc.returncode != 0
+        statuses.append({"site": site, "returncode": proc.returncode, "failed": failed})
+        if failed:
+            print(f"{site} failed live extraction; continuing so other suppliers can run.")
     if not args.inspect_only:
         merge_outputs(Path(args.output_dir), sites)
     print("Final execution summary:")
     for status in statuses:
-        print(f"  {status['site']}: exit_code={status['returncode']}")
+        result = "FAILED" if status["failed"] else "PASS"
+        print(f"  {status['site']}: {result}, exit_code={status['returncode']}")
+    if any(status["failed"] for status in statuses):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -382,6 +382,7 @@ MENU_MAP_SITES = {
         'name': 'TXParts',
         'url': 'https://txparts.com/',
         'module': 'scrapers.menu_map.txparts',
+        'timeout': 180000,
         'behavior': 'Shop/category navigation. The scraper extracts category links from desktop navigation and shop/category menus.',
     },
     'txparts_canada': {
@@ -3347,6 +3348,11 @@ def execute_scrape_workflow(
 
     items = [item for item in items if is_usable_scraped_item(item)]
 
+    # A supplier-level block should not discard products already collected from
+    # healthy targets. Keep the quality signal and save the successful portion
+    # as an explicitly partial snapshot instead of aborting the whole run.
+    partial_run = False
+    partial_reason = ''
     guard_anomalies = detect_sparse_target_anomalies(urls, items, previous_history, engine_used)
     if guard_anomalies:
         incident = create_scraper_guard_incident(
@@ -3362,7 +3368,8 @@ def execute_scrape_workflow(
             f"Incident: {incident.get('id')}"
         )
         app.logger.error(f"[scraper-guard] {error_text}")
-        return {
+        if not items:
+            return {
             "error": error_text,
             "rules": rules,
             "count": len(items),
@@ -3395,8 +3402,15 @@ def execute_scrape_workflow(
             "urls": urls,
             "target_errors": target_fetch_errors,
             "guard_incident": incident,
-            "guard_anomalies": guard_anomalies,
-        }
+                "guard_anomalies": guard_anomalies,
+            }
+        partial_run = True
+        partial_reason = error_text
+        app.logger.warning(
+            "[scraper-guard] Continuing with %s usable item(s) from healthy targets; "
+            "blocked targets remain retryable.",
+            len(items),
+        )
 
     run_validation = validate_scrape_completeness(urls, items, previous_history, target_fetch_errors)
     if not run_validation.get('approved', True):
@@ -3425,7 +3439,11 @@ def execute_scrape_workflow(
             + f" Incident: {incident.get('id')}"
         )
         app.logger.error(f"[scraper-guard] {error_text}")
-        return {
+        # Preserve healthy supplier results when the rejection is caused by
+        # target-level transport failures (403, browser verification, etc.).
+        # The snapshot is marked partial and excluded from future baselines.
+        if not items or not (target_fetch_errors or partial_run):
+            return {
             "error": error_text,
             "rules": rules,
             "count": len(items),
@@ -3455,8 +3473,18 @@ def execute_scrape_workflow(
             "urls": urls,
             "target_errors": target_fetch_errors,
             "guard_incident": incident,
-            "guard_anomalies": validation_anomalies,
-        }
+                "guard_anomalies": validation_anomalies,
+            }
+        partial_run = True
+        partial_reason = partial_reason or error_text
+        app.logger.warning(
+            "[scraper-guard] Saving partial result with %s usable item(s); "
+            "%s target error(s) remain retryable.",
+            len(items),
+            len(target_fetch_errors),
+        )
+        run_validation['partial_success'] = True
+        run_validation['status'] = 'Approved with Warnings'
 
     hydrated_from_history = hydrate_items_from_previous_history(items, previous_history)
     auto_enrich_details = False
@@ -3573,6 +3601,9 @@ def execute_scrape_workflow(
             "urls": urls,
             "target_errors": target_fetch_errors,
             "duplicate_rows_removed": duplicate_rows_removed,
+            "guard_anomalies": guard_anomalies,
+            "guard_incident": incident if guard_anomalies else None,
+            "partial_run": partial_run,
         }
     if progress_callback:
         progress_callback({
@@ -3625,7 +3656,12 @@ def execute_scrape_workflow(
     history_saved = False
     history_public_id = ''
     pruned_history_ids = []
+    persistence_error = ''
     history_rules = dict(rules)
+    if partial_run:
+        history_rules['_automation_partial'] = True
+        history_rules['_automation_partial_reason'] = partial_reason or 'Some supplier targets did not complete.'
+        history_rules['_automation_partial_target_errors'] = len(target_fetch_errors)
     if automation_job:
         history_rules['_automation_job_id'] = automation_job.get('id')
         history_rules['_automation_job_name'] = automation_job.get('name')
@@ -3641,18 +3677,25 @@ def execute_scrape_workflow(
             )
             if not history_saved:
                 app.logger.error("Failed to save fetch history to database")
+                persistence_error = 'Scraped products could not be persisted to the database.'
         except Exception as exc:
             app.logger.error(f"Database error: {exc}")
+            persistence_error = f'Database error while saving scrape history: {exc}'
     else:
         app.logger.warning(
             f"[engine] No usable products scraped; history was not saved url_count={len(urls)} "
             f"scraper_keys={','.join(scraper_keys_for_log)}"
         )
+        persistence_error = 'No usable products were scraped; no history was saved.'
+
+    if persistence_error and items:
+        partial_run = True
+        partial_reason = partial_reason or persistence_error
 
     scraper_keys = {detect_scraper_key(url) for url in urls if str(url or '').strip()}
     if history_saved and len(scraper_keys) == 1:
         history_public_id = build_public_history_id(next(iter(scraper_keys)), history_id)
-    if history_saved:
+    if history_saved and not partial_run:
         keep_histories = history_retention_keep_count()
         if keep_histories > 0:
             try:
@@ -3665,6 +3708,7 @@ def execute_scrape_workflow(
             except Exception as exc:
                 app.logger.error(f"[engine] Failed to prune old histories after save: {exc}")
 
+    workflow_error = partial_reason or persistence_error
     return {
         "rules": rules,
         "count": len(items),
@@ -3686,6 +3730,12 @@ def execute_scrape_workflow(
         "history_id": history_id,
         "history_public_id": history_public_id,
         "history_saved": history_saved,
+        "error": workflow_error,
+        "status": "partial" if partial_run else ("failed" if workflow_error else "completed"),
+        "partial_run": partial_run,
+        "warning": workflow_error if partial_run else "",
+        "guard_anomalies": guard_anomalies,
+        "guard_incident": incident if guard_anomalies else None,
         "pruned_history_ids": pruned_history_ids,
         "urls": urls,
         "target_errors": target_fetch_errors,
@@ -3766,6 +3816,12 @@ def _launch_automation_job(job_id: int, trigger_type: str = 'schedule') -> Tuple
             if last_history_ids:
                 previous_history_id = str(last_history_ids[0] or '').strip()
                 previous_history = db_manager.get_history_detail(previous_history_id)
+                # Partial snapshots are diagnostic output only. Never use one
+                # as the next trusted baseline or a blocked supplier can make
+                # healthy products appear to have disappeared.
+                if isinstance((previous_history or {}).get('rules'), dict) and (previous_history or {}).get('rules', {}).get('_automation_partial'):
+                    previous_history = None
+                    previous_history_id = ''
 
             run_record = db_manager.create_automation_run(
                 normalized_job_id,

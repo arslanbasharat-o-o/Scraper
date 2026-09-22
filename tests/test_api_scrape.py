@@ -938,7 +938,7 @@ def test_pause_stops_inflight_resume_worker_tree_promptly(tmp_path, monkeypatch)
     assert worker.killed is True
 
 
-def test_sparse_target_guard_blocks_bad_history_save(tmp_path, monkeypatch):
+def test_sparse_target_guard_saves_partial_history_without_promoting_baseline(tmp_path, monkeypatch):
     monkeypatch.setenv("SCRAPER_ANOMALY_GUARD", "1")
     monkeypatch.setenv("SCRAPER_ANOMALY_MIN_PREVIOUS", "10")
     monkeypatch.setenv("SCRAPER_ANOMALY_MAX_SPARSE_ITEMS", "2")
@@ -980,9 +980,10 @@ def test_sparse_target_guard_blocks_bad_history_save(tmp_path, monkeypatch):
             discounted_value=1.0,
             discounted_formatted="$1.00",
             original_formatted="$1.00",
-            source="test",
-            image_url="",
-        )]
+                source="test",
+                image_url="",
+                sku="SKU-ONLY-ONE",
+            )]
 
     monkeypatch.setattr(app_module, "build_session", fake_build_session)
     monkeypatch.setattr(app_module, "scrape_url", fake_scrape_url)
@@ -994,13 +995,18 @@ def test_sparse_target_guard_blocks_bad_history_save(tmp_path, monkeypatch):
         previous_history_override=previous_history,
     )
 
-    assert result["history_saved"] is False
+    assert result["history_saved"] is True
+    assert result["status"] == "partial"
+    assert result["partial_run"] is True
     assert result["guard_anomalies"]
     assert result["guard_anomalies"][0]["previous_count"] == 12
     assert result["guard_anomalies"][0]["current_count"] == 1
     assert result["guard_incident"]["chatgpt_report"]["sent"] is False
-    assert "Scraper data-quality guard stopped" in result["error"]
-    assert app_module.db_manager.get_history_list(limit=10) == []
+    assert "Scraper data-quality guard stopped" in result["warning"]
+    histories = app_module.db_manager.get_history_list(limit=10)
+    assert len(histories) == 1
+    assert histories[0]["rules"].get("_automation_partial") is True
+    assert app_module.db_manager.get_latest_history_for_urls([target_url]) is None
     assert (tmp_path / "output" / "scraper_incidents").exists()
 
 
@@ -1371,7 +1377,7 @@ def test_spawn_automation_run_worker_selects_sku_backfill_script(tmp_path, monke
 
 @pytest.mark.parametrize('parallel', [False, True])
 @pytest.mark.parametrize('failure', ['empty', 'partial', 'exception'])
-def test_failed_targets_are_retryable_and_never_saved_as_complete(tmp_path, monkeypatch, parallel, failure):
+def test_failed_targets_are_retryable_and_saved_as_partial(tmp_path, monkeypatch, parallel, failure):
     from types import SimpleNamespace
     app_module = _fresh_app(tmp_path, monkeypatch)
     good = 'https://www.mobilesentrix.com/good'
@@ -1402,10 +1408,44 @@ def test_failed_targets_are_retryable_and_never_saved_as_complete(tmp_path, monk
     assert completed == [good]
     assert len(closed) == 2
     assert checkpoints
-    assert result['history_saved'] is False
-    assert result['error']
+    assert result['history_saved'] is True
+    assert result['status'] == 'partial'
+    assert result['partial_run'] is True
+    assert result['warning']
     assert result['target_errors'][0]['url'] == bad
-    assert app_module.db_manager.get_history_list(limit=10) == []
+    histories = app_module.db_manager.get_history_list(limit=10)
+    assert len(histories) == 1
+    assert histories[0]['rules'].get('_automation_partial') is True
+    assert app_module.db_manager.get_latest_history_for_urls([good, bad]) is None
+
+
+def test_history_persistence_failure_is_not_reported_as_success(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_module, 'build_session', lambda **_: (SimpleNamespace(close=lambda: None), False))
+    monkeypatch.setattr(app_module.db_manager, 'save_fetch_history', lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        app_module,
+        'scrape_url',
+        lambda _session, url, *_args: [app_module.Item(
+            url=f'{url}/product', site='example.com', title='Product', price_value=10,
+            price_currency='USD', price_text='$10', discounted_value=10,
+            discounted_formatted='$10', original_formatted='$10', source='listing',
+            image_url='', sku='SKU-1',
+        )],
+    )
+
+    result = app_module.execute_scrape_workflow(
+        ['https://example.com/category'],
+        use_browser=False,
+        use_parallel=False,
+        enrich_details=False,
+    )
+
+    assert result['history_saved'] is False
+    assert result['status'] == 'partial'
+    assert result['partial_run'] is True
+    assert 'persisted' in result['error']
 
 
 def test_first_run_rejects_fetch_errors_even_without_baseline_guard(tmp_path, monkeypatch):

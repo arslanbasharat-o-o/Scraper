@@ -167,6 +167,8 @@ async def extract(page, config, args, output_dir, logger):
 def main() -> None:
     parser = build_arg_parser(CONFIG.output_slug)
     args = parser.parse_args()
+    if args.timeout == 60000:
+        args.timeout = 180000
     asyncio.run(run_site(CONFIG, args, extract))
 
 
