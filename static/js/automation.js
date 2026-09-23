@@ -1081,6 +1081,7 @@
   function renderJobs(jobs) {
     const container = elements.automationJobs;
     if (!container) return;
+    container.setAttribute('aria-busy', 'false');
     state.jobs = Array.isArray(jobs) ? jobs : [];
     if (!state.jobs.length) {
       container.innerHTML = `<div class="automation-job automation-empty-state"><div class="automation-job__title">No jobs for ${escapeHtml(activeSiteLabel())}</div><div class="automation-job__subtitle">Use Menu Map to queue visible categories.</div></div>`;
@@ -1147,6 +1148,7 @@
   function renderRuns(runs) {
     const container = elements.automationRuns;
     if (!container) return;
+    container.setAttribute('aria-busy', 'false');
     syncActivityPanelCopy();
     const detailRun = state.runDetail?.run;
     state.runs = (Array.isArray(runs) ? runs : []).map(run => {

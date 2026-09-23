@@ -165,6 +165,32 @@ body {
 
 .automation-activity-section {
   min-width: 0;
+  min-height: 150px;
+  contain: layout;
+}
+
+.automation-initial-placeholder {
+  min-height: 112px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  font-size: .8rem;
+}
+
+.automation-dashboard {
+  min-height: 680px;
+}
+
+.automation-main-content > .cy-card:last-child {
+  min-height: 600px;
+  contain: layout;
+}
+
+.app-footer {
+  min-height: 52px;
+  contain: layout;
 }
 
 .automation-activity-section + .automation-activity-section {
@@ -622,7 +648,7 @@ body {
 }
 
 .automation-run .automation-job__actions {
-  justify-content: flex-end;
+  justify-content: flex-start;
   margin-top: .35rem;
 }
 
@@ -695,10 +721,12 @@ body {
 }
 
 .inspector-tab {
-  padding: .65rem 1.1rem;
-  border: none;
-  background: none;
-  color: var(--text-3);
+  min-height: 38px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
   font-size: .82rem;
   font-weight: 700;
   cursor: pointer;
@@ -713,17 +741,12 @@ body {
 
 .inspector-tab.is-active {
   color: var(--primary);
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
 }
 
 .inspector-tab.is-active::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: var(--primary);
-  border-radius: 3px 3px 0 0;
+  content: none;
 }
 
 .inspector-view-pane {
@@ -1712,6 +1735,10 @@ body {
 }
 
 @media (max-width: 540px) {
+  .automation-dashboard { min-height: 0; }
+
+  .automation-main-content > .cy-card:last-child { min-height: 480px; }
+
   .automation-editor-grid,
   .automation-form-grid {
     grid-template-columns: 1fr;
@@ -1987,3 +2014,40 @@ body {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.85; transform: scale(1.08); }
 }
+
+/* Shared labels, timing emphasis, and control geometry for this page. */
+.automation-detail-filter {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+}
+
+.automation-detail-filter .field-label-sm {
+  font-size: .78rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+
+.automation-job .automation-meta:first-child .automation-meta__label {
+  color: var(--primary-2);
+  font-size: .68rem;
+  letter-spacing: .03em;
+}
+
+.automation-job .automation-meta:first-child .automation-meta__value {
+  color: var(--primary-2);
+  font-size: .82rem;
+}
+
+.automation-dashboard button:not(.automation-card-select),
+.automation-supplier-tab,
+.inspector-tab {
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 600;
+}
+
+.page-shell .cy-card,
+.automation-supplier-tabs { border-radius: 12px; }

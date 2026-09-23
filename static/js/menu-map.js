@@ -65,6 +65,7 @@ let excludedBySite = loadExclusions();
 let treeOpenStateBySite = loadTreeOpenState();
 let activeTreeFilter = 'all';
 let lazyTreeChildren = new Map();
+let treeVisibleLimit = 20;
 const MENU_POLL_BASE_MS = 2500;
 const MENU_POLL_MAX_MS = 30000;
 const MAX_JOB_OUTPUT_CHARS = 1600;
@@ -684,8 +685,19 @@ function renderFiles(site) {
     elements.fileStrip.innerHTML = '<span class="section-subtitle">No output files yet. Run this scraper to create them.</span>';
     return;
   }
-  elements.fileStrip.innerHTML = files.map(file => `
-    <a class="file-link" href="${escapeHtml(file.download_url)}">${escapeHtml(file.name)}</a>
+  const groups = new Map();
+  files.forEach(file => {
+    const format = String(file.name || '').split('.').pop().toUpperCase();
+    if (!groups.has(format)) groups.set(format, []);
+    groups.get(format).push(file);
+  });
+  elements.fileStrip.innerHTML = [...groups.entries()].map(([format, group]) => `
+    <section class="file-group" aria-label="${escapeHtml(format)} files">
+      <h3 class="file-group__title">${escapeHtml(format)} files</h3>
+      <div class="file-group__links">${group.map(file => `
+        <a class="file-link" href="${escapeHtml(file.download_url)}" download>${escapeHtml(file.name)}</a>
+      `).join('')}</div>
+    </section>
   `).join('');
 }
 
@@ -715,7 +727,9 @@ function renderTree(site) {
       ? `${formatNumber(hidden)} hidden item${hidden === 1 ? '' : 's'} on this site. Hidden parents and sub-child groups also hide everything below them.`
       : 'Use X to hide a parent, sub-child group, or child from this dashboard view.';
   }
-  const html = tree.map(parent => {
+  const shouldPaginate = !query && activeTreeFilter === 'all';
+  const displayedTree = shouldPaginate ? tree.slice(0, treeVisibleLimit) : tree;
+  const html = displayedTree.map(parent => {
     const pKey = parentKey(parent);
     if (isExcluded(slug, pKey)) return '';
     const subs = Array.isArray(parent.sub_children) ? parent.sub_children : [];
@@ -784,9 +798,11 @@ function renderTree(site) {
   }).filter(Boolean).join('');
 
   const filterLabel = activeTreeFilter === 'missing' ? 'missing URLs' : 'all categories';
-  elements.treeSummary.textContent = `${formatNumber(visibleParents)} visible parents - ${formatNumber(visibleSubs)} visible sub groups - ${formatNumber(visibleChildren)} visible child links - ${filterLabel}`;
+  elements.treeSummary.textContent = shouldPaginate
+    ? `Showing ${formatNumber(Math.min(treeVisibleLimit, tree.length))} of ${formatNumber(tree.length)} parent categories - ${formatNumber(visibleSubs)} visible sub groups - ${formatNumber(visibleChildren)} visible child links - ${filterLabel}`
+    : `${formatNumber(visibleParents)} visible parent categories - ${formatNumber(visibleSubs)} visible sub groups - ${formatNumber(visibleChildren)} visible child links - ${filterLabel}`;
   elements.treeContainer.className = 'menu-tree';
-  elements.treeContainer.innerHTML = html || '<div class="menu-tree-empty">No categories match your search.</div>';
+  elements.treeContainer.innerHTML = `${html || '<div class="menu-tree-empty">No categories match your search.</div>'}${shouldPaginate && treeVisibleLimit < tree.length ? `<div class="tree-load-more"><button class="btn-export" type="button" data-load-more-tree>Load 20 more categories</button></div>` : ''}`;
   const openState = treeOpenStateBySite[slug] || {};
   elements.treeContainer.querySelectorAll('details[data-tree-key]').forEach(detail => {
     detail.open = Boolean(openState[detail.dataset.treeKey]);
@@ -1308,6 +1324,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.runSelectedBtn.addEventListener('click', () => startRun(selectedSites()).catch(err => showAlert('error', err.message)));
   elements.runAutomationForSiteBtn?.addEventListener('click', () => runAutomationForSelectedSite());
   elements.treeSearch.addEventListener('input', renderDetail);
+  elements.treeContainer.addEventListener('click', event => {
+    if (!event.target.closest('[data-load-more-tree]')) return;
+    treeVisibleLimit += 20;
+    renderDetail();
+  });
   if (elements.resetHiddenBtn) elements.resetHiddenBtn.addEventListener('click', () => clearExclusions(selectedSite));
   elements.expandAllBtn.addEventListener('click', () => setAllTreeOpenState(selectedSite, true));
   elements.collapseAllBtn.addEventListener('click', () => setAllTreeOpenState(selectedSite, false));

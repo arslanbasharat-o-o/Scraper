@@ -43,6 +43,23 @@
   transition: border-color var(--transition), background var(--transition), transform var(--transition);
 }
 
+.menu-map-stats--global .menu-stat {
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
+}
+
+.detail-grid .detail-stat {
+  background: var(--surface-2);
+  border-style: dashed;
+}
+
+.scope-heading {
+  margin: 1rem 0 -.5rem;
+  color: var(--text-2);
+  font-size: .82rem;
+  font-weight: 700;
+}
+
 .menu-stat:focus-visible,
 .detail-stat:focus-visible,
 .menu-stat:focus-visible,
@@ -241,6 +258,10 @@
 }
 
 .file-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: start;
+  gap: .75rem;
   margin-top: 1rem;
   border-top: 1px solid var(--border);
   padding-top: .85rem;
@@ -248,17 +269,32 @@
 
 .file-link {
   color: var(--url);
-  text-decoration: none;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: .25rem .65rem;
-  font-size: .74rem;
-  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: .15em;
+  font-size: .75rem;
+  font-weight: 600;
 }
 
 .file-link:hover {
-  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.file-group {
+  display: grid;
+  align-content: start;
+  gap: .35rem;
+  min-width: 0;
+}
+
+.file-group__title {
+  color: var(--text-2);
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.file-group__links {
+  display: grid;
+  gap: .3rem;
 }
 
 .btn-danger-soft {
@@ -373,7 +409,7 @@
 .tree-parent__head,
 .tree-sub__head {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   gap: .75rem;
   padding: .75rem .85rem .75rem 2rem;
@@ -414,6 +450,17 @@
 .tree-sub__name {
   color: var(--text);
   font-weight: 800;
+  text-transform: lowercase;
+}
+
+.tree-parent__name::first-letter,
+.tree-sub__name::first-letter {
+  text-transform: uppercase;
+}
+
+.tree-parent__head .tree-node-actions,
+.tree-sub__head .tree-node-actions {
+  margin-left: .35rem;
 }
 
 .tree-parent__meta,
@@ -440,6 +487,12 @@
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: .35rem;
   padding: 0 .75rem .75rem;
+}
+
+.tree-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0 .25rem;
 }
 
 .tree-child {
@@ -674,3 +727,9 @@
   opacity: 1;
   visibility: visible;
 }
+
+/* Keep the page's core surfaces and controls on shared geometry. */
+.page-shell .cy-card { border-radius: 12px; }
+.page-shell button:not(.tree-remove-btn):not(.scroll-top-btn),
+.page-shell input:not([type="checkbox"]):not([type="radio"]),
+.page-shell select { border-radius: 8px; }

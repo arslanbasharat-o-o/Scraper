@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.5.10] - 2026-09-24
+- Improve Automation, Menu Map, and Server Logs usability with more consistent controls, clearer labels, and stronger state feedback.
+- Group Menu Map downloads by format and add progressive loading for large category hierarchies.
+- Reduce Automation page font reflow and reserve space for asynchronously loaded dashboard content.
+
 ## [8.5.9] - 2026-09-22
 - Expand `scripts/auto_fix.sh` service reloader to automatically scan and restart multiple systemd service variants (`scraper`, `gunicorn`, `parts-extractor`, `flask`, `parts`).
 - Add automatic SIGHUP broadcast (`pkill -HUP -f gunicorn`) to gracefully reload active Gunicorn master/worker processes in-memory without downtime.

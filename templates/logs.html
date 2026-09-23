@@ -91,16 +91,6 @@
           <h2 class="section-title">Production Server Logs</h2>
           <p class="section-subtitle">Real-time system health, worker processes, and live extraction logs</p>
         </div>
-        <div class="logs-hero__actions">
-          <button id="downloadAllLogsBtn" class="btn-export" type="button" title="Download all active and rotated server logs as a zip archive">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            Download All Logs (.ZIP)
-          </button>
-        </div>
       </div>
     </section>
 
@@ -171,7 +161,16 @@
         </div>
 
         <div class="logs-actions-right">
+          <button id="downloadAllLogsBtn" class="btn-export btn-sm" type="button" title="Download all active and rotated server logs as a zip archive">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download All (.ZIP)
+          </button>
           <button id="copyLogsBtn" class="btn-secondary btn-sm" type="button" title="Copy visible lines to clipboard">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="8" y="8" width="13" height="13" rx="2"></rect><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path>
+            </svg>
             Copy Visible
           </button>
 

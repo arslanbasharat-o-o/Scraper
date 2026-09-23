@@ -171,6 +171,22 @@
   gap: .6rem;
 }
 
+.logs-actions-row button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  border-radius: 8px;
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 600;
+}
+
+.logs-actions-left {
+  justify-content: flex-start;
+}
+
 /* Custom Checkbox Toggle Chips */
 .logs-check-control {
   display: inline-flex;
@@ -295,10 +311,22 @@
 }
 
 .logs-tab-badge.is-paused {
-  background: rgba(148, 163, 184, 0.12);
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(240, 192, 64, 0.18);
+  color: #ffd166;
+  border: 1px solid rgba(240, 192, 64, 0.55);
+  font-size: .72rem;
+  padding: .2rem .55rem;
 }
+
+[data-bs-theme="light"] .logs-tab-badge.is-paused {
+  color: #805b00;
+  background: rgba(240, 192, 64, 0.2);
+  border-color: rgba(128, 91, 0, 0.4);
+}
+
+/* Page-level shape tokens keep log surfaces and controls cohesive. */
+.page-shell .cy-card { border-radius: 12px; }
+.page-shell button, .page-shell .logs-select, .page-shell .logs-input { border-radius: 8px; }
 
 /* Right-side Terminal Metadata */
 .logs-terminal-meta {
