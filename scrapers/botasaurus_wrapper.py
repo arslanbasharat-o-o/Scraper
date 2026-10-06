@@ -89,7 +89,7 @@ def resolve_chrome_executable() -> str | None:
         LOGGER.warning(
             "[botasaurus] Only Snap Chromium was found at %s. "
             "Snap sandboxing may block DevTools ports on Linux servers. "
-            "Install official Google Chrome (.deb) via 'bash scripts/auto_fix.sh'.",
+            "Install official Google Chrome (.deb), then run 'bash deploy.sh' to verify readiness.",
             snap_fallback,
         )
         return snap_fallback

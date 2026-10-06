@@ -12,7 +12,6 @@ set "PORT_END=5050"
 if not defined OPEN_BROWSER set "OPEN_BROWSER=1"
 if not defined FLASK_DEBUG set "FLASK_DEBUG=0"
 if not defined PAUSE_ON_EXIT set "PAUSE_ON_EXIT=1"
-if not defined STOP_EXISTING set "STOP_EXISTING=1"
 
 echo.
 echo ================================================
@@ -30,19 +29,23 @@ echo [2/6] Checking Python dependencies...
 call :ensure_dependencies
 if errorlevel 1 goto :startup_failed
 
-echo [3/6] Checking project directories...
+echo [3/6] Checking local environment configuration...
+call :ensure_environment
+if errorlevel 1 goto :startup_failed
+
+echo [4/6] Checking project directories...
 call :ensure_directories
 if errorlevel 1 goto :startup_failed
 
-echo [4/6] Checking for Chrome/Chromium...
+echo [5/6] Checking for Chrome/Chromium...
 call :check_browser
 if errorlevel 1 goto :startup_failed
 
-echo [5/6] Resolving startup port...
+echo [6/6] Resolving startup port...
 call :ensure_port
 if errorlevel 1 goto :startup_failed
 
-echo [6/6] Starting %APP_NAME%...
+echo Starting %APP_NAME%...
 echo.
 echo Frontend: http://127.0.0.1:%PORT%
 echo Network:  http://0.0.0.0:%PORT%
@@ -192,6 +195,31 @@ if not exist "data\site_dbs" mkdir "data\site_dbs" >nul 2>nul
 echo + Data directories ready
 goto :eof
 
+:ensure_environment
+if exist ".env" (
+    echo + Existing .env preserved
+    goto :eof
+)
+if not exist ".env.windows-laptop.example" (
+    color 4c
+    echo X .env.windows-laptop.example is missing.
+    exit /b 1
+)
+copy /Y ".env.windows-laptop.example" ".env" >nul
+if errorlevel 1 (
+    color 4c
+    echo X Could not create .env from the Windows laptop template.
+    exit /b 1
+)
+"%VENV_PY%" -c "from pathlib import Path; import re,secrets; p=Path('.env'); s=p.read_text(encoding='utf-8'); s,n=re.subn(r'(?m)^SECRET_KEY=.*$', 'SECRET_KEY=' + secrets.token_hex(32), s, count=1); raise SystemExit('SECRET_KEY setting missing' if n != 1 else (p.write_text(s,encoding='utf-8') and 0))"
+if errorlevel 1 (
+    color 4c
+    echo X Could not generate SECRET_KEY in .env.
+    exit /b 1
+)
+echo + Created .env with a unique SECRET_KEY
+goto :eof
+
 :check_browser
 set "CHROME_FOUND=0"
 
@@ -233,23 +261,10 @@ goto :eof
 set "CHECK_PORT=%~1"
 call :is_port_free "%CHECK_PORT%"
 if not errorlevel 1 goto :eof
-
-if /I not "%STOP_EXISTING%"=="1" (
-    color 4c
-    echo X Port %CHECK_PORT% is already in use.
-    echo   Set STOP_EXISTING=1 to let startup close an older copy of this app.
-    exit /b 1
-)
-
-echo - Port %CHECK_PORT% is already in use; checking for an older %APP_NAME% server...
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\stop_existing_server.ps1" -Port "%CHECK_PORT%" -Workspace "%CD%"
-if errorlevel 1 (
-    color 4c
-    echo X Could not safely clear port %CHECK_PORT%.
-    echo   Close the existing app window and run start.bat again.
-    exit /b 1
-)
-goto :eof
+color 4c
+echo X Port %CHECK_PORT% is already in use.
+echo   Stop the process using that port or choose another PORT, then retry.
+exit /b 1
 
 :validate_port
 set "CHECK_PORT=%~1"

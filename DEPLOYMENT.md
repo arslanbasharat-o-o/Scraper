@@ -4,44 +4,37 @@
 
 This application uses an embedded SQLite database and an in-process background scheduler for automation tasks. It is designed to be run as a single instance.
 
-### One-command Windows laptop setup
+### Local Windows startup
 
-From the project directory, run:
-
-```bat
-scripts\setup_windows_laptop.bat
-```
-
-The script creates the Python virtual environment, installs `requirements.txt`,
-creates `.env` from `.env.windows-laptop.example` when needed, creates the data
-directories, checks the browser/runtime, compiles the Python sources, and checks
-that the application imports successfully. It does not overwrite an existing
-`.env` or start a scrape automatically.
-
-After it reports `SETUP COMPLETE - LAPTOP READY`, start the app with:
+From the project directory, run the local launcher:
 
 ```bat
 start.bat
 ```
 
+It prepares `.venv`, installs requirements, preserves an existing `.env`, creates
+the runtime directories, and starts the dashboard locally. A `.bat` file is a
+Windows command script; Ubuntu/Linux uses `deploy.sh` below.
+
 ### Prerequisites
 
-- Python 3.10, 3.11, or 3.12 (do not use 3.13 due to `curl_cffi` compatibility).
+- Python 3.12 for the Windows launcher; Python 3.10–3.12 on Ubuntu/Linux (do not use 3.13 due to `curl_cffi` compatibility).
 - Chrome or Chromium installed (for Botasaurus browser fallback).
 - Windows (supported), Linux, or macOS.
 
-### Quick Setup on Ubuntu / Linux Server (Recommended)
+### Ubuntu / Linux deployment
 
-Run the automated setup script to install dependencies, official Google Chrome (`.deb`), and run the pre-flight verification:
+From the project checkout on the server, run:
+
 ```bash
-bash scripts/setup_server.sh
+bash deploy.sh
 ```
-This script will:
-1. Automatically download and install official Google Chrome if missing (avoiding broken Ubuntu Snap packages).
-2. Create and configure `.venv` with Python 3.10–3.12.
-3. Install all Python dependencies from `requirements.txt`.
-4. Initialize `.env` from `.env.server-40gb.example` with a secure random `SECRET_KEY`.
-5. Run the pre-flight readiness audit (`python -m scrapers.system_check`).
+
+The script prepares Python 3.10–3.12 and dependencies, creates `.env` from the
+40 GB template only when absent, creates runtime directories, and runs the
+readiness check. Install Chrome and configure credentials/proxy separately.
+When a `scraper.service` systemd unit is installed, it restarts that service and
+waits for `/readyz`; otherwise it prints the single-worker Gunicorn command.
 
 ---
 
@@ -108,15 +101,9 @@ All state is stored in `data/site_dbs/`. Ensure this directory is mounted as a p
 
 ### Updating an Existing Server
 
-When updates are pushed to GitHub, the server does not need to reinstall Chrome or re-run the full installer. Simply run:
+Pull the desired revision, then run the deployment check:
 
 ```bash
-# 1. Pull updates
 git pull origin main
-
-# 2. Restart service
-sudo systemctl restart scraper
-
-# 3. Verify readiness & version
-curl -s http://localhost:5000/readyz
+bash deploy.sh
 ```

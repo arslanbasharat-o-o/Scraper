@@ -49,7 +49,7 @@ def check_chrome() -> Dict[str, Any]:
             "is_snap": False,
             "error": "Google Chrome / Chromium executable not found on system.",
             "recommendation": (
-                "Install official Google Chrome: run 'bash scripts/setup_server.sh' "
+                "Install official Google Chrome, then run 'bash deploy.sh' "
                 "or download from https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
             ),
         }
@@ -88,7 +88,7 @@ def check_chrome() -> Dict[str, Any]:
             ),
             "recommendation": (
                 "Install the official Google Chrome .deb package (which supports DevTools sockets): "
-                "run 'bash scripts/setup_server.sh'"
+                "run 'bash deploy.sh'"
             ),
         }
 

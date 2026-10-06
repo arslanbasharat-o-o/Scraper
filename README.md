@@ -26,6 +26,10 @@ Python `3.13` is not recommended because some HTTP/TLS dependencies may not supp
 
 ## Installation
 
+On Windows, use `start.bat` to create the virtual environment, install
+requirements, and start the local dashboard. On Ubuntu/Linux, use `bash
+deploy.sh` to prepare the deployment environment and run readiness checks.
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
@@ -75,6 +79,7 @@ gunicorn -w 1 --threads 4 -b 0.0.0.0:5000 app:app
 ├── docs/
 ├── requirements.txt
 ├── Dockerfile
+├── deploy.sh
 └── start.bat
 ```
 
@@ -99,6 +104,8 @@ Keep persistent database directories on durable storage when deploying to a serv
 .\.venv\Scripts\python.exe -m py_compile app.py database.py automation_service.py scripts\resume_automation_run.py
 .\.venv\Scripts\python.exe -m pytest tests
 ```
+
+Install test dependencies with `python -m pip install -r requirements-dev.txt`.
 
 ## License
 
