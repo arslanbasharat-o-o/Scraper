@@ -34,7 +34,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 from dataclasses import asdict
 from typing import Callable, List, Dict, Tuple, Optional, Any
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from copy import copy
 from functools import wraps, lru_cache
 import gzip
@@ -207,6 +207,35 @@ def resolve_scraper_worker_limit(engine_type: str, phase: str) -> int:
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
 APP_ROOT = Path(__file__).resolve().parent
+DEFAULT_SCRAPER_MAX_DURATION_SECONDS = 5 * 60 * 60
+MAX_SCRAPER_MAX_DURATION_SECONDS = 5 * 60 * 60
+try:
+    SCRAPER_MAX_TARGET_URLS = max(1, min(10_000, int(os.getenv('SCRAPER_MAX_TARGET_URLS', '5000') or 5000)))
+except (TypeError, ValueError):
+    SCRAPER_MAX_TARGET_URLS = 5000
+
+
+def resolve_scraper_max_duration_seconds(value=None) -> int:
+    """Return a bounded workflow deadline, defaulting to the five-hour ceiling."""
+    raw_value = value
+    if raw_value in (None, ''):
+        raw_value = os.getenv('SCRAPER_MAX_DURATION_SECONDS', DEFAULT_SCRAPER_MAX_DURATION_SECONDS)
+    try:
+        seconds = int(float(raw_value))
+    except (TypeError, ValueError, OverflowError):
+        seconds = DEFAULT_SCRAPER_MAX_DURATION_SECONDS
+    return max(60, min(MAX_SCRAPER_MAX_DURATION_SECONDS, seconds))
+
+
+def format_scraper_duration(seconds: int) -> str:
+    seconds = max(60, int(seconds))
+    if seconds % 3600 == 0:
+        hours = seconds // 3600
+        return f'{hours} hour' if hours == 1 else f'{hours} hours'
+    minutes = max(1, round(seconds / 60))
+    return f'{minutes} minute' if minutes == 1 else f'{minutes} minutes'
+
+
 app.config['MAX_CONTENT_LENGTH'] = max(
     1,
     int(os.getenv('MAX_REQUEST_SIZE_MB', '25') or 25),
@@ -292,6 +321,8 @@ AUTOMATION_ACTIVE_JOBS = set()
 AUTOMATION_ACTIVE_JOBS_LOCK = threading.Lock()
 AUTOMATION_RESUME_PROCESSES: Dict[int, subprocess.Popen] = {}
 AUTOMATION_RESUME_PROCESSES_LOCK = threading.Lock()
+# Allow deadline handling to flush checkpoints before killing a stuck process.
+AUTOMATION_RESUME_WATCHDOG_SECONDS = MAX_SCRAPER_MAX_DURATION_SECONDS + 120
 MENU_MAP_JOBS: Dict[str, Dict[str, object]] = {}
 MENU_MAP_JOBS_LOCK = threading.Lock()
 SHUTDOWN_HOOKS_REGISTERED = False
@@ -299,6 +330,29 @@ SHUTDOWN_HOOKS_REGISTERED = False
 
 class AutomationRunPaused(RuntimeError):
     """Raised by progress callbacks when a running automation run is paused."""
+
+
+class ScrapeDeadlineExceeded(RuntimeError):
+    """Raised when a scrape reaches its configured maximum runtime."""
+
+
+def _completed_futures_with_stop(futures, stop_check):
+    """Poll stop conditions even when every running request is stalled."""
+    pending = set(futures)
+    while pending:
+        stop_check()
+        completed, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+        for future in completed:
+            stop_check()
+            yield future
+
+
+def _attach_session_stop_check(session, stop_check):
+    # Some lightweight test doubles cannot accept attributes.
+    try:
+        session.scraper_stop_check = stop_check
+    except (AttributeError, TypeError):
+        pass
 
 
 def make_automation_run_stop_checker(run_id: int, *, min_interval_seconds: float = 0.35) -> Callable[[], None]:
@@ -928,7 +982,6 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
     browser_fallback_setting = str(os.getenv('SCRAPER_LOCAL_BROWSER_FALLBACK') or '').strip().lower()
     browser_fallback_enabled = (
         bool(use_browser)
-        or use_browser is None
         or browser_fallback_setting in {'1', 'true', 'yes', 'on'}
     )
     browser_fallback_engines = set(SCRAPER_MODULES)
@@ -958,10 +1011,19 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
     thread_state = threading.local()
     created_sessions = []
     created_sessions_lock = threading.Lock()
+    cancelled = threading.Event()
+    stop_reason = []
 
     def _check_stop():
-        if callable(stop_check):
-            stop_check()
+        if cancelled.is_set():
+            raise stop_reason[0]
+        try:
+            if callable(stop_check):
+                stop_check()
+        except (AutomationRunPaused, ScrapeDeadlineExceeded) as exc:
+            stop_reason.append(exc)
+            cancelled.set()
+            raise
 
     def get_thread_session(engine_type: str):
         sessions = getattr(thread_state, 'sessions', None)
@@ -985,6 +1047,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         else:
             session, _ = build_session(retries=retries, verify_ssl=verify_ssl, use_curl=use_curl)
 
+        _attach_session_stop_check(session, _check_stop)
         sessions[engine_type] = session
         bootstrap_cookies = (session_cookies_by_engine or {}).get(engine_type) or {}
         if bootstrap_cookies and session is not None and hasattr(session, 'cookies'):
@@ -1021,11 +1084,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         browser_succeeded = False
         status_code = 0
         detail_session = None
-        prefer_browser_first = bool(use_browser) or (
-            use_browser is None
-            and is_supported_supplier_url(item_url)
-            and scraper_prefers_botarus(engine_type)
-        )
+        prefer_browser_first = bool(use_browser)
         direct_batch = (
             browser_batch_enabled
             and (prefer_browser_first or use_browser is True)
@@ -1038,6 +1097,8 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 candidate = _do_enrich(prefer_browser_first)
                 if candidate:
                     enriched = candidate
+            except (AutomationRunPaused, ScrapeDeadlineExceeded):
+                raise
             except Exception as http_exc:
                 http_error = http_exc
                 if logger:
@@ -1051,6 +1112,8 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                     candidate = _do_enrich(False)
                     if candidate:
                         enriched = candidate
+                except (AutomationRunPaused, ScrapeDeadlineExceeded):
+                    raise
                 except Exception as http_exc:
                     http_error = http_error or http_exc
                     if logger:
@@ -1061,9 +1124,13 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         # same URL in a bounded browser slot. A confirmed 404/410 is treated
         # as unavailable and is never turned into a fabricated identifier.
         per_url_browser_fallback = not (browser_batch_enabled and _is_mobilesentrix_detail_engine(engine_type) and is_supported_supplier_url(item_url))
-        if browser_fallback_enabled and per_url_browser_fallback and engine_type in browser_fallback_engines:
+        # Read fetch metadata even when browsers are disabled, so terminal
+        # statuses and already-attempted transports aren't lost.
+        if not direct_batch:
             try:
                 detail_session = get_thread_session(engine_type)
+            except (AutomationRunPaused, ScrapeDeadlineExceeded):
+                raise
             except Exception:
                 pass
             status_code = 0
@@ -1096,7 +1163,14 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 (status_code != 200 and item_requires_sku(enriched))
                 or allow_missing_sku_browser
             )
-            needs_alternate_method = (not prefer_browser_first) and status_code not in {404, 410} and (browser_retryable_error or retry_missing_sku)
+            pipeline_browser_attempted = bool(getattr(detail_session, 'fetch_browser_attempted', False))
+            needs_alternate_method = (
+                browser_fallback_enabled and per_url_browser_fallback
+                and engine_type in browser_fallback_engines
+                and not prefer_browser_first and not pipeline_browser_attempted
+                and status_code not in {404, 410}
+                and (browser_retryable_error or retry_missing_sku)
+            )
             if needs_alternate_method:
                 try:
                     _check_stop()
@@ -1116,11 +1190,16 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                         # original item. Treat an unchanged item as unresolved,
                         # never as a valid page with an unpublished SKU.
                         browser_succeeded = after_signature != before_signature
+                except (AutomationRunPaused, ScrapeDeadlineExceeded):
+                    raise
                 except Exception as browser_exc:
                     if logger:
                         logger.debug(f"[detail] Browser fallback also failed for {item_url}: {browser_exc}")
 
         if hasattr(enriched, 'extra') and isinstance(enriched.extra, dict):
+            enriched.extra['sku_pipeline_browser_attempted'] = bool(
+                getattr(detail_session, 'fetch_browser_attempted', False)
+            )
             final_sku = str(getattr(enriched, 'sku', '') or '').strip()
             if final_sku:
                 enriched.extra.update({'sku': final_sku, 'sku_status': 'found', 'sku_source': 'product_detail'})
@@ -1181,7 +1260,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                 'phase2_total': total_to_enrich,
                 'current_items': len(items),
             })
-        except AutomationRunPaused:
+        except (AutomationRunPaused, ScrapeDeadlineExceeded):
             raise
         except Exception:
             pass
@@ -1195,6 +1274,8 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
         if not _is_mobilesentrix_detail_engine(engine_type) or not is_supported_supplier_url(item_url):
             return False
         extra = enriched_data.get('extra') if isinstance(enriched_data.get('extra'), dict) else {}
+        if extra.get('sku_pipeline_browser_attempted'):
+            return False
         sku = normalize_compare_text(enriched_data.get('sku') or extra.get('sku'))
         status = normalize_compare_text(extra.get('sku_status')).lower()
         return not sku and status == 'unresolved'
@@ -1222,6 +1303,7 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
     def _single_browser_recovery(item_url: str, item, first_pass_data: Dict[str, object]) -> Dict[str, object]:
         engine_type, _ = get_scraper_for_url(item_url)
         try:
+            _check_stop()
             with browser_fetch_mode(True):
                 if engine_type == 'xcell':
                     recovered = xcell_scraper_engine.enrich_item_details(get_thread_session(engine_type), item, rules, logger)
@@ -1255,6 +1337,8 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
             extra['sku_single_browser_recovery'] = True
             recovered_data['extra'] = extra
             return recovered_data
+        except (AutomationRunPaused, ScrapeDeadlineExceeded):
+            raise
         except Exception as exc:
             if logger:
                 logger.warning('[detail] Single Botarus recovery failed for %s: %s', item_url, exc)
@@ -1432,16 +1516,21 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                     timeout=batch_timeout,
                     logger=logger,
                 )
+            except (AutomationRunPaused, ScrapeDeadlineExceeded):
+                raise
             except Exception as exc:
                 if logger:
                     logger.warning('[detail] Compact Botasaurus detail batch failed; falling back to raw HTML batch: %s', exc)
                 result_mode = 'html'
                 try:
+                    _check_stop()
                     batch_results = fetch_html_many(
                         chunk_urls,
                         timeout=batch_timeout,
                         logger=logger,
                     )
+                except (AutomationRunPaused, ScrapeDeadlineExceeded):
+                    raise
                 except Exception as html_exc:
                     if logger:
                         logger.warning('[detail] Botasaurus raw HTML batch retry failed: %s', html_exc)
@@ -1498,68 +1587,71 @@ def enrich_scraped_items(items, rules: Dict, retries: int, verify_ssl: bool, use
                             'last_item_url': item_url,
                             'enriched_item': enriched_data,
                         })
-                    except AutomationRunPaused:
+                    except (AutomationRunPaused, ScrapeDeadlineExceeded):
                         raise
                     except Exception:
                         pass
             chunks_processed += 1
 
+    executor = None
     try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {}
-            for item_url, indexes in url_to_indexes.items():
-                _check_stop()
-                engine_type, _ = get_scraper_for_url(item_url)
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        futures = {}
+        for item_url, indexes in url_to_indexes.items():
+            _check_stop()
+            engine_type, _ = get_scraper_for_url(item_url)
 
-                def run_with_supplier_limit(url=item_url, item=items[indexes[0]], engine=engine_type):
-                    with engine_semaphores[engine]:
-                        return enrich_one(url, item)
+            def run_with_supplier_limit(url=item_url, item=items[indexes[0]], engine=engine_type):
+                with engine_semaphores[engine]:
+                    _check_stop()
+                    return enrich_one(url, item)
 
-                futures[executor.submit(run_with_supplier_limit)] = item_url
-            for future in as_completed(futures):
-                item_url = futures[future]
-                enriched_data = None
+            futures[executor.submit(run_with_supplier_limit)] = item_url
+        for future in _completed_futures_with_stop(futures, _check_stop):
+            item_url = futures[future]
+            enriched_data = None
+            try:
+                _, enriched_data = future.result()
+            except (AutomationRunPaused, ScrapeDeadlineExceeded):
+                raise
+            except Exception as exc:
+                if logger:
+                    logger.warning(f"[detail] Failed to enrich {item_url}: {exc}")
+            else:
+                for idx in url_to_indexes[item_url]:
+                    apply_enriched_item_data(items[idx], enriched_data)
+            if _should_retry_with_browser_batch(item_url, enriched_data):
+                browser_batch_pending.append((item_url, url_to_indexes[item_url], enriched_data))
+                if len(browser_batch_pending) >= browser_batch_size:
+                    _run_browser_batch_retries(max_chunks=1)
+                continue
+
+            enriched_count += 1
+
+            if progress_callback:
                 try:
-                    _, enriched_data = future.result()
-                except AutomationRunPaused:
-                    for pending_future in futures:
-                        pending_future.cancel()
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    progress_callback({
+                        'phase': 2,
+                        'phase_name': 'Phase 2: Product SKU & Detail Scan',
+                        'phase2_completed': enriched_count,
+                        'phase2_total': total_to_enrich,
+                        'current_items': len(items),
+                        'last_item_url': item_url,
+                        'enriched_item': enriched_data,
+                    })
+                except (AutomationRunPaused, ScrapeDeadlineExceeded):
                     raise
-                except Exception as exc:
-                    if logger:
-                        logger.warning(f"[detail] Failed to enrich {item_url}: {exc}")
-                else:
-                    for idx in url_to_indexes[item_url]:
-                        apply_enriched_item_data(items[idx], enriched_data)
-                if _should_retry_with_browser_batch(item_url, enriched_data):
-                    browser_batch_pending.append((item_url, url_to_indexes[item_url], enriched_data))
-                    if len(browser_batch_pending) >= browser_batch_size:
-                        _run_browser_batch_retries(max_chunks=1)
-                    continue
-
-                enriched_count += 1
-
-                if progress_callback:
-                    try:
-                        progress_callback({
-                            'phase': 2,
-                            'phase_name': 'Phase 2: Product SKU & Detail Scan',
-                            'phase2_completed': enriched_count,
-                            'phase2_total': total_to_enrich,
-                            'current_items': len(items),
-                            'last_item_url': item_url,
-                            'enriched_item': enriched_data,
-                        })
-                    except AutomationRunPaused:
-                        for pending_future in futures:
-                            pending_future.cancel()
-                        executor.shutdown(wait=False, cancel_futures=True)
-                        raise
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
+        executor.shutdown(wait=True)
         _run_browser_batch_retries()
+    except (AutomationRunPaused, ScrapeDeadlineExceeded) as exc:
+        stop_reason.append(exc)
+        cancelled.set()
+        raise
     finally:
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
         for session in created_sessions:
             if session and hasattr(session, 'close'):
                 try:
@@ -2860,12 +2952,36 @@ def execute_scrape_workflow(
     stop_check = None,
     initial_items = None,
     skip_target_urls = None,
+    max_duration_seconds: int | None = None,
 ):
     rules = dict(rules or {})
     target_labels = {str(key).strip(): str(value or '').strip() for key, value in (target_labels or {}).items() if str(key).strip()}
     urls = [u.strip() for u in (urls_input.splitlines() if isinstance(urls_input, str) else urls_input or []) if str(u).strip()]
     seen_urls = set()
     urls = [u for u in urls if not (u in seen_urls or seen_urls.add(u))]
+    if len(urls) > SCRAPER_MAX_TARGET_URLS:
+        return {
+            "error": f"A maximum of {SCRAPER_MAX_TARGET_URLS} target URLs is allowed per scrape.",
+            "rules": rules,
+            "count": 0,
+            "drop_pct": drop_pct,
+            "price_drops": [],
+            "comparison": build_session_comparison(None, []),
+            "using_curl": False,
+            "using_browser": False,
+            "using_parallel": False,
+            "engines_used": {},
+            "enrich_details": enrich_details,
+            "enrich_details_requested": enrich_details,
+            "auto_enrich_details": False,
+            "details_hydrated_from_history": 0,
+            "details_enriched": 0,
+            "items": [],
+            "history_id": "",
+            "history_public_id": "",
+            "history_saved": False,
+            "urls": urls,
+        }
     restored_items = [deserialize_scraped_item(item) for item in (initial_items or [])]
     restored_items = [item for item in restored_items if item is not None]
 
@@ -2893,7 +3009,8 @@ def execute_scrape_workflow(
             "urls": [],
         }
 
-    effective_browser_mode = bool(use_browser) if use_browser is not None else any(url_prefers_botarus(url) for url in urls)
+    effective_browser_mode = bool(use_browser)
+    workflow_deadline = time.monotonic() + resolve_scraper_max_duration_seconds(max_duration_seconds)
 
     previous_history = previous_history_override if previous_history_override is not None else db_manager.get_latest_history_for_urls(urls)
     items: List[Item] = list(restored_items)
@@ -2936,9 +3053,31 @@ def execute_scrape_workflow(
         except Exception as exc:
             app.logger.debug(f"[automation] Could not seed live progress from existing run: {exc}")
 
+    workflow_cancelled = threading.Event()
+    workflow_stop_reason = []
+
     def _check_stop() -> None:
-        if callable(stop_check):
-            stop_check()
+        if workflow_cancelled.is_set():
+            raise workflow_stop_reason[0]
+        try:
+            if time.monotonic() >= workflow_deadline:
+                duration = resolve_scraper_max_duration_seconds(max_duration_seconds)
+                raise ScrapeDeadlineExceeded(
+                    f"Scrape exceeded the {format_scraper_duration(duration)} runtime limit."
+                )
+            if callable(stop_check):
+                stop_check()
+        except (AutomationRunPaused, ScrapeDeadlineExceeded) as exc:
+            workflow_stop_reason.append(exc)
+            if isinstance(exc, ScrapeDeadlineExceeded):
+                # Preserve coordinator-collected work for a manual API scrape.
+                # Automation additionally has its durable checkpoint path.
+                exc.partial_items = [
+                    serialize_scraped_item(item)
+                    for item in items if is_usable_scraped_item(item)
+                ]
+            workflow_cancelled.set()
+            raise
 
     def _target_label_for(url: str) -> str:
         return target_labels.get(url, '')
@@ -3066,11 +3205,12 @@ def execute_scrape_workflow(
         if not batch_urls:
             return
 
+        _check_stop()
         app.logger.info(f"[engine] Using {engine_name} for {len(batch_urls)} URL(s)")
 
         def _scrape_single(url: str):
             _check_stop()
-            url_browser_mode = bool(use_browser) if use_browser is not None else (url_prefers_botarus(url) and detect_scraper_key(url) != 'standard')
+            url_browser_mode = bool(use_browser)
             sess = None
             try:
                 with browser_fetch_mode(url_browser_mode):
@@ -3078,32 +3218,10 @@ def execute_scrape_workflow(
                         sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl, use_curl=True)
                     else:
                         sess, local_using_curl = build_session_fn(retries=retries, verify_ssl=verify_ssl)
-                    for attempt in range(2):
-                        try:
-                            # Retry a failed target inside this run. Alternate
-                            # transport recovery helps when a page requires alternate fetch.
-                            with browser_fetch_mode(url_browser_mode if attempt == 0 else (not url_browser_mode)):
-                                scraped_items = scrape_url_fn(sess, url, rules, crawl_pagination, max_pages, effective_delay_ms if effective_delay_ms is not None else delay_ms, app.logger)
-                            had_error = any(getattr(item, 'source', '') == 'error' for item in scraped_items)
-                            had_session_error = any(getattr(sess, key, '') for key in (
-                                'xcell_last_error', 'gadgetfix_last_error', 'mobilesentrix_last_error',
-                                'txparts_last_error', 'parts4cells_last_error', 'phonelcdparts_last_error',
-                                'xcell_incomplete',
-                            ))
-                            failed = (
-                                had_error
-                                or had_session_error
-                                or _count_valid_items(scraped_items) == 0
-                            )
-                            if not failed or attempt == 1:
-                                break
-                        except AutomationRunPaused:
-                            raise
-                        except Exception:
-                            if attempt == 1:
-                                raise
-                        _check_stop()
-                        app.logger.warning('[engine] Retrying incomplete target with HTTP-first recovery: %s', url)
+                    _attach_session_stop_check(sess, _check_stop)
+                    _check_stop()
+                    # Per-request transport retries belong to the shared pipeline.
+                    scraped_items = scrape_url_fn(sess, url, rules, crawl_pagination, max_pages, effective_delay_ms if effective_delay_ms is not None else delay_ms, app.logger)
                     cookie_jar = getattr(sess, 'cookies', None)
                     if cookie_jar is not None:
                         try:
@@ -3156,7 +3274,7 @@ def execute_scrape_workflow(
             executor = ThreadPoolExecutor(max_workers=min(max_workers, len(batch_urls)))
             future_to_url = {executor.submit(_scrape_single, url): url for url in batch_urls}
             try:
-                for future in as_completed(future_to_url):
+                for future in _completed_futures_with_stop(future_to_url, _check_stop):
                     url = future_to_url[future]
                     try:
                         source_url, scraped_items, local_using_curl, _blocked, _last_error, _diagnostics = future.result()
@@ -3189,7 +3307,7 @@ def execute_scrape_workflow(
                             app.logger.info(f"[engine] Completed scraping {source_url}: {_count_valid_items(scraped_items)} items")
                         else:
                             app.logger.warning(f"[engine] Incomplete target {source_url}: {_count_valid_items(scraped_items)} usable items; target remains retryable")
-                    except AutomationRunPaused:
+                    except (AutomationRunPaused, ScrapeDeadlineExceeded):
                         for pending_future in future_to_url:
                             pending_future.cancel()
                         executor.shutdown(wait=False, cancel_futures=True)
@@ -3205,7 +3323,7 @@ def execute_scrape_workflow(
                         annotate_items_with_target(failed_items, url, _target_label_for(url), automation_job)
                         items.extend(failed_items)
                         _report_progress(url, [], succeeded=False)
-            except AutomationRunPaused:
+            except (AutomationRunPaused, ScrapeDeadlineExceeded):
                 for pending_future in future_to_url:
                     pending_future.cancel()
                 executor.shutdown(wait=False, cancel_futures=True)
@@ -3250,7 +3368,7 @@ def execute_scrape_workflow(
                             f"[engine] Stopping {engine_name} batch after site block: {last_error or source_url}"
                         )
                         break
-                except AutomationRunPaused:
+                except (AutomationRunPaused, ScrapeDeadlineExceeded):
                     raise
                 except Exception as exc:
                     app.logger.error(f"[engine] Error scraping {url}: {exc}")
@@ -3345,6 +3463,8 @@ def execute_scrape_workflow(
         uses_curl=True,
         max_workers=resolve_scraper_worker_limit('standard', 'phase1'),
     )
+
+    _check_stop()
 
     items = [item for item in items if is_usable_scraped_item(item)]
 
@@ -3487,12 +3607,13 @@ def execute_scrape_workflow(
         run_validation['status'] = 'Approved with Warnings'
 
     hydrated_from_history = hydrate_items_from_previous_history(items, previous_history)
+    _check_stop()
     auto_enrich_details = False
     effective_enrich_details = enrich_details or auto_enrich_details
     if auto_enrich_details:
         app.logger.info(f"[detail] Auto-enabling detail scan for {len(items)} item(s) to capture stock detail")
     items, enriched_count = enrich_scraped_items(
-        items, rules, retries, verify_ssl, use_curl, enrich_details=effective_enrich_details, logger=app.logger, use_browser=use_browser, progress_callback=progress_callback, stop_check=stop_check, session_cookies_by_engine=session_cookies_by_engine
+        items, rules, retries, verify_ssl, use_curl, enrich_details=effective_enrich_details, logger=app.logger, use_browser=use_browser, progress_callback=progress_callback, stop_check=_check_stop, session_cookies_by_engine=session_cookies_by_engine
     )
     recovery_rounds = 0
     if effective_enrich_details:
@@ -3501,6 +3622,7 @@ def execute_scrape_workflow(
         except (TypeError, ValueError):
             max_recovery_rounds = 2
         while recovery_rounds < max_recovery_rounds:
+            _check_stop()
             required_sku_gaps = find_required_sku_gaps(items, limit=100000)
             if not required_sku_gaps:
                 break
@@ -3546,7 +3668,7 @@ def execute_scrape_workflow(
                 logger=app.logger,
                 use_browser=retry_use_browser,
                 progress_callback=progress_callback,
-                stop_check=stop_check,
+                stop_check=_check_stop,
                 session_cookies_by_engine=session_cookies_by_engine,
             )
             enriched_count += retry_count
@@ -3583,7 +3705,7 @@ def execute_scrape_workflow(
             ),
             "run_validation": run_validation,
             "using_curl": using_curl,
-            "using_browser": True if (use_browser or any(url_prefers_botarus(url) for url in urls)) else bool(use_browser),
+            "using_browser": effective_browser_mode,
             "using_parallel": use_parallel and len(urls) > 1,
             "engines_used": engine_used,
             "enrich_details": effective_enrich_details,
@@ -3606,6 +3728,7 @@ def execute_scrape_workflow(
             "partial_run": partial_run,
         }
     if progress_callback:
+        _check_stop()
         progress_callback({
             'phase': 3,
             'phase_name': 'Phase 3: Validation & Comparison',
@@ -3969,9 +4092,60 @@ def _write_resume_worker_lock(run_id: int, pid: int) -> None:
         app.logger.warning(f"[automation] Could not write resume worker lock for run {run_id}: {exc}")
 
 
+def _record_resume_worker_watchdog_timeout(run_id: int) -> None:
+    """Persist a resumable failure without replacing a newer terminal state."""
+    run = db_manager.get_automation_run(run_id) or {}
+    status = str(run.get('status') or '').strip().lower()
+    if status not in {'running', 'resuming', 'interrupted'}:
+        return
+    job = db_manager.get_automation_job(run.get('job_id'), include_targets=True) or {}
+    target_urls = [
+        str(target.get('url') or '').strip()
+        for target in (job.get('targets') or [])
+        if target.get('active', True) and str(target.get('url') or '').strip()
+    ]
+    if not target_urls:
+        target_urls = [str(url).strip() for url in (run.get('target_urls') or []) if str(url).strip()]
+    previous_history_id = str(run.get('previous_history_id') or '').strip()
+    previous_history = db_manager.get_history_detail(previous_history_id) if previous_history_id else None
+    error_text = 'Detached automation worker exceeded the five-hour runtime watchdog.'
+    partial_history_id, partial_count, partial_summary = save_automation_partial_history(
+        run_id,
+        job,
+        target_urls,
+        previous_history=previous_history,
+        error_text=error_text,
+    )
+    summary = partial_summary or (run.get('summary') if isinstance(run.get('summary'), dict) else {})
+    db_manager.complete_automation_run(
+        run_id,
+        status='failed',
+        current_history_id=partial_history_id or str(run.get('current_history_id') or ''),
+        previous_history_id=previous_history_id,
+        target_urls=target_urls,
+        items_count=partial_count or int(run.get('items_count') or 0),
+        summary=summary,
+        error_text=error_text,
+    )
+    db_manager.close_connection()
+
+
 def _watch_resume_worker(run_id: int, proc: subprocess.Popen) -> None:
     try:
-        proc.wait()
+        try:
+            proc.wait(timeout=AUTOMATION_RESUME_WATCHDOG_SECONDS)
+        except subprocess.TimeoutExpired:
+            # The worker owns durable checkpoints; terminate only the detached
+            # process tree and leave the checkpoint/history rows intact.
+            app.logger.error(
+                '[automation] Resume worker %s exceeded the five-hour watchdog; stopping process tree.',
+                run_id,
+            )
+            _stop_resume_worker(run_id, grace_seconds=0)
+            try:
+                _record_resume_worker_watchdog_timeout(run_id)
+            except Exception:
+                app.logger.exception('[automation] Could not persist watchdog timeout for run %s.', run_id)
     finally:
         with AUTOMATION_RESUME_PROCESSES_LOCK:
             if AUTOMATION_RESUME_PROCESSES.get(int(run_id)) is proc:
@@ -4030,6 +4204,19 @@ def _stop_resume_worker(run_id: int, *, grace_seconds: float = 3.0) -> bool:
                     pass
             try:
                 proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                # A stalled browser/HTTP worker can ignore SIGTERM. Escalate
+                # only after the same process has failed its grace period.
+                try:
+                    if os.name != 'nt' and hasattr(os, 'killpg'):
+                        pgid = os.getpgid(pid)
+                        if pgid not in (os.getpgrp(), 0, 1):
+                            os.killpg(pgid, signal.SIGKILL)
+                    if proc.poll() is None:
+                        proc.kill()
+                    proc.wait(timeout=5)
+                except (OSError, subprocess.SubprocessError, AttributeError):
+                    app.logger.warning('[automation] Could not force-stop worker %s.', run_id)
             except Exception:
                 pass
         return True
@@ -4306,8 +4493,8 @@ def discover_category_targets_via_browser(
     verify_ssl: bool = True,
     logger=None,
 ) -> Dict[str, object]:
-    """Discover categories through the single supported browser engine."""
-    with browser_fetch_mode(True):
+    """Compatibility entry point for HTTP-first shared-pipeline discovery."""
+    with browser_fetch_mode(False):
         discovered = discover_category_targets(
             scraper_key,
             category_query,
@@ -4316,9 +4503,8 @@ def discover_category_targets_via_browser(
             verify_ssl=verify_ssl,
             logger=logger,
         )
-    discovered['using_browser'] = True
-    discovered['browser_engine'] = 'botasaurus'
-    discovered['browser_fallback_used'] = False
+    # Discovery can use browser fallback; do not invent actual transport telemetry.
+    discovered.setdefault('fetch_strategy', 'http_first')
     return discovered
 
 
@@ -4485,6 +4671,9 @@ def validate_supplier_remote_url(
 def validate_supplier_remote_urls(raw_urls, scraper_key: str = '') -> List[str]:
     config = SCRAPER_CONFIG.get(str(scraper_key or '').strip().lower())
     allowed_hosts = tuple(config.get('domains', ())) if config else SUPPLIER_REMOTE_HOSTS
+    raw_urls = list(raw_urls or [])
+    if len(raw_urls) > SCRAPER_MAX_TARGET_URLS:
+        raise ValueError(f'A maximum of {SCRAPER_MAX_TARGET_URLS} target URLs is allowed per scrape.')
     checked_hosts = set()
     return [
         validate_supplier_remote_url(
@@ -6545,7 +6734,13 @@ def proxy_remote_image():
 @app.post('/api/scrape')
 def api_scrape():
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Request body must be an object.', 'history_saved': False, 'count': 0}), 400
     urls_raw = data.get('urls') or ''
+    if not isinstance(urls_raw, (str, list)) or (
+        isinstance(urls_raw, list) and any(not isinstance(value, str) for value in urls_raw)
+    ):
+        return jsonify({'error': 'URLs must be a string or a list of strings.', 'history_saved': False, 'count': 0}), 400
     requested_urls = [
         value.strip()
         for value in (urls_raw.splitlines() if isinstance(urls_raw, str) else urls_raw or [])
@@ -6565,6 +6760,7 @@ def api_scrape():
     use_browser = coerce_bool(data.get('use_browser'), default=False)
     use_parallel = coerce_bool(data.get('use_parallel'), default=True)
     enrich_details = True
+    max_duration_seconds = resolve_scraper_max_duration_seconds(data.get('max_duration_seconds'))
 
     rules = {
         "add_percent": coerce_float(data.get('add_percent') or 0.0, 0.0),
@@ -6572,20 +6768,36 @@ def api_scrape():
         "absolute_off": coerce_float(data.get('absolute_off') or 0.0, 0.0),
     }
     drop_pct = coerce_float(data.get('drop_pct') or 10.0, 10.0, min_value=1.0, max_value=90.0)
-    result = execute_scrape_workflow(
-        urls_raw,
-        crawl_pagination=crawl_pagination,
-        max_pages=max_pages,
-        delay_ms=delay_ms,
-        retries=retries,
-        verify_ssl=verify_ssl,
-        use_curl=use_curl,
-        use_browser=use_browser,
-        use_parallel=use_parallel,
-        enrich_details=enrich_details,
-        rules=rules,
-        drop_pct=drop_pct,
-    )
+    try:
+        result = execute_scrape_workflow(
+            urls_raw,
+            crawl_pagination=crawl_pagination,
+            max_pages=max_pages,
+            delay_ms=delay_ms,
+            retries=retries,
+            verify_ssl=verify_ssl,
+            use_curl=use_curl,
+            use_browser=use_browser,
+            use_parallel=use_parallel,
+            enrich_details=enrich_details,
+            rules=rules,
+            drop_pct=drop_pct,
+            max_duration_seconds=max_duration_seconds,
+        )
+    except ScrapeDeadlineExceeded as exc:
+        partial_items = list(getattr(exc, 'partial_items', []) or [])
+        return jsonify({
+            'error': str(exc),
+            'status': 'timeout',
+            'history_saved': False,
+            'count': len(partial_items),
+            'items': partial_items,
+            'partial_run': bool(partial_items),
+            'warning': str(exc) if partial_items else '',
+            'rules': rules,
+            'run_validation': {'approved': False, 'status': 'Timed Out', 'reasons': [str(exc)]},
+            'urls': requested_urls,
+        }), 504
     if result.get('error') and not result.get('items'):
         return jsonify(result), 400
     return jsonify(result), 200

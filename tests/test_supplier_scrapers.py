@@ -446,13 +446,44 @@ def test_phonelcdparts_product_detail_prefers_main_sku_and_price_metadata(monkey
 
     monkeypatch.setattr(
         phonelcdparts_scraper_engine,
-        "fetch_html_with_browser",
-        lambda *_args, **_kwargs: SimpleNamespace(html=html),
+        "get_html",
+        lambda *_args, **_kwargs: html,
     )
     item = scrape_phonelcd_product_page(FakeSession(html), "https://www.phonelcdparts.com/iphone-15-screen", {}, None)
 
     assert item.sku == "15-QV6-INC"
     assert item.original == 21.0
+
+
+def test_phonelcdparts_product_url_fetches_detail_html_only_once(monkeypatch):
+    html = """
+    <html><body class="catalog-product-view">
+      <form id="product_addtocart_form" data-sku="PLCD-IP15-ONCE">
+        <h1 class="page-title"><span class="base">iPhone 15 Screen</span></h1>
+      </form>
+      <meta property="product:price:amount" content="29.99">
+    </body></html>
+    """
+    calls = []
+
+    monkeypatch.setattr(
+        phonelcdparts_scraper_engine,
+        "get_html",
+        lambda *_args, **_kwargs: calls.append(True) or html,
+    )
+
+    items = phonelcdparts_scraper_engine.scrape_url(
+        FakeSession(""),
+        "https://www.phonelcdparts.com/iphone-15-screen",
+        {},
+        crawl_pagination=True,
+        max_pages=1,
+        delay_ms=0,
+    )
+
+    assert len(items) == 1
+    assert calls == [True]
+    assert items[0].sku == "PLCD-IP15-ONCE"
 
 
 def test_phonelcdparts_product_detail_reads_hyva_labeled_sku():
@@ -521,8 +552,8 @@ def test_gadgetfix_product_detail_extracts_sku_stock_and_price(monkeypatch):
 
     monkeypatch.setattr(
         gadgetfix_scraper_engine,
-        "fetch_html_with_browser",
-        lambda *_args, **_kwargs: SimpleNamespace(html=html),
+        "get_html",
+        lambda *_args, **_kwargs: html,
     )
     item = scrape_gadgetfix_product_page(FakeSession(html), "https://gadgetfix.com/usa-proximity-6554.html", {}, None)
 
@@ -548,8 +579,8 @@ def test_gadgetfix_product_detail_uses_metadata_when_h1_is_empty(monkeypatch):
 
     monkeypatch.setattr(
         gadgetfix_scraper_engine,
-        "fetch_html_with_browser",
-        lambda *_args, **_kwargs: SimpleNamespace(html=html),
+        "get_html",
+        lambda *_args, **_kwargs: html,
     )
     item = scrape_gadgetfix_product_page(FakeSession(html), "https://gadgetfix.com/incell-display-10269.html", {}, None)
 

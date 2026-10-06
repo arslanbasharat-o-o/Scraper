@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urljoin, urlsplit, urlunsplit
-from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_requested
+from .fetch_pipeline import fetch_with_pipeline, copy_fetch_metadata
 from .sku_utils import extract_jsonld_sku
 
 try:
@@ -151,6 +151,24 @@ def is_html_document(text: str) -> bool:
         return False
     sample = text.lstrip()[:512].lower()
     return '<!doctype html' in sample or '<html' in sample or '<body' in sample
+
+
+def _looks_like_block_page(status_code: int, html: str) -> bool:
+    """Reject XCell challenges and non-HTML responses before browser fallback."""
+    sample = (html or '')[:30_000].lower()
+    if int(status_code or 0) in {401, 403, 429} or not is_html_document(html):
+        return True
+    return any(marker in sample for marker in (
+        '<title>just a moment',
+        '<title>attention required',
+        'id="challenge-form"',
+        "id='challenge-form'",
+        'cf-browser-verification',
+        'performing security verification',
+        'enable javascript and cookies to continue',
+        'access denied',
+    ))
+
 
 def parse_html_document(html: str) -> Optional[BeautifulSoup]:
     """Parse HTML with a forgiving fallback when lxml rejects malformed markup."""
@@ -440,113 +458,32 @@ def enrich_item_details(session, item: Item, rules: dict | None = None, logger=N
     return item
 
 def get_html(session, url: str) -> Optional[str]:
-    """Fetch HTML content from URL.
-
-    Uses fast impersonated curl HTTP session first. If direct HTTP is blocked
-    or unavailable and browser mode is active, it falls back to Botasaurus.
-    """
-    session.xcell_last_error = ''
-    session.xcell_blocked = False
-    session.xcell_last_status = 0
-    if browser_fetch_requested():
-        result = fetch_html_with_browser(url)
-        session.xcell_last_status = 200
+    """Fetch HTML through the shared bounded HTTP-first pipeline."""
+    if session is not None:
+        session.xcell_last_error = ''
+        session.xcell_blocked = False
+        session.xcell_last_status = None
+        session.xcell_last_url = url
+    result = fetch_with_pipeline(
+        session,
+        url,
+        timeout=30,
+        http_attempts=2,
+        blocked_detector=_looks_like_block_page,
+        browser_timeout=60,
+    )
+    copy_fetch_metadata(session, "xcell")
+    if result is not None:
+        if session is not None:
+            session.xcell_last_status = result.status_code
+            session.xcell_last_url = result.final_url
         return result.html
-
-    is_curl_sess = HAS_CURL and isinstance(session, curl_requests.Session)
-    if is_curl_sess:
-        try:
-            response = session.get(url, timeout=20, allow_redirects=True)
-            status_code = int(getattr(response, 'status_code', 0) or 0)
-            session.xcell_last_status = status_code
-            response_text = getattr(response, 'text', '') or ''
-            if status_code == 200 and is_html_document(response_text):
-                session.xcell_last_error = ''
-                return response_text
-            if status_code in {401, 403, 429}:
-                try:
-                    session.get("https://xcellparts.com/", timeout=10)
-                    retry_resp = session.get(url, timeout=20, allow_redirects=True)
-                    session.xcell_last_status = int(getattr(retry_resp, 'status_code', 0) or 0)
-                    if retry_resp.status_code == 200 and is_html_document(retry_resp.text):
-                        session.xcell_last_error = ''
-                        return retry_resp.text
-                except Exception:
-                    pass
-        except Exception as curl_exc:
-            try:
-                time.sleep(0.3)
-                retry_response = session.get(url, timeout=20, allow_redirects=True)
-                retry_code = int(getattr(retry_response, 'status_code', 0) or 0)
-                session.xcell_last_status = retry_code
-                retry_text = getattr(retry_response, 'text', '') or ''
-                if retry_code == 200 and is_html_document(retry_text):
-                    session.xcell_last_error = ''
-                    return retry_text
-            except Exception:
-                pass
-            session.xcell_last_error = f"curl fetch error: {curl_exc}"
-
-    if should_use_browser_fetch():
-        try:
-            result = fetch_html_with_browser(url)
-            if result and result.html:
-                return result.html
-        except Exception as e:
-            browser_error_prefix = f"Botasaurus failed: {e}; "
-            session.xcell_last_error = browser_error_prefix.rstrip('; ')
-    try:
-        response = session.get(url, timeout=30, allow_redirects=True)
-        status_code = int(getattr(response, 'status_code', 0) or 0)
-        session.xcell_last_status = status_code
-        response_text = getattr(response, 'text', '') or ''
-        if status_code in {401, 403, 429}:
-            lowered = response_text[:1000].lower()
-            if 'just a moment' in lowered or 'cloudflare' in lowered:
-                browser_error = session.xcell_last_error
-                session.xcell_blocked = True
-                block_error = f'blocked by Cloudflare challenge ({status_code})'
-                session.xcell_last_error = f"{browser_error}; {block_error}" if browser_error else block_error
-                return None
-        response.raise_for_status()
-        html = response_text
-        if is_html_document(html):
-            session.xcell_last_error = ''
-            return html
-
-        # Some XCell responses come back Brotli-encoded if "br" is advertised upstream.
-        retry_headers = dict(session.headers)
-        retry_headers['Accept-Encoding'] = 'gzip, deflate'
-        retry_response = session.get(url, timeout=30, headers=retry_headers, allow_redirects=True)
-        retry_status_code = int(getattr(retry_response, 'status_code', 0) or 0)
-        session.xcell_last_status = retry_status_code
-        retry_text = getattr(retry_response, 'text', '') or ''
-        if retry_status_code in {401, 403, 429}:
-            lowered = retry_text[:1000].lower()
-            if 'just a moment' in lowered or 'cloudflare' in lowered:
-                browser_error = session.xcell_last_error
-                session.xcell_blocked = True
-                block_error = f'blocked by Cloudflare challenge ({retry_status_code})'
-                session.xcell_last_error = f"{browser_error}; {block_error}" if browser_error else block_error
-                return None
-        retry_response.raise_for_status()
-        retry_html = retry_text
-        if is_html_document(retry_html):
-            session.xcell_last_error = ''
-            return retry_html
-
-        browser_error = session.xcell_last_error
-        session.xcell_last_error = (
-            f"{browser_error}; response did not look like HTML after retry"
-            if browser_error
-            else 'response did not look like HTML after retry'
-        )
-        return None
-    except Exception as e:
-        browser_error = session.xcell_last_error
-        fetch_error = str(e)
-        session.xcell_last_error = f"{browser_error}; direct fetch failed: {fetch_error}" if browser_error else fetch_error
-        return None
+    if session is not None:
+        session.xcell_blocked = True
+        session.xcell_last_status = getattr(session, "fetch_last_status", None)
+        session.xcell_last_url = getattr(session, "fetch_last_url", url) or url
+        session.xcell_last_error = f"Failed to fetch {url}: blocked, empty, or unsuccessful response"
+    return None
 
 def extract_product_from_listing(product_elem, base_url: str) -> Optional[Item]:
     """

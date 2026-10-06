@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 import requests
 from bs4 import BeautifulSoup
 
-from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_requested
+from .fetch_pipeline import fetch_with_pipeline, copy_fetch_metadata
 from .sku_utils import extract_jsonld_sku, clean_sku
 
 try:
@@ -178,33 +178,29 @@ def _looks_like_block_page(html: str) -> bool:
 
 
 def get_html(session, url: str, logger=None) -> Optional[str]:
-    """Fetch HTML with Safari TLS curl_cffi session, fallback to browser if blocked."""
+    """Fetch HTML through the shared bounded HTTP-first pipeline."""
     if session is not None:
         session.phonelcdparts_last_error = ""
-    if browser_fetch_requested():
-        return fetch_html_with_browser(url, logger=logger).html
+        session.phonelcdparts_last_status = None
+        session.phonelcdparts_last_url = url
+    result = fetch_with_pipeline(
+        session,
+        url,
+        timeout=25,
+        http_attempts=2,
+        logger_=logger,
+        blocked_detector=lambda status, html: status in {401, 403, 429} or _looks_like_block_page(html),
+        browser_timeout=60,
+    )
+    copy_fetch_metadata(session, "phonelcdparts")
+    if result is not None:
+        if session is not None:
+            session.phonelcdparts_last_status = result.status_code
+            session.phonelcdparts_last_url = result.final_url
+        return result.html
     if session is not None:
-        session.phonelcdparts_last_status = 0
-    if session is not None:
-        for attempt in range(2):
-            try:
-                if attempt > 0:
-                    time.sleep(0.3)
-                r = session.get(url, timeout=25)
-                session.phonelcdparts_last_status = int(getattr(r, 'status_code', 0) or 0)
-                if r.status_code == 200 and r.text and not _looks_like_block_page(r.text):
-                    return r.text
-            except Exception:
-                pass
-    if should_use_browser_fetch():
-        try:
-            browser_html = fetch_html_with_browser(url, logger=logger).html
-            if browser_html and not _looks_like_block_page(browser_html):
-                return browser_html
-        except Exception as exc:
-            if logger:
-                logger.warning(f"[phonelcdparts] Fetch failed for {url}: {exc}")
-    if session is not None:
+        session.phonelcdparts_last_status = getattr(session, "fetch_last_status", None)
+        session.phonelcdparts_last_url = getattr(session, "fetch_last_url", url) or url
         session.phonelcdparts_last_error = f"Failed to fetch {url}: blocked, empty, or unsuccessful response"
     return None
 
@@ -607,8 +603,9 @@ def parse_phonelcd_product_detail_fast(html: str, url: str, rules: dict | None =
     return item
 
 
-def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional[Item]:
-    html = get_html(session, url, logger)
+def scrape_product_page(session, url: str, rules: dict, logger=None, html: str | None = None) -> Optional[Item]:
+    if html is None:
+        html = get_html(session, url, logger)
     if not html:
         return None
 
@@ -727,7 +724,7 @@ def scrape_url(session, url: str, rules: dict, crawl_pagination: bool = True,
         return []
     soup = BeautifulSoup(html, 'html.parser')
     if is_product_page(soup) and not is_category_page(soup):
-        item = scrape_product_page(session, url, rules, logger)
+        item = scrape_product_page(session, url, rules, logger, html=html)
         return [item] if item else []
 
     if crawl_pagination:

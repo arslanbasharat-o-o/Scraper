@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import os
 from typing import Dict, List, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse
 
@@ -12,7 +13,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from scrapers import SCRAPER_CONFIG
-from scrapers.browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch
+from scrapers.fetch_pipeline import fetch_with_pipeline
 
 
 COMMON_NAV_SELECTORS = (
@@ -207,6 +208,9 @@ STATIC_DISCOVERY_FALLBACKS = {
 
 def _build_session(retries: int = 2, verify_ssl: bool = True) -> requests.Session:
     session = requests.Session()
+    proxy = str(os.getenv('SCRAPER_PROXY_URL') or '').strip()
+    if proxy:
+        session.proxies.update({'http': proxy, 'https': proxy})
     retry = Retry(
         total=max(1, int(retries)),
         read=max(1, int(retries)),
@@ -342,13 +346,39 @@ def _same_domain(url: str, expected_host: str) -> bool:
     return bool(host) and (host == expected_host or host.endswith(f'.{expected_host}'))
 
 
+def _is_discovery_blocked(status_code: int, html: str) -> bool:
+    """Recognize challenge and denial pages that can have a successful status."""
+    sample = str(html or '')[:5000].lower()
+    if int(status_code or 0) in {401, 403, 429}:
+        return True
+    return any(marker in sample for marker in (
+        'just a moment',
+        'performing security verification',
+        'verify you are human',
+        'enable javascript and cookies to continue',
+        'cf-browser-verification',
+        'cloudflare ray id',
+        'cf-chl-',
+        'captcha',
+        'access denied',
+    ))
+
+
 def _fetch_html(url: str, *, retries: int = 2, verify_ssl: bool = True) -> str:
-    if should_use_browser_fetch():
-        return fetch_html_with_browser(url).html
     session = _build_session(retries=retries, verify_ssl=verify_ssl)
-    response = session.get(url, timeout=30, allow_redirects=True)
-    response.raise_for_status()
-    return response.text
+    try:
+        result = fetch_with_pipeline(
+            session,
+            url,
+            timeout=30,
+            http_attempts=retries,
+            blocked_detector=_is_discovery_blocked,
+        )
+        if result is None:
+            raise requests.HTTPError(f'Failed to fetch {url}')
+        return result.html
+    finally:
+        session.close()
 
 
 def _is_candidate_link(scraper_key: str, url: str, host: str, label: str) -> bool:

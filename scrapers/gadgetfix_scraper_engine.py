@@ -16,7 +16,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_requested
+from .fetch_pipeline import fetch_with_pipeline, copy_fetch_metadata
 from .sku_utils import extract_jsonld_sku, clean_sku
 
 try:
@@ -162,42 +162,31 @@ def _looks_blocked(status_code: int, html: str) -> bool:
 
 def get_html(session, url: str, logger=None) -> Optional[str]:
     url = normalize_gadgetfix_url(url)
-    session.gadgetfix_blocked = False
-    session.gadgetfix_last_error = ''
-    session.gadgetfix_last_status = 0
-
-    if browser_fetch_requested():
-        return fetch_html_with_browser(url, logger=logger).html
     if session is not None:
-        for attempt in range(2):
-            try:
-                if attempt > 0:
-                    time.sleep(0.3)
-                r = session.get(url, timeout=25)
-                session.gadgetfix_last_status = int(getattr(r, 'status_code', 0) or 0)
-                if r.status_code == 200 and r.text and not _looks_blocked(200, r.text):
-                    return r.text
-            except Exception:
-                pass
-
-    if should_use_browser_fetch():
-        try:
-            browser_html = fetch_html_with_browser(url, logger=logger, wait_seconds=3).html
-            if not browser_html or _looks_blocked(200, browser_html):
-                session.gadgetfix_blocked = True
-                session.gadgetfix_last_error = "Fetch returned a blocked or empty page"
-                if logger:
-                    logger.warning(f"[gadgetfix] {session.gadgetfix_last_error}: {url}")
-                return None
-            return browser_html
-        except Exception as exc:
-            session.gadgetfix_blocked = True
-            session.gadgetfix_last_error = str(exc)
-            if logger:
-                logger.warning(f"[gadgetfix] Fetch failed for {url}: {exc}")
-            return None
-    session.gadgetfix_blocked = True
-    session.gadgetfix_last_error = "HTTP fetch returned a blocked or empty page"
+        session.gadgetfix_blocked = False
+        session.gadgetfix_last_error = ''
+        session.gadgetfix_last_status = None
+        session.gadgetfix_last_url = url
+    result = fetch_with_pipeline(
+        session,
+        url,
+        timeout=25,
+        http_attempts=2,
+        logger_=logger,
+        blocked_detector=_looks_blocked,
+        browser_timeout=60,
+    )
+    copy_fetch_metadata(session, "gadgetfix")
+    if result is not None:
+        if session is not None:
+            session.gadgetfix_last_status = result.status_code
+            session.gadgetfix_last_url = result.final_url
+        return result.html
+    if session is not None:
+        session.gadgetfix_blocked = True
+        session.gadgetfix_last_error = "HTTP and browser fetches returned a blocked or empty page"
+        session.gadgetfix_last_status = getattr(session, "fetch_last_status", None)
+        session.gadgetfix_last_url = getattr(session, "fetch_last_url", url) or url
     return None
 
 

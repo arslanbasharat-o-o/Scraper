@@ -5,14 +5,15 @@ from __future__ import annotations
 import atexit
 import contextlib
 import contextvars
+import math
 import os
 import shutil
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from .botasaurus_wrapper import close_botasaurus_driver, resolve_chrome_executable, resolve_chrome_profile_root
+from .botasaurus_wrapper import resolve_chrome_executable, resolve_chrome_profile_root
 
 
 _BROWSER_FETCH_ENABLED = contextvars.ContextVar("browser_fetch_enabled", default=None)
@@ -138,6 +139,8 @@ MOBILESENTRIX_CANADA_POPUP_DISMISS_JS = r"""
 class BrowserFetchResult:
     final_url: str
     html: str
+    status_code: int = 200
+    headers: dict = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -181,11 +184,21 @@ def _get_prefetched_browser_html(url: str) -> BrowserFetchResult | None:
     final_url = getattr(result, "final_url", "") or url
     if not html:
         return None
-    return BrowserFetchResult(final_url=final_url, html=html)
+    return BrowserFetchResult(final_url=final_url, html=html, status_code=int(getattr(result, "status_code", 200) or 200))
 
 
 def _truthy(value: object) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on", "browser"}
+
+
+def _bounded_seconds(value, default: float, minimum: float = 0.0, maximum: float = 120.0) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = default
+    if not math.isfinite(parsed):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
 
 
 def _is_mobilesentrix_canada_url(url: str) -> bool:
@@ -198,21 +211,25 @@ def _is_mobilesentrix_canada_url(url: str) -> bool:
         return False
 
 
-def _dismiss_canada_prompt(execute_script, sleep, *, url: str, logger=None, attempts: int = 8) -> bool:
+def _dismiss_canada_prompt(execute_script, sleep, *, url: str, logger=None, attempts: int = 8, deadline=None, stop_check=None) -> bool:
     if not _is_mobilesentrix_canada_url(url):
         return False
     for _attempt in range(max(0, attempts)):
+        if deadline is not None and time.time() >= deadline:
+            return False
+        if stop_check:
+            stop_check()
         try:
             if execute_script(MOBILESENTRIX_CANADA_POPUP_DISMISS_JS):
                 if logger:
                     logger.info("[botasaurus] Dismissed MobileSentrix Canada location prompt")
-                sleep(0.75)
+                sleep(min(0.75, max(0.0, deadline - time.time())) if deadline is not None else 0.75)
                 return True
         except Exception as exc:
             if logger:
                 logger.warning("[botasaurus] Could not dismiss Canada location prompt: %s", exc)
             return False
-        sleep(0.5)
+        sleep(min(0.5, max(0.0, deadline - time.time())) if deadline is not None else 0.5)
     return False
 
 
@@ -239,18 +256,33 @@ def _local_browser_proxy() -> str | None:
 def _local_browser_default_timeout() -> int:
     val = os.getenv("SCRAPER_LOCAL_BROWSER_TIMEOUT")
     try:
-        if val:
-            return max(5, int(val))
+        parsed = float(val) if val else 60.0
+        if math.isfinite(parsed):
+            return max(5, min(120, int(parsed)))
     except (TypeError, ValueError):
         pass
     return 60
+
+
+def _local_browser_slot_timeout() -> float:
+    value = os.getenv("SCRAPER_LOCAL_BROWSER_SLOT_TIMEOUT")
+    try:
+        parsed = float(value) if value else float(_local_browser_default_timeout())
+        if math.isfinite(parsed):
+            return max(1.0, min(120.0, parsed))
+    except (TypeError, ValueError):
+        pass
+    return float(_local_browser_default_timeout())
 
 
 def _get_local_browser_semaphore():
     global _LOCAL_BROWSER_SEMAPHORE, _LOCAL_BROWSER_SEMAPHORE_SIZE
     max_windows = _local_browser_max_windows()
     with _LOCAL_BROWSER_SLOT_LOCK:
-        if _LOCAL_BROWSER_SEMAPHORE is None or _LOCAL_BROWSER_SEMAPHORE_SIZE != max_windows:
+        # Never replace a live semaphore: outstanding holders must share the
+        # same pool as later callers. Window-count changes take effect on the
+        # next scraper process.
+        if _LOCAL_BROWSER_SEMAPHORE is None:
             _LOCAL_BROWSER_SEMAPHORE = threading.BoundedSemaphore(max_windows)
             _LOCAL_BROWSER_SEMAPHORE_SIZE = max_windows
             _LOCAL_BROWSER_AVAILABLE_SLOTS[:] = list(range(max_windows))
@@ -258,9 +290,23 @@ def _get_local_browser_semaphore():
 
 
 @contextlib.contextmanager
-def _local_browser_slot():
+def _local_browser_slot(timeout: float | None = None):
     semaphore = _get_local_browser_semaphore()
-    semaphore.acquire()
+    configured_timeout = _local_browser_slot_timeout()
+    if timeout is None:
+        acquire_timeout = configured_timeout
+    else:
+        try:
+            requested_timeout = float(timeout)
+        except (TypeError, ValueError):
+            requested_timeout = configured_timeout
+        if not math.isfinite(requested_timeout):
+            requested_timeout = configured_timeout
+        acquire_timeout = max(1.0, min(configured_timeout, requested_timeout))
+    if not semaphore.acquire(timeout=acquire_timeout):
+        raise TimeoutError(
+            f"Timed out after {acquire_timeout:.1f}s waiting for a local browser slot"
+        )
     slot = 0
     try:
         with _LOCAL_BROWSER_SLOT_LOCK:
@@ -375,11 +421,13 @@ _READINESS_JS = r"""
 """
 
 
-def _wait_for_rendered_readiness(driver, *, deadline: float, logger=None, url: str = "") -> None:
+def _wait_for_rendered_readiness(driver, *, deadline: float, logger=None, url: str = "", stop_check=None) -> None:
     """Wait until rendered content is present without relying on a blind sleep."""
     last_body_length = -1
     stable_ticks = 0
     while time.time() < deadline:
+        if stop_check:
+            stop_check()
         try:
             state = driver.run_js(_READINESS_JS) or {}
         except Exception:
@@ -397,7 +445,7 @@ def _wait_for_rendered_readiness(driver, *, deadline: float, logger=None, url: s
             if stable_ticks >= 2:
                 return
         last_body_length = body_length
-        driver.sleep(0.25)
+        driver.sleep(min(0.25, max(0.0, deadline - time.time())))
     if logger:
         logger.warning("[botasaurus] Rendered readiness timed out for %s; using current DOM", url)
 
@@ -408,6 +456,7 @@ def fetch_html(
     timeout: int | None = None,
     wait_seconds: float | None = None,
     logger=None,
+    stop_check=None,
 ) -> BrowserFetchResult:
     """Fetch a rendered page with a headless local Botasaurus browser."""
     prefetched = _get_prefetched_browser_html(url)
@@ -416,21 +465,38 @@ def fetch_html(
 
     if timeout is None:
         timeout = _local_browser_default_timeout()
+    try:
+        timeout = float(timeout)
+    except (TypeError, ValueError):
+        timeout = float(_local_browser_default_timeout())
+    if not math.isfinite(timeout):
+        timeout = float(_local_browser_default_timeout())
+    timeout = max(5.0, min(120.0, timeout))
 
     try:
         from .botasaurus_wrapper import Driver, browser
     except Exception as exc:
         raise RuntimeError(f"Botasaurus is required for rendered scraping: {exc}") from exc
 
-    wait_time = (
-        float(wait_seconds)
-        if wait_seconds is not None
-        else float(os.getenv("SCRAPER_LOCAL_BROWSER_WAIT_SECONDS") or "1")
-    )
-    challenge_wait_seconds = float(os.getenv("SCRAPER_LOCAL_BROWSER_CHALLENGE_WAIT_SECONDS") or "30")
+    try:
+        wait_time = float(wait_seconds if wait_seconds is not None else os.getenv("SCRAPER_LOCAL_BROWSER_WAIT_SECONDS") or "1")
+    except (TypeError, ValueError):
+        wait_time = 1.0
+    if not math.isfinite(wait_time):
+        wait_time = 1.0
+    wait_time = max(0.0, min(30.0, wait_time))
+    try:
+        challenge_wait_seconds = float(os.getenv("SCRAPER_LOCAL_BROWSER_CHALLENGE_WAIT_SECONDS") or "30")
+    except (TypeError, ValueError):
+        challenge_wait_seconds = 30.0
+    if not math.isfinite(challenge_wait_seconds):
+        challenge_wait_seconds = 30.0
+    challenge_wait_seconds = max(0.0, min(120.0, challenge_wait_seconds))
     started = time.time()
 
-    with _local_browser_slot() as slot:
+    with _local_browser_slot(timeout=timeout) as slot:
+        if stop_check:
+            stop_check()
         # Browser slots are process-local; include the PID so concurrent scraper
         # workers never attach to the same Chrome profile/DevTools port.
         profile_dir = _local_browser_profile_dir() / f"process-{os.getpid()}" / f"worker-{slot}"
@@ -468,16 +534,36 @@ def fetch_html(
             wait_for_complete_page_load=False,
         )
         def _fetch(driver: Driver, data):
+            callback = data.get("stop_check")
+            def check_stop():
+                if callback:
+                    callback()
             if logger:
                 logger.info("[botasaurus] Fetching %s in browser slot %s", data["url"], data["slot"])
+            navigation = getattr(driver, "_scraper_navigation", None)
+            if navigation is None and callable(getattr(driver, "after_response_received", None)):
+                navigation = {}
+                driver._scraper_navigation = navigation
+                def navigation_response(_request_id, response, event):
+                    kind = getattr(event, "type_", None)
+                    kind = getattr(kind, "value", kind)
+                    if str(kind or "").lower() == "document":
+                        navigation.update(status_code=int(response.status), headers=dict(response.headers or {}))
+                driver.after_response_received(navigation_response)
+            if navigation is not None:
+                navigation.clear()
             try:
                 try:
+                    request_deadline = time.time() + float(data.get("timeout", timeout))
+                    check_stop()
                     driver.get(
                         data["url"],
-                        timeout=data.get("timeout", timeout),
+                        timeout=max(0.1, request_deadline - time.time()),
                         bypass_cloudflare=_should_bypass_cloudflare(),
                     )
                 except Exception as exc:
+                    if getattr(exc, "scraper_cancelled", False) or "cancel" in type(exc).__name__.lower():
+                        raise
                     partial_html = driver.page_html or ""
                     if partial_html and _looks_like_html_document(partial_html):
                         if logger:
@@ -488,20 +574,35 @@ def fetch_html(
                             )
                     else:
                         raise
-                if data.get("wait_seconds", wait_time) > 0:
-                    driver.sleep(data.get("wait_seconds", wait_time))
-                _dismiss_canada_prompt(driver.run_js, driver.sleep, url=data["url"], logger=logger)
+                remaining = max(0.0, request_deadline - time.time())
+                check_stop()
+                if data.get("wait_seconds", wait_time) > 0 and remaining > 0:
+                    driver.sleep(min(float(data.get("wait_seconds", wait_time)), remaining))
+                _dismiss_canada_prompt(
+                    driver.run_js,
+                    driver.sleep,
+                    url=data["url"],
+                    logger=logger,
+                    attempts=min(8, max(0, int((request_deadline - time.time()) / 0.5))),
+                    deadline=request_deadline,
+                    stop_check=check_stop,
+                )
                 _wait_for_rendered_readiness(
                     driver,
-                    deadline=time.time() + max(1.0, min(10.0, float(data.get("timeout", timeout)) / 3.0)),
+                    deadline=min(request_deadline, time.time() + max(1.0, min(10.0, float(data.get("timeout", timeout)) / 3.0))),
                     logger=logger,
                     url=data["url"],
+                    stop_check=check_stop,
                 )
 
                 html = driver.page_html or ""
-                challenge_deadline = time.time() + max(0.0, challenge_wait_seconds)
+                challenge_deadline = min(request_deadline, time.time() + min(
+                    max(0.0, float(data.get("challenge_wait_seconds", 30.0))),
+                    max(0.0, float(data.get("timeout", timeout))),
+                ))
                 while time.time() < challenge_deadline and _looks_like_browser_challenge(html):
-                    driver.sleep(2)
+                    check_stop()
+                    driver.sleep(min(2.0, max(0.0, challenge_deadline - time.time())))
                     html = driver.page_html or ""
 
                 final_url = driver.current_url or data["url"]
@@ -509,9 +610,11 @@ def fetch_html(
                     _should_use_botasaurus_request_html()
                     and not _looks_like_browser_challenge(html)
                     and not _html_has_product_signal(html)
+                    and time.time() < request_deadline
                 ):
                     try:
-                        response = driver.requests.get(data["url"])
+                        check_stop()
+                        response = driver.requests.get(data["url"], timeout=max(0.1, request_deadline - time.time()))
                         response_text = getattr(response, "text", "") or ""
                         response_status = int(getattr(response, "status_code", 0) or 0)
                         if (
@@ -523,6 +626,8 @@ def fetch_html(
                             html = response_text
                             final_url = getattr(response, "url", "") or final_url
                     except Exception as exc:
+                        if getattr(exc, "scraper_cancelled", False) or "cancel" in type(exc).__name__.lower():
+                            raise
                         if logger:
                             logger.warning("[botasaurus] Browser-backed request failed: %s", exc)
 
@@ -535,7 +640,7 @@ def fetch_html(
                 except Exception:
                     pass
 
-                return {"final_url": final_url, "html": html}
+                return {"final_url": final_url, "html": html, **(navigation or {})}
             finally:
                 # Driver reuse keeps the process warm; Botasaurus owns the
                 # pooled driver's lifecycle and closes it on process exit.
@@ -544,8 +649,10 @@ def fetch_html(
             if cached_fetcher is None:
                 with _REUSABLE_FETCHERS_LOCK:
                     cached_fetcher = _REUSABLE_FETCHERS.setdefault(fetcher_key, _fetch)
-            result = cached_fetcher({"url": url, "slot": slot, "timeout": timeout, "wait_seconds": wait_time})
+            result = cached_fetcher({"url": url, "slot": slot, "timeout": timeout, "wait_seconds": wait_time, "stop_check": stop_check, "challenge_wait_seconds": challenge_wait_seconds})
         except Exception as exc:
+            if getattr(exc, "scraper_cancelled", False) or "cancel" in type(exc).__name__.lower():
+                raise
             if logger:
                 logger.exception("[botasaurus] DevTools connection or rendered fetch failed for %s", url)
             raise RuntimeError(f"Botasaurus browser fetch failed for {url}: {exc}") from exc
@@ -563,7 +670,7 @@ def fetch_html(
             final_url,
             time.time() - started,
         )
-    return BrowserFetchResult(final_url=final_url, html=html)
+    return BrowserFetchResult(final_url=final_url, html=html, status_code=int((result or {}).get("status_code") or 200), headers=(result or {}).get("headers") or {})
 
 
 def _origin_url(url: str) -> str:
@@ -589,20 +696,17 @@ def fetch_html_many(
     clean_urls = [str(url or "").strip() for url in urls if str(url or "").strip()]
     if not clean_urls:
         return []
+    timeout = _bounded_seconds(timeout, 12.0, 1.0)
 
     try:
         from .botasaurus_wrapper import Driver, browser
     except Exception as exc:
         raise RuntimeError(f"Botasaurus is required for rendered scraping: {exc}") from exc
 
-    wait_time = (
-        float(wait_seconds)
-        if wait_seconds is not None
-        else float(os.getenv("SCRAPER_LOCAL_BROWSER_WAIT_SECONDS") or "0.3")
-    )
+    wait_time = _bounded_seconds(wait_seconds if wait_seconds is not None else os.getenv("SCRAPER_LOCAL_BROWSER_WAIT_SECONDS"), 0.3, 0.0, 30.0)
     started = time.time()
 
-    with _local_browser_slot() as slot:
+    with _local_browser_slot(timeout=timeout) as slot:
         profile_dir = _local_browser_profile_dir() / f"process-{os.getpid()}" / f"batch-{slot}"
         profile_dir.mkdir(parents=True, exist_ok=True)
         chrome_executable = resolve_chrome_executable()
@@ -641,13 +745,14 @@ def fetch_html_many(
         def _fetch_many(driver: Driver, data):
             links = list(data["urls"])
             seed_url = data.get("seed_url") or _origin_url(links[0])
+            warm_deadline = time.time() + float(data["timeout"])
             if logger:
                 logger.info("[botasaurus] Batch warming %s for %s URL(s)", seed_url, len(links))
             try:
                 try:
                     driver.get(
                         seed_url,
-                        timeout=max(10, int(data.get("timeout", timeout))),
+                        timeout=max(0.1, warm_deadline - time.time()),
                         bypass_cloudflare=_should_bypass_cloudflare(),
                     )
                 except Exception as exc:
@@ -657,11 +762,11 @@ def fetch_html_many(
                     if logger:
                         logger.warning("[botasaurus] Batch warm page partially loaded: %s", exc)
                 if data.get("wait_seconds", wait_time) > 0:
-                    driver.sleep(data.get("wait_seconds", wait_time))
-                _dismiss_canada_prompt(driver.run_js, driver.sleep, url=seed_url, logger=logger, attempts=1)
+                    driver.sleep(min(float(data.get("wait_seconds", wait_time)), max(0.0, warm_deadline - time.time())))
+                _dismiss_canada_prompt(driver.run_js, driver.sleep, url=seed_url, logger=logger, attempts=1, deadline=warm_deadline)
                 _wait_for_rendered_readiness(
                     driver,
-                    deadline=time.time() + max(1.0, min(6.0, float(data.get("timeout", timeout)) / 3.0)),
+                    deadline=min(warm_deadline, time.time() + max(1.0, min(6.0, float(data["timeout"]) / 3.0))),
                     logger=logger,
                     url=seed_url,
                 )
@@ -698,7 +803,7 @@ def fetch_html_many(
             raw_results = cached_fetcher({
                 "urls": clean_urls,
                 "slot": slot,
-                "timeout": max(timeout, 10),
+                "timeout": timeout,
                 "request_timeout": timeout,
                 "wait_seconds": wait_time,
                 "seed_url": _origin_url(clean_urls[0]),
@@ -983,20 +1088,17 @@ def fetch_product_details_many(
     clean_urls = [str(url or "").strip() for url in urls if str(url or "").strip()]
     if not clean_urls:
         return []
+    timeout = _bounded_seconds(timeout, 12.0, 1.0)
 
     try:
         from .botasaurus_wrapper import Driver, browser
     except Exception as exc:
         raise RuntimeError(f"Botasaurus is required for rendered scraping: {exc}") from exc
 
-    wait_time = (
-        float(wait_seconds)
-        if wait_seconds is not None
-        else float(os.getenv("SCRAPER_LOCAL_BROWSER_WAIT_SECONDS") or "0.3")
-    )
+    wait_time = _bounded_seconds(wait_seconds if wait_seconds is not None else os.getenv("SCRAPER_LOCAL_BROWSER_WAIT_SECONDS"), 0.3, 0.0, 30.0)
     started = time.time()
 
-    with _local_browser_slot() as slot:
+    with _local_browser_slot(timeout=timeout) as slot:
         profile_dir = _local_browser_profile_dir() / f"process-{os.getpid()}" / f"detail-batch-{slot}"
         profile_dir.mkdir(parents=True, exist_ok=True)
         fetcher_key = f"detail-batch:{profile_dir}:{id(browser)}"
@@ -1025,13 +1127,14 @@ def fetch_product_details_many(
         def _fetch_details(driver: Driver, data):
             links = list(data["urls"])
             seed_url = data.get("seed_url") or _origin_url(links[0])
+            warm_deadline = time.time() + float(data["timeout"])
             if logger:
                 logger.info("[botasaurus] Detail batch warming %s for %s URL(s)", seed_url, len(links))
             try:
                 try:
                     driver.get(
                         seed_url,
-                        timeout=max(10, int(data.get("timeout", timeout))),
+                        timeout=max(0.1, warm_deadline - time.time()),
                         bypass_cloudflare=_should_bypass_cloudflare(),
                     )
                 except Exception as exc:
@@ -1040,11 +1143,11 @@ def fetch_product_details_many(
                     if logger:
                         logger.warning("[botasaurus] Detail batch warm page partially loaded: %s", exc)
                 if data.get("wait_seconds", wait_time) > 0:
-                    driver.sleep(data.get("wait_seconds", wait_time))
-                _dismiss_canada_prompt(driver.run_js, driver.sleep, url=seed_url, logger=logger, attempts=1)
+                    driver.sleep(min(float(data.get("wait_seconds", wait_time)), max(0.0, warm_deadline - time.time())))
+                _dismiss_canada_prompt(driver.run_js, driver.sleep, url=seed_url, logger=logger, attempts=1, deadline=warm_deadline)
                 _wait_for_rendered_readiness(
                     driver,
-                    deadline=time.time() + max(1.0, min(6.0, float(data.get("timeout", timeout)) / 3.0)),
+                    deadline=min(warm_deadline, time.time() + max(1.0, min(6.0, float(data["timeout"]) / 3.0))),
                     logger=logger,
                     url=seed_url,
                 )
@@ -1078,7 +1181,7 @@ def fetch_product_details_many(
             raw_results = cached_fetcher({
                 "urls": clean_urls,
                 "slot": slot,
-                "timeout": max(timeout, 10),
+                "timeout": timeout,
                 "request_timeout": timeout,
                 "wait_seconds": wait_time,
                 "seed_url": _origin_url(clean_urls[0]),

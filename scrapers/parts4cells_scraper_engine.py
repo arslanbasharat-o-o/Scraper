@@ -19,8 +19,7 @@ import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse, urlencode, parse_qs, urlunparse
-from .browser_fetcher import fetch_html as fetch_html_with_browser
-from .browser_fetcher import should_use_browser_fetch
+from .fetch_pipeline import fetch_with_pipeline, copy_fetch_metadata
 from .sku_utils import extract_jsonld_sku, clean_sku
 
 _CURL_LOCK = threading.Lock()
@@ -136,41 +135,30 @@ def _looks_like_block_page(html: str) -> bool:
 
 
 def _fetch(url: str, session=None, logger=None) -> Optional[str]:
-    """Fetch Parts4Cells HTTP-first, with the bounded browser fallback."""
+    """Fetch Parts4Cells through the shared bounded HTTP-first pipeline."""
     if session is not None:
         session.parts4cells_last_error = ""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Connection": "keep-alive",
-    }
-    for attempt in range(3):
-        try:
-            if session is not None:
-                resp = session.get(url, headers=headers, timeout=12)
-            elif _HAS_CURL:
-                resp = curl_req.get(url, impersonate="safari15_5", headers=headers, timeout=12)
-            else:
-                resp = curl_req.get(url, headers=headers, timeout=12)
-            if resp.status_code == 200 and resp.text and not _looks_like_block_page(resp.text):
-                return resp.text
-            if resp.status_code in (429, 503):
-                time.sleep(0.5 + attempt * 0.5)
-        except Exception as exc:
-            if logger:
-                logger.debug("[parts4cells] HTTP fetch attempt %s failed for %s: %s", attempt + 1, url, exc)
-            time.sleep(0.3)
-
-    if should_use_browser_fetch():
-        try:
-            result = fetch_html_with_browser(url, timeout=60, logger=logger)
-            if result.html and not _looks_like_block_page(result.html):
-                return result.html
-        except Exception as exc:
-            if logger:
-                logger.warning("[parts4cells] Browser fallback failed for %s: %s", url, exc)
+        session.parts4cells_last_status = None
+        session.parts4cells_last_url = url
+    if session is None:
+        session, _ = build_session()
+    result = fetch_with_pipeline(
+        session,
+        url,
+        timeout=12,
+        http_attempts=3,
+        logger_=logger,
+        blocked_detector=lambda status, html: status in {401, 403, 429} or _looks_like_block_page(html),
+        browser_timeout=60,
+    )
+    copy_fetch_metadata(session, "parts4cells")
+    if result is not None:
+        session.parts4cells_last_status = result.status_code
+        session.parts4cells_last_url = result.final_url
+        return result.html
     if session is not None:
+        session.parts4cells_last_status = getattr(session, "fetch_last_status", None)
+        session.parts4cells_last_url = getattr(session, "fetch_last_url", url) or url
         session.parts4cells_last_error = f"Failed to fetch {url}: blocked, empty, or unsuccessful response"
     return None
 

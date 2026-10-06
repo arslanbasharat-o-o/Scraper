@@ -24,12 +24,9 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Set, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from .browser_fetcher import (
-    fetch_html as fetch_html_with_browser,
-    should_use_browser_fetch,
-    browser_fetch_mode,
-    browser_fetch_requested,
     get_shared_supplier_cookies,
 )
+from .fetch_pipeline import fetch_with_pipeline, is_cancellation_exception, copy_fetch_metadata
 
 # Optional curl_cffi for better Cloudflare bypass
 try:
@@ -229,17 +226,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def _browser_fallback_enabled() -> bool:
-    value = str(os.getenv('SCRAPER_LOCAL_BROWSER_FALLBACK') or '').strip().lower()
-    return value in {'1', 'true', 'yes', 'on'}
+
+def _pipeline_blocked(status_code: int, html: str) -> bool:
+    """Reject anti-bot responses, including challenge pages returned as 200."""
+    return int(status_code or 0) in {401, 403, 429} or _looks_like_antibot_challenge(status_code, html)
 
 def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
     """Fetch HTML from URL. Returns (final_url, html_content)"""
     _set_fetch_metadata(sess, status_code=None, final_url=url)
-    if browser_fetch_requested():
-        result = fetch_html_with_browser(url, timeout=max(timeout, 60))
-        _set_fetch_metadata(sess, status_code=200, final_url=result.final_url, blocked=False)
-        return result.final_url, result.html
 
     # Reuse cookies solved by browser sessions
     shared_cookies = get_shared_supplier_cookies(url)
@@ -250,70 +244,50 @@ def get_html(sess, url: str, timeout: int = 30) -> Tuple[str, str]:
             pass
 
     try:
-        # Fast Safari TLS HTTP request first
-        r = sess.get(url, timeout=timeout, allow_redirects=True)
-        status_code = int(getattr(r, 'status_code', 0) or 0)
-        final_url = str(getattr(r, 'url', '') or url)
-        html = getattr(r, 'text', '') or ''
-        response_headers = getattr(r, 'headers', {}) or {}
-        # Cloudflare documents cf-mitigated: challenge as a definitive signal
-        # even when the challenge body is returned with HTTP 200.
-        cf_challenge = str(response_headers.get('cf-mitigated') or '').strip().lower() == 'challenge'
-        blocked = cf_challenge or _looks_like_antibot_challenge(status_code, html)
-        _set_fetch_metadata(sess, status_code=status_code, final_url=final_url, blocked=blocked)
-        if blocked:
-            if should_use_browser_fetch() or _browser_fallback_enabled():
-                logger.info(f"[fetch] HTTP {status_code} blocked on {url} - falling back to browser")
-                result = fetch_html_with_browser(url, timeout=max(timeout, 60))
-                # Feed browser cookies back to session
-                fresh_cookies = get_shared_supplier_cookies(url)
-                if fresh_cookies and hasattr(sess, 'cookies'):
-                    try:
-                        sess.cookies.update(fresh_cookies)
-                    except Exception:
-                        pass
-                _set_fetch_metadata(sess, status_code=200, final_url=result.final_url, blocked=False)
-                return result.final_url, result.html
-            logger.warning(f"[fetch] HTTP {status_code} blocked on {url} - browser fallback disabled")
-            raise requests.HTTPError(f"blocked by anti-bot challenge ({status_code})", response=r)
-        r.raise_for_status()
-        return (final_url, html)
-    except Exception as exc:
-        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-            raise
-        # Fast HTTP retry on transient network hiccups before expensive browser fallback
-        for retry_attempt in range(2):
-            try:
-                time.sleep(0.3 * (retry_attempt + 1))
-                r = sess.get(url, timeout=timeout, allow_redirects=True)
-                retry_code = int(getattr(r, 'status_code', 0) or 0)
-                retry_url = str(getattr(r, 'url', '') or url)
-                retry_html = getattr(r, 'text', '') or ''
-                if retry_code == 200 and not _looks_like_antibot_challenge(retry_code, retry_html):
-                    _set_fetch_metadata(sess, status_code=200, final_url=retry_url, blocked=False)
-                    return (retry_url, retry_html)
-            except Exception:
-                pass
-        if (should_use_browser_fetch() or _browser_fallback_enabled()):
-            logger.info(f"[fetch] HTTP error ({type(exc).__name__}) on {url} - falling back to browser")
-            try:
-                result = fetch_html_with_browser(url, timeout=max(timeout, 60))
-                fresh_cookies = get_shared_supplier_cookies(url)
-                if fresh_cookies and hasattr(sess, 'cookies'):
-                    try:
-                        sess.cookies.update(fresh_cookies)
-                    except Exception:
-                        pass
-                _set_fetch_metadata(sess, status_code=200, final_url=result.final_url, blocked=False)
-                return result.final_url, result.html
-            except Exception as browser_exc:
-                logger.error(f"[fetch] Browser fallback failed for {url}: {browser_exc}")
-        error = f'{type(exc).__name__}: {exc}'
-        status_code = getattr(sess, 'mobilesentrix_last_status', None)
-        final_url = getattr(sess, 'mobilesentrix_last_url', url)
-        blocked = bool(getattr(sess, 'mobilesentrix_blocked', False))
-        _set_fetch_metadata(sess, status_code=status_code, final_url=final_url, error=error, blocked=blocked)
+        result = fetch_with_pipeline(
+            sess,
+            url,
+            timeout=max(1, int(timeout)),
+            http_attempts=2,
+            logger_=logger,
+            blocked_detector=_pipeline_blocked,
+            browser_timeout=max(5, min(120, int(timeout))),
+        )
+        copy_fetch_metadata(sess, "mobilesentrix")
+    except (KeyboardInterrupt, SystemExit):
         raise
+    except Exception as exc:
+        if is_cancellation_exception(exc):
+            raise
+        error = f'{type(exc).__name__}: {exc}'
+        _set_fetch_metadata(
+            sess,
+            status_code=getattr(sess, 'fetch_last_status', getattr(sess, 'mobilesentrix_last_status', None)),
+            final_url=getattr(sess, 'fetch_last_url', url),
+            error=error,
+            blocked=True,
+        )
+        raise
+
+    if result is None:
+        error = 'HTTP, Scrapling, and browser transports returned no usable HTML'
+        _set_fetch_metadata(
+            sess,
+            status_code=getattr(sess, 'fetch_last_status', getattr(sess, 'mobilesentrix_last_status', None)),
+            final_url=getattr(sess, 'fetch_last_url', url),
+            error=error,
+            blocked=True,
+        )
+        raise requests.HTTPError(error)
+
+    fresh_cookies = get_shared_supplier_cookies(url)
+    if fresh_cookies and hasattr(sess, 'cookies'):
+        try:
+            sess.cookies.update(fresh_cookies)
+        except Exception:
+            pass
+    _set_fetch_metadata(sess, status_code=result.status_code, final_url=result.final_url, blocked=False)
+    return result.final_url, result.html
 
 
 def get_html_safe(sess, url: str, delay_ms: int):
@@ -323,6 +297,8 @@ def get_html_safe(sess, url: str, delay_ms: int):
     try:
         return get_html(sess, url)
     except Exception as e:
+        if is_cancellation_exception(e):
+            raise
         error = f'{type(e).__name__}: {e}'
         _set_fetch_metadata(
             sess,
@@ -812,6 +788,8 @@ def enrich_item_details(sess, item: Item, rules: Optional[Dict] = None, logger=N
             })
         return item
     except Exception as exc:
+        if is_cancellation_exception(exc):
+            raise
         if logger:
             logger.warning(f"[detail] Failed to enrich {getattr(item, 'url', '')}: {exc}")
         return item
@@ -1219,6 +1197,8 @@ def scrape_urls_parallel(urls: List[str], rules: Dict, crawl_pagination: bool,
                 if logger:
                     logger.info(f"Completed scraping {url}: {len(items)} items")
             except Exception as e:
+                if is_cancellation_exception(e):
+                    raise
                 if logger:
                     logger.error(f"Error scraping {url}: {e}")
                 # Add error item

@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 from app import (  # noqa: E402
     AUTOMATION_CHECKPOINT_ITEM_LIMIT,
     AutomationRunPaused,
+    ScrapeDeadlineExceeded,
     automation_progress_write_due,
     app,
     build_automation_run_summary,
@@ -327,6 +328,7 @@ def resume_run(run_id: int) -> int:
             stop_check=automation_stop_check,
             initial_items=base_preview_items if resume_from_checkpoint else None,
             skip_target_urls=completed_target_urls if resume_from_checkpoint else None,
+            max_duration_seconds=job.get("max_duration_seconds"),
         )
         _flush_checkpoints(force=True)
     except AutomationRunPaused as exc:
@@ -334,6 +336,39 @@ def resume_run(run_id: int) -> int:
         db_manager.pause_automation_run(run_id, reason=str(exc) or "Automation run paused.")
         db_manager.close_connection()
         return 0
+    except ScrapeDeadlineExceeded as exc:
+        # The workflow has already flushed durable product checkpoints through
+        # progress_callback. Keep those rows and expose the resumable failure.
+        _flush_checkpoints(force=True)
+        latest_run = db_manager.get_automation_run(run_id) or {}
+        latest_status = str(latest_run.get("status") or "").strip().lower()
+        if latest_status == "completed":
+            db_manager.close_connection()
+            return 0
+        if latest_status == "paused":
+            db_manager.pause_automation_run(run_id, reason="Automation run paused by user.")
+            db_manager.close_connection()
+            return 0
+        error_text = str(exc) or "Automation run stopped at its runtime limit."
+        partial_history_id, partial_count, partial_summary = save_automation_partial_history(
+            run_id,
+            job,
+            target_urls,
+            previous_history=previous_history,
+            error_text=error_text,
+        )
+        db_manager.complete_automation_run(
+            run_id,
+            status="failed",
+            current_history_id=partial_history_id or str(run.get("current_history_id") or ""),
+            previous_history_id=previous_history_id,
+            target_urls=target_urls,
+            items_count=partial_count or int(run.get("items_count") or 0),
+            summary=partial_summary or (run.get("summary") if isinstance(run.get("summary"), dict) else {}),
+            error_text=error_text,
+        )
+        db_manager.close_connection()
+        return 2
     except Exception as exc:
         _flush_checkpoints(force=True)
         error_text = str(exc) or "Automation run failed before completion."

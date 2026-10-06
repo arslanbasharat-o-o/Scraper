@@ -154,6 +154,7 @@ def test_scrape_reports_browser_used_when_browser_requested(tmp_path, monkeypatc
 def test_mobilesentrix_http_listing_falls_back_to_botasaurus_when_configured(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
     monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
+    monkeypatch.setenv("SCRAPER_SCRAPLING_ENABLED", "0")
     scraper = importlib.import_module("scrapers.scraper_engine")
     calls = []
 
@@ -174,7 +175,8 @@ def test_mobilesentrix_http_listing_falls_back_to_botasaurus_when_configured(tmp
         final_url = Response.url
         html = "<html><body><main>rendered</main></body></html>"
 
-    monkeypatch.setattr(scraper, "fetch_html_with_browser", lambda *_args, **_kwargs: (calls.append(True) or BrowserResult()))
+    pipeline = importlib.import_module("scrapers.fetch_pipeline")
+    monkeypatch.setattr(pipeline, "botasaurus_fetch_html", lambda *_args, **_kwargs: (calls.append(True) or BrowserResult()))
 
     final_url, html = scraper.get_html(Session(), Response.url)
 
@@ -183,7 +185,7 @@ def test_mobilesentrix_http_listing_falls_back_to_botasaurus_when_configured(tmp
     assert "rendered" in html
 
 
-def test_extractor_locks_botasaurus_rendering_on(tmp_path, monkeypatch):
+def test_extractor_defaults_to_http_first(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
 
     with app_module.app.test_client() as client:
@@ -192,7 +194,8 @@ def test_extractor_locks_botasaurus_rendering_on(tmp_path, monkeypatch):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert 'id="useBrowserApi" class="toggle-cb" checked disabled' in html
+    assert 'id="useBrowserApi" class="toggle-cb"' in html
+    assert 'id="useBrowserApi" class="toggle-cb" checked' not in html
 
 
 def test_error_placeholder_items_do_not_count_as_products(tmp_path, monkeypatch):
@@ -468,8 +471,8 @@ def test_phase_two_reuses_phase_one_supplier_cookies(tmp_path, monkeypatch):
     assert observed_cookies == [{"supplier_session": "ready"}]
 
 
-def test_mobilesentrix_detail_prefers_browser_for_required_sku(tmp_path, monkeypatch):
-    """MobileSentrix uses Botarus first for required SKU detail extraction."""
+def test_mobilesentrix_detail_tries_http_before_browser_for_required_sku(tmp_path, monkeypatch):
+    """Required SKU recovery must keep HTTP primary."""
     monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
     monkeypatch.setenv("SCRAPER_DETAIL_BROWSER_BATCH", "0")
     app_module = _fresh_app(tmp_path, monkeypatch)
@@ -519,7 +522,7 @@ def test_mobilesentrix_detail_prefers_browser_for_required_sku(tmp_path, monkeyp
         enrich_details=True,
     )
 
-    assert calls == [True]
+    assert calls == [False, True]
     assert enriched[0].sku == "MS-BROWSER-SKU"
 
 
@@ -1456,7 +1459,7 @@ def test_first_run_rejects_fetch_errors_even_without_baseline_guard(tmp_path, mo
     assert result['approved'] is False
 
 
-def test_failed_browser_target_recovers_in_same_run(tmp_path, monkeypatch):
+def test_failed_browser_target_is_not_relaunched_by_workflow(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from scrapers.browser_fetcher import browser_fetch_requested
     app_module = _fresh_app(tmp_path, monkeypatch)
@@ -1473,10 +1476,77 @@ def test_failed_browser_target_recovers_in_same_run(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module, 'enrich_scraped_items', lambda items, *_args, **_kwargs: (items, 0))
     result = app_module.execute_scrape_workflow(['https://www.mobilesentrix.com/example'],
         use_browser=True, enrich_details=False)
-    assert modes == [True, False]
+    assert modes == [True]
     assert closed == [True]
-    assert result['history_saved'] is True
-    assert not result['target_errors']
+    assert result['history_saved'] is False
+    assert result['target_errors']
+
+
+def test_workflow_deadline_propagates_through_session_page_fetches(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from scrapers import fetch_pipeline
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    clock = [100.0]
+    monkeypatch.setattr(app_module.time, 'monotonic', lambda: clock[0])
+    session = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(app_module, 'build_session', lambda **_: (session, False))
+    def scrape(sess, url, *_args):
+        assert callable(sess.scraper_stop_check)
+        clock[0] += 61
+        return fetch_pipeline.fetch_with_pipeline(sess, url)
+    monkeypatch.setattr(app_module, 'scrape_url', scrape)
+    with pytest.raises(app_module.ScrapeDeadlineExceeded):
+        app_module.execute_scrape_workflow(
+            ['https://www.mobilesentrix.com/category'],
+            use_parallel=False, enrich_details=False, max_duration_seconds=60,
+        )
+
+
+def test_detached_worker_watchdog_records_timeout(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    calls = []
+    class StalledProcess:
+        pid = 123456
+        def wait(self, timeout):
+            assert timeout == app_module.MAX_SCRAPER_MAX_DURATION_SECONDS + 120
+            raise app_module.subprocess.TimeoutExpired('worker', timeout)
+    monkeypatch.setattr(app_module, '_stop_resume_worker', lambda run_id, **_: calls.append(('stop', run_id)))
+    monkeypatch.setattr(app_module, '_record_resume_worker_watchdog_timeout', lambda run_id: calls.append(('record', run_id)))
+    monkeypatch.setattr(app_module, '_remove_resume_worker_lock_if_owned', lambda *_: None)
+    app_module._watch_resume_worker(77, StalledProcess())
+    assert calls == [('stop', 77), ('record', 77)]
+
+
+def test_detail_terminal_status_is_preserved_when_browser_disabled(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setenv('SCRAPER_LOCAL_BROWSER_FALLBACK', '0')
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    session = SimpleNamespace(mobilesentrix_last_status=404, close=lambda: None)
+    calls = []
+    monkeypatch.setattr(app_module, 'build_session', lambda **_: (session, False))
+    monkeypatch.setattr(app_module, 'enrich_standard_item_details', lambda _, item, *_args: calls.append(True) or item)
+    item = app_module.Item(url='https://example.com/product', site='example.com', title='Screen',
+        price_value=10, price_currency='USD', price_text='$10', discounted_value=10,
+        discounted_formatted='$10', original_formatted='$10', source='listing', image_url='')
+    items, _ = app_module.enrich_scraped_items([item], {}, 1, True, True, use_browser=False)
+    assert calls == [True]
+    assert items[0].extra['sku_status'] == 'unavailable'
+
+
+def test_detail_pipeline_failure_does_not_launch_an_extra_browser(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setenv('SCRAPER_LOCAL_BROWSER_FALLBACK', '1')
+    monkeypatch.setenv('SCRAPER_DETAIL_BROWSER_BATCH', '0')
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    session = SimpleNamespace(mobilesentrix_last_status=403, fetch_browser_attempted=True, close=lambda: None)
+    calls = []
+    monkeypatch.setattr(app_module, 'build_session', lambda **_: (session, False))
+    monkeypatch.setattr(app_module, 'enrich_standard_item_details', lambda _, item, *_args: calls.append(True) or item)
+    item = app_module.Item(url='https://www.mobilesentrix.com/product', site='www.mobilesentrix.com', title='Screen',
+        price_value=10, price_currency='USD', price_text='$10', discounted_value=10,
+        discounted_formatted='$10', original_formatted='$10', source='listing', image_url='')
+    app_module.enrich_scraped_items([item], {}, 1, True, True, use_browser=False)
+    assert calls == [True]
 
 
 def test_resume_retries_legacy_completed_markers_without_products(tmp_path, monkeypatch):

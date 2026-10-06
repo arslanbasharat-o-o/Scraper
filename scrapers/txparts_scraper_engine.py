@@ -20,7 +20,7 @@ from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse
-from .browser_fetcher import fetch_html as fetch_html_with_browser, should_use_browser_fetch, browser_fetch_requested
+from .fetch_pipeline import fetch_with_pipeline, copy_fetch_metadata
 from .sku_utils import extract_jsonld_sku, clean_sku
 
 try:
@@ -289,35 +289,28 @@ def _looks_like_block_page(html: str) -> bool:
     ))
 
 def get_html(session, url: str) -> Optional[str]:
-    """Fetch HTML with Safari TLS curl_cffi session, fallback to browser if blocked."""
+    """Fetch HTML through the shared bounded HTTP-first pipeline."""
     if session is not None:
         session.txparts_last_error = ""
-    if session is not None:
-        session.txparts_last_status = 0
-    if browser_fetch_requested():
-        result = fetch_html_with_browser(url)
+        session.txparts_last_status = None
+        session.txparts_last_url = url
+    result = fetch_with_pipeline(
+        session,
+        url,
+        timeout=25,
+        http_attempts=2,
+        blocked_detector=lambda status, html: status in {401, 403, 429} or _looks_like_block_page(html),
+        browser_timeout=60,
+    )
+    copy_fetch_metadata(session, "txparts")
+    if result is not None:
         if session is not None:
-            session.txparts_last_status = 200
+            session.txparts_last_status = result.status_code
+            session.txparts_last_url = result.final_url
         return result.html
     if session is not None:
-        for attempt in range(2):
-            try:
-                if attempt > 0:
-                    time.sleep(0.3)
-                r = session.get(url, timeout=25)
-                session.txparts_last_status = int(getattr(r, 'status_code', 0) or 0)
-                if r.status_code == 200 and r.text and not _looks_like_block_page(r.text):
-                    return r.text
-            except Exception:
-                pass
-    if should_use_browser_fetch():
-        try:
-            browser_html = fetch_html_with_browser(url).html
-            if browser_html and not _looks_like_block_page(browser_html):
-                return browser_html
-        except Exception as exc:
-            print(f"[txparts] Fetch failed for {url}: {exc}")
-    if session is not None:
+        session.txparts_last_status = getattr(session, "fetch_last_status", None)
+        session.txparts_last_url = getattr(session, "fetch_last_url", url) or url
         session.txparts_last_error = f"Failed to fetch {url}: blocked, empty, or unsuccessful response"
     return None
 

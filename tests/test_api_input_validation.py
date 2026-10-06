@@ -54,6 +54,81 @@ def test_scrape_rejects_non_supplier_url_before_browser_launch(tmp_path, monkeyp
     assert payload["history_saved"] is False
 
 
+def test_scrape_rejects_excessive_target_url_count(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCRAPER_MAX_TARGET_URLS", "1")
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    with app_module.app.test_client() as client:
+        response = client.post("/api/scrape", json={
+            "urls": "https://xcellparts.com/category/one\nhttps://xcellparts.com/category/two",
+        })
+
+    payload = response.get_json()
+    assert response.status_code == 400
+    assert "maximum of 1 target URLs" in payload["error"]
+    assert payload["history_saved"] is False
+
+
+def test_scrape_duration_is_hard_capped_at_five_hours(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+
+    assert app_module.resolve_scraper_max_duration_seconds("999999") == 5 * 60 * 60
+    assert app_module.resolve_scraper_max_duration_seconds("not-a-number") == 5 * 60 * 60
+    assert app_module.resolve_scraper_max_duration_seconds("inf") == 5 * 60 * 60
+
+
+def test_scrape_rejects_non_string_url_list(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    with app_module.app.test_client() as client:
+        response = client.post("/api/scrape", json={"urls": [42, {"url": "bad"}]})
+    assert response.status_code == 400
+    assert response.get_json()["history_saved"] is False
+
+
+def test_api_deadline_returns_structured_timeout(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_module, "validate_supplier_remote_urls", lambda urls: urls)
+    def expired(*_args, **_kwargs):
+        raise app_module.ScrapeDeadlineExceeded("Runtime limit reached")
+    monkeypatch.setattr(app_module, "execute_scrape_workflow", expired)
+    with app_module.app.test_client() as client:
+        response = client.post("/api/scrape", json={"urls": "https://xcellparts.com/category"})
+    assert response.status_code == 504
+    assert response.get_json()["status"] == "timeout"
+    assert response.get_json()["history_saved"] is False
+
+
+def test_api_deadline_keeps_collected_products_without_saving_baseline(tmp_path, monkeypatch):
+    app_module = _fresh_app(tmp_path, monkeypatch)
+    clock = [100.0]
+    monkeypatch.setattr(app_module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(app_module, "validate_supplier_remote_urls", lambda urls: urls)
+    monkeypatch.setattr(app_module, "build_session", lambda **_: (SimpleNamespace(close=lambda: None), False))
+    def scrape(session, url, *_args):
+        if url.endswith("/two"):
+            clock[0] += 61
+            session.scraper_stop_check()
+        return [app_module.Item(
+            url=url + "/product", site="www.mobilesentrix.com", title="Collected screen",
+            price_value=10, price_currency="USD", price_text="$10", discounted_value=10,
+            discounted_formatted="$10", original_formatted="$10", source="listing", image_url="", sku="SKU-1",
+        )]
+    monkeypatch.setattr(app_module, "scrape_url", scrape)
+    with app_module.app.test_client() as client:
+        response = client.post("/api/scrape", json={
+            "urls": ["https://www.mobilesentrix.com/one", "https://www.mobilesentrix.com/two"],
+            "use_parallel": False,
+            "max_duration_seconds": 60,
+        })
+    payload = response.get_json()
+    assert response.status_code == 504
+    assert payload["count"] == 1
+    assert payload["items"][0]["title"] == "Collected screen"
+    assert payload["partial_run"] is True
+    assert payload["history_saved"] is False
+    assert app_module.db_manager.get_history_list(limit=10) == []
+
+
 def test_supplier_url_validation_rejects_private_dns_result(tmp_path, monkeypatch):
     app_module = _fresh_app(tmp_path, monkeypatch)
     monkeypatch.setattr(
@@ -282,4 +357,3 @@ def test_export_xlsx_standardized_headers_and_format(tmp_path, monkeypatch):
 
     exported_row = [cell.value for cell in ws[2]]
     assert exported_row == [row_data[h] for h in headers]
-

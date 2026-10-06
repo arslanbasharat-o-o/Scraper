@@ -6,6 +6,32 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_extractor_transport_defaults_and_link_protocol_validation():
+    import shutil
+    import subprocess
+    import pytest
+    script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
+    soup = BeautifulSoup((ROOT / "templates" / "index.html").read_text(encoding="utf-8"), "html.parser")
+    assert not soup.find(id="useBrowserApi").has_attr("checked")
+    assert "use_browser: Boolean(useBrowserApi?.checked)" in script
+    assert "5 * 60 * 60 * 1000" in script
+    cancel_branch = script.split("if (controller.signal.aborted && !requestTimedOut) {", 1)[1].split("}", 1)[0]
+    assert "hideComparison();" in cancel_branch
+    assert "render();" in cancel_branch
+    if not shutil.which("node"):
+        pytest.skip("Node is required for URL-helper execution")
+    helper = script.split("function safeExternalUrl(value) {", 1)[1].split("\nfunction collapseSpacedAcronyms", 1)[0]
+    program = "const window = {location: {origin: 'https://app.test'}};\nfunction safeExternalUrl(value) {" + helper
+    program += """
+    const assert = require('node:assert/strict');
+    assert.equal(safeExternalUrl('javascript:alert(1)'), '');
+    assert.equal(safeExternalUrl('data:text/html,bad'), '');
+    assert.equal(safeExternalUrl('https://user:pass@site.test'), '');
+    assert.equal(safeExternalUrl('https://site.test/product'), 'https://site.test/product');
+    """
+    subprocess.run([shutil.which("node"), "-e", program], check=True, capture_output=True, text=True)
+
+
 def test_extractor_template_groups_and_dialog_accessibility():
     soup = BeautifulSoup((ROOT / "templates" / "index.html").read_text(encoding="utf-8"), "html.parser")
 

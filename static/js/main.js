@@ -139,7 +139,7 @@ const LOAD_MSGS = [
   ['Organizing results...', 'Sorting and filtering data'],
   ['Almost there...', 'Finalizing extraction'],
 ];
-const SCRAPE_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+const SCRAPE_REQUEST_TIMEOUT_MS = 5 * 60 * 60 * 1000;
 
 // ── Inline notification bar ───────────────────────────────────────────────────
 const _NOTIF_CLS = {
@@ -340,6 +340,19 @@ function buildImageProxyUrl(imageUrl) {
   if (raw.startsWith('/api/image-proxy?')) return raw;
   const params = new URLSearchParams({ url: raw });
   return `/api/image-proxy?${params.toString()}`;
+}
+
+function safeExternalUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    if (parsed.username || parsed.password) return '';
+    return parsed.href;
+  } catch {
+    return '';
+  }
 }
 
 function collapseSpacedAcronyms(text) {
@@ -1153,7 +1166,7 @@ function render() {
     const pctTxt = formatSignedPercent(r.percent_delta);
     const absOffTxt = formatSignedMoney(r.amount_delta, r.currency_symbol);
     const { label: srcLabel, title: srcTitle } = formatSource(r.site);
-    const safe_url = escapeHtml(r.url);
+    const safe_url = escapeHtml(safeExternalUrl(r.url));
     const safe_title = escapeHtml(r.title);
     const imageSrc = buildImageProxyUrl(r.image_url);
     const safeImageSrc = escapeHtml(imageSrc);
@@ -1180,7 +1193,7 @@ function render() {
       <td>${pctTxt}</td>
       <td>${absOffTxt}</td>
       <td><strong>${escapeHtml(r.final)}</strong></td>
-      <td><a class="url-link" href="${safe_url}" target="_blank" rel="noopener noreferrer" title="${safe_url}">Open</a></td>
+      <td>${safe_url ? `<a class="url-link" href="${safe_url}" target="_blank" rel="noopener noreferrer" title="${safe_url}">Open</a>` : '<span>Unavailable</span>'}</td>
       <td>${srcLabel ? `<span class="source-chip" title="${escapeHtml(srcTitle)}">${escapeHtml(srcLabel)}</span>` : ''}</td>
     `;
 
@@ -1668,10 +1681,9 @@ async function doFetch() {
     add_percent: parseFloat(addPercentInput?.value || '0') || 0,
     drop_pct: Math.max(1, parseFloat(dropPct?.value || '10') || 10),
     enrich_details: true,
-    use_browser: true,
+    use_browser: Boolean(useBrowserApi?.checked),
     crawl_pagination: true,
     max_pages: 20,
-    delay_ms: 300,
   };
 
   rawItems = []; rows = [];
@@ -1686,7 +1698,7 @@ async function doFetch() {
   const cancelScrapeBtn = $('cancelScrapeBtn');
   const onCancelClick = () => {
     controller.abort();
-    showToast('info', 'Scrape cancelled by user.');
+    showToast('info', 'Stopped waiting for results. Server work may continue until its runtime limit.');
   };
   if (cancelScrapeBtn) cancelScrapeBtn.addEventListener('click', onCancelClick);
 
@@ -1754,8 +1766,13 @@ async function doFetch() {
 
   } catch (err) {
     console.error('[fetch]', err);
+    if (controller.signal.aborted && !requestTimedOut) {
+      hideComparison();
+      render();
+      return;
+    }
     const message = requestTimedOut
-      ? 'Scrape timed out while waiting for browser verification. Try again after completing Cloudflare in the opened browser, or check the browser/proxy account.'
+      ? 'The five-hour scrape limit was reached. Use Automation for large catalogs and resumable checkpoints.'
       : formatFetchErrorMessage(err);
     showToast('error', `Fetch failed: ${message}`);
     hideComparison();
