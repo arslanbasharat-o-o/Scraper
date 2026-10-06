@@ -6,56 +6,8 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_extractor_transport_defaults_and_link_protocol_validation():
-    import shutil
-    import subprocess
-    import pytest
-    script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
-    soup = BeautifulSoup((ROOT / "templates" / "index.html").read_text(encoding="utf-8"), "html.parser")
-    assert not soup.find(id="useBrowserApi").has_attr("checked")
-    assert "use_browser: Boolean(useBrowserApi?.checked)" in script
-    assert "5 * 60 * 60 * 1000" in script
-    cancel_branch = script.split("if (controller.signal.aborted && !requestTimedOut) {", 1)[1].split("}", 1)[0]
-    assert "hideComparison();" in cancel_branch
-    assert "render();" in cancel_branch
-    if not shutil.which("node"):
-        pytest.skip("Node is required for URL-helper execution")
-    helper = script.split("function safeExternalUrl(value) {", 1)[1].split("\nfunction collapseSpacedAcronyms", 1)[0]
-    program = "const window = {location: {origin: 'https://app.test'}};\nfunction safeExternalUrl(value) {" + helper
-    program += """
-    const assert = require('node:assert/strict');
-    assert.equal(safeExternalUrl('javascript:alert(1)'), '');
-    assert.equal(safeExternalUrl('data:text/html,bad'), '');
-    assert.equal(safeExternalUrl('https://user:pass@site.test'), '');
-    assert.equal(safeExternalUrl('https://site.test/product'), 'https://site.test/product');
-    """
-    subprocess.run([shutil.which("node"), "-e", program], check=True, capture_output=True, text=True)
-
-
-def test_extractor_template_groups_and_dialog_accessibility():
-    soup = BeautifulSoup((ROOT / "templates" / "index.html").read_text(encoding="utf-8"), "html.parser")
-
-    assert soup.find(id="urls").get("aria-describedby") == "urlsHelp"
-    assert soup.find(id="advancedControls").has_attr("hidden")
-
-    pricing_group = soup.find(attrs={"aria-labelledby": "pricingGroupLabel"})
-    keywords_group = soup.find(attrs={"aria-labelledby": "keywordsGroupLabel"})
-    display_group = soup.find(attrs={"aria-labelledby": "displayGroupLabel"})
-
-    assert pricing_group is not None
-    assert keywords_group is not None
-    assert display_group is not None
-
-    search_label = soup.find("label", attrs={"for": "search"})
-    assert search_label is not None
-
-    confirm_dialog = soup.find(id="confirmModalDialog")
-    assert confirm_dialog is not None
-    assert confirm_dialog.get("tabindex") == "-1"
-
-
 def test_shared_footer_holds_version_and_maintainer_details():
-    template_names = ("index.html", "history.html", "automation.html", "menu_map.html", "logs.html")
+    template_names = ("history.html", "automation.html", "menu_map.html", "logs.html")
     footer = (ROOT / "templates" / "_footer.html").read_text(encoding="utf-8")
 
     assert "{{ app_version }}" in footer
@@ -65,20 +17,6 @@ def test_shared_footer_holds_version_and_maintainer_details():
         assert '{% include "_footer.html" %}' in source
         assert "version-badge" not in source
         assert "v8.2.0" not in source
-
-
-def test_extractor_script_syncs_filters_results_and_dialog_focus():
-    script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
-
-    assert "function syncFiltersDisclosure()" in script
-    assert "advancedControls.hidden = !filtersOpen" in script
-    assert "advancedControls.setAttribute('aria-hidden', String(!filtersOpen))" in script
-    assert "const resultsTable = resultsTableWrap?.querySelector('table');" in script
-    assert "if (resultsTable) resultsTable.hidden = !has;" in script
-    assert "document.addEventListener('focusin'" in script
-    assert "focusConfirmDialogTarget" in script
-    assert "function summarizeTargetErrors(targetErrors)" in script
-    assert "Target fetch error:" in script
 
 
 def test_failed_automation_runs_are_always_resumable():

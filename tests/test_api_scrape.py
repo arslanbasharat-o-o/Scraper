@@ -18,21 +18,6 @@ def _fresh_app(tmp_path, monkeypatch):
     return app_module
 
 
-def test_scrape_requires_at_least_one_url(tmp_path, monkeypatch):
-    app_module = _fresh_app(tmp_path, monkeypatch)
-
-    with app_module.app.test_client() as client:
-        response = client.post("/api/scrape", json={})
-
-    payload = response.get_json()
-
-    assert response.status_code == 400
-    assert payload["error"] == "At least one URL is required."
-    assert payload["history_saved"] is False
-    assert payload["count"] == 0
-    assert app_module.db_manager.get_history_list(limit=10) == []
-
-
 @pytest.mark.parametrize("product_url", [
     "https://www.mobilesentrix.com/product/a",
     "https://www.mobilesentrix.ca/product/a",
@@ -183,19 +168,6 @@ def test_mobilesentrix_http_listing_falls_back_to_botasaurus_when_configured(tmp
     assert calls == [True]
     assert final_url == Response.url
     assert "rendered" in html
-
-
-def test_extractor_defaults_to_http_first(tmp_path, monkeypatch):
-    app_module = _fresh_app(tmp_path, monkeypatch)
-
-    with app_module.app.test_client() as client:
-        response = client.get("/extractor")
-
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'id="useBrowserApi" class="toggle-cb"' in html
-    assert 'id="useBrowserApi" class="toggle-cb" checked' not in html
 
 
 def test_error_placeholder_items_do_not_count_as_products(tmp_path, monkeypatch):

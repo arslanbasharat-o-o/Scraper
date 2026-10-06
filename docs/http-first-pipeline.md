@@ -8,7 +8,7 @@ All supplier engines and automation category discovery use this order:
 4. Botasaurus rendered recovery, once, if earlier stages fail.
 
 HTTP 404/410 is terminal. HTTP 200 challenge pages are rejected. Explicitly
-selecting **Force browser rendering** skips HTTP; the extractor otherwise
+selecting **Force browser rendering** skips HTTP; the workflow otherwise
 starts with HTTP and does not add an artificial delay. PhoneLCDParts reuses
 already fetched product HTML instead of requesting it twice.
 
@@ -52,13 +52,8 @@ web process to remain alive; workers also check their own deadline between
 requests and waits. Native HTTP/DevTools calls cannot be forcibly cancelled by
 Python threads and finish at their configured timeout or next boundary.
 
-The extractor waits up to five hours, but a reverse proxy may have a shorter
-request timeout. Configure that proxy separately or use Automation. Cancelling
-the extractor only stops the browser's wait; it is not server cancellation.
-Existing per-category pagination limits still apply.
-
-A manual timeout returns already-collected products in its HTTP 504 response
-for display/export. It does not save incomplete data as a trusted baseline.
+Automation runs outside the web request and checkpoints progress. Existing
+per-category pagination limits still apply.
 
 ## Regression checks
 
@@ -66,7 +61,7 @@ for display/export. It does not save incomplete data as a trusted baseline.
 python -m pip install -r requirements-dev.txt
 python -m py_compile app.py automation_service.py database.py scripts/*.py scrapers/*.py
 python -m pytest tests -q
-node --check static/js/main.js
+node --check static/js/automation.js
 ```
 
 Offline tests mock blocked suppliers. Passing tests does not guarantee access

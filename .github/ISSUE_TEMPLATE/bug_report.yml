@@ -20,10 +20,11 @@ body:
     attributes:
       label: Affected area
       options:
-        - Extractor
         - Automation
         - History
-        - Menu Map
+        - Category discovery
+        - Product detail scraping
+        - Data comparison
         - Authentication
         - Deployment
         - Other

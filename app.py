@@ -39,7 +39,7 @@ from copy import copy
 from functools import wraps, lru_cache
 import gzip
 import zipfile
-from openpyxl import Workbook, load_workbook
+from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from bs4 import BeautifulSoup
 import mimetypes
@@ -564,10 +564,10 @@ def build_public_site_pages() -> List[Dict[str, str]]:
     return [
         {
             'path': '/',
-            'endpoint': 'index',
+            'endpoint': 'automation',
             'changefreq': 'daily',
             'priority': '1.0',
-            'lastmod': get_template_lastmod('index.html'),
+            'lastmod': get_template_lastmod('automation.html'),
         },
         {
             'path': '/history',
@@ -4911,16 +4911,6 @@ def automation():
     return render_template('automation.html')
 
 
-@app.get('/extractor')
-@app.get('/index')
-def extractor():
-    return render_template('index.html')
-
-
-def index():
-    return automation()
-
-
 @app.get('/sitemap.xml')
 def sitemap():
     base_url = get_public_base_url()
@@ -5721,27 +5711,6 @@ def api_statistics():
         return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-@app.post('/api/search')
-def api_search():
-    """Search items in database"""
-    try:
-        data = request.get_json(silent=True) or {}
-        query = str(data.get('query') or '').strip()
-        limit = coerce_int(data.get('limit', 100), 100, min_value=1, max_value=500)
-
-        if not query:
-            return jsonify({'error': 'Search query is required'}), 400
-
-        items = db_manager.search_items(query, limit)
-        return jsonify({
-            'query': query,
-            'results': items,
-            'count': len(items)
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 
 @app.get('/api/automation/overview')
 def api_automation_overview():
@@ -6597,79 +6566,6 @@ def api_automation_verification_products():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.get('/api/watchlist')
-def api_watchlist():
-    """Return all saved watchlist items across site databases."""
-    try:
-        limit_value = request.args.get('limit')
-        limit = coerce_int(limit_value, 100, min_value=1, max_value=1000) if limit_value else None
-        items = db_manager.get_watchlist_items(limit=limit)
-        return jsonify({
-            'items': items,
-            'count': len(items),
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.post('/api/watchlist')
-def api_watchlist_save():
-    """Save or update a watchlist item snapshot."""
-    try:
-        data = request.get_json(silent=True) or {}
-        if not isinstance(data, dict):
-            return jsonify({'error': 'Invalid watchlist payload'}), 400
-
-        url = str(data.get('url') or '').strip()
-        if not url:
-            return jsonify({'error': 'Item URL is required'}), 400
-
-        saved_item = db_manager.save_watchlist_item(data)
-        if not saved_item:
-            return jsonify({'error': 'Failed to save watchlist item'}), 500
-
-        return jsonify({
-            'success': True,
-            'item': saved_item,
-            'count': len(db_manager.get_watchlist_urls()),
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.delete('/api/watchlist')
-def api_watchlist_delete():
-    """Remove one watchlist item by URL."""
-    try:
-        data = request.get_json(silent=True) or {}
-        url = str(request.args.get('url') or data.get('url') or '').strip()
-        if not url:
-            return jsonify({'error': 'Item URL is required'}), 400
-
-        removed = db_manager.remove_watchlist_item(url)
-        if not removed:
-            return jsonify({'error': 'Watchlist item not found', 'count': len(db_manager.get_watchlist_urls())}), 404
-
-        return jsonify({
-            'success': True,
-            'url': url,
-            'count': len(db_manager.get_watchlist_urls()),
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.post('/api/watchlist/clear')
-@require_destructive_confirmation
-def api_watchlist_clear():
-    """Clear the entire shared watchlist."""
-    try:
-        cleared = db_manager.clear_watchlist()
-        return jsonify({
-            'success': True,
-            'cleared': cleared,
-            'count': 0,
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 @app.post('/api/cleanup')
 @require_destructive_confirmation
 def api_cleanup():
@@ -6731,77 +6627,6 @@ def proxy_remote_image():
     res.headers['Cache-Control'] = 'public, max-age=2592000, immutable'
     return res
 
-@app.post('/api/scrape')
-def api_scrape():
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        return jsonify({'error': 'Request body must be an object.', 'history_saved': False, 'count': 0}), 400
-    urls_raw = data.get('urls') or ''
-    if not isinstance(urls_raw, (str, list)) or (
-        isinstance(urls_raw, list) and any(not isinstance(value, str) for value in urls_raw)
-    ):
-        return jsonify({'error': 'URLs must be a string or a list of strings.', 'history_saved': False, 'count': 0}), 400
-    requested_urls = [
-        value.strip()
-        for value in (urls_raw.splitlines() if isinstance(urls_raw, str) else urls_raw or [])
-        if str(value or '').strip()
-    ]
-    try:
-        validate_supplier_remote_urls(requested_urls)
-    except ValueError as exc:
-        return jsonify({'error': str(exc), 'history_saved': False, 'count': 0}), 400
-    crawl_pagination = coerce_bool(data.get('crawl_pagination'), default=True)
-    max_pages = coerce_int(data.get('max_pages') or 10, 10, min_value=1, max_value=20)
-
-    delay_ms = coerce_int(data.get('delay_ms') if data.get('delay_ms') is not None else int(os.getenv('SCRAPER_DEFAULT_DELAY_MS', '0') or 0), 0, min_value=0, max_value=5000)
-    retries = coerce_int(data.get('retries') or 1, 1, min_value=1, max_value=5)
-    verify_ssl = coerce_bool(data.get('verify_ssl'), default=True)
-    use_curl = coerce_bool(data.get('use_curl'), default=True)
-    use_browser = coerce_bool(data.get('use_browser'), default=False)
-    use_parallel = coerce_bool(data.get('use_parallel'), default=True)
-    enrich_details = True
-    max_duration_seconds = resolve_scraper_max_duration_seconds(data.get('max_duration_seconds'))
-
-    rules = {
-        "add_percent": coerce_float(data.get('add_percent') or 0.0, 0.0),
-        "percent_off": coerce_float(data.get('percent_off') or 0.0, 0.0),
-        "absolute_off": coerce_float(data.get('absolute_off') or 0.0, 0.0),
-    }
-    drop_pct = coerce_float(data.get('drop_pct') or 10.0, 10.0, min_value=1.0, max_value=90.0)
-    try:
-        result = execute_scrape_workflow(
-            urls_raw,
-            crawl_pagination=crawl_pagination,
-            max_pages=max_pages,
-            delay_ms=delay_ms,
-            retries=retries,
-            verify_ssl=verify_ssl,
-            use_curl=use_curl,
-            use_browser=use_browser,
-            use_parallel=use_parallel,
-            enrich_details=enrich_details,
-            rules=rules,
-            drop_pct=drop_pct,
-            max_duration_seconds=max_duration_seconds,
-        )
-    except ScrapeDeadlineExceeded as exc:
-        partial_items = list(getattr(exc, 'partial_items', []) or [])
-        return jsonify({
-            'error': str(exc),
-            'status': 'timeout',
-            'history_saved': False,
-            'count': len(partial_items),
-            'items': partial_items,
-            'partial_run': bool(partial_items),
-            'warning': str(exc) if partial_items else '',
-            'rules': rules,
-            'run_validation': {'approved': False, 'status': 'Timed Out', 'reasons': [str(exc)]},
-            'urls': requested_urls,
-        }), 504
-    if result.get('error') and not result.get('items'):
-        return jsonify(result), 400
-    return jsonify(result), 200
-
 @app.post('/api/export/xlsx')
 def export_xlsx():
     data = request.get_json(silent=True) or {}
@@ -6850,136 +6675,6 @@ def export_xlsx():
     if not download_name.lower().endswith('.xlsx'):
         download_name = f"{download_name}.xlsx"
     return send_file(bio, as_attachment=True, download_name=download_name, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-
-@app.post('/api/comparison/upload')
-def upload_comparison_file():
-    """Accept a CSV/XLSX file and return normalized comparison rows."""
-    uploaded = request.files.get('file')
-    if not uploaded or not uploaded.filename:
-        return jsonify({'status': 'error', 'error': 'No file uploaded.'}), 400
-
-    filename = uploaded.filename
-    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
-    allowed = {'csv', 'txt', 'xlsx', 'xlsm', 'xltx', 'xltm'}
-    if ext not in allowed:
-        return jsonify({'status': 'error', 'error': 'Unsupported file type. Please upload a CSV or XLSX file.'}), 400
-
-    raw = uploaded.read()
-    if not raw:
-        return jsonify({'status': 'error', 'error': 'Uploaded file is empty.'}), 400
-
-    title_fields = ('title', 'name', 'product', 'product_name', 'clean_title', 'model')
-    price_fields = ('final', 'price', 'compare_price', 'original', 'cost', 'amount', 'my_price', 'list_price', 'sale_price')
-    site_fields = ('site', 'source', 'source name', 'source_name', 'store', 'market', 'domain')
-    url_fields = ('url', 'product_url', 'link')
-
-    def extract_row(row: Dict[str, object]) -> Dict[str, object] | None:
-        title_value = ''
-        for field in title_fields:
-            value = row.get(field)
-            if value is None:
-                continue
-            text = str(value).strip()
-            if text:
-                title_value = text
-                break
-        if not title_value:
-            return None
-
-        price_value = None
-        for field in price_fields:
-            value = row.get(field)
-            if value in (None, ''):
-                continue
-            if isinstance(value, (int, float)):
-                price_value = float(value)
-            else:
-                price_value = parse_price_number(str(value))
-            if price_value is not None:
-                break
-        if price_value is None:
-            return None
-
-        site_value = ''
-        for field in site_fields:
-            value = row.get(field)
-            if value in (None, ''):
-                continue
-            text = str(value).strip()
-            if text:
-                site_value = text
-                break
-
-        url_value = ''
-        for field in url_fields:
-            value = row.get(field)
-            if value in (None, ''):
-                continue
-            text = str(value).strip()
-            if text:
-                url_value = text
-                break
-
-        return {
-            'title': title_value,
-            'price': float(round(price_value, 4)),
-            'site': site_value,
-            'url': url_value
-        }
-
-    extracted: List[Dict[str, object]] = []
-    skipped = 0
-
-    try:
-        if ext in {'csv', 'txt'}:
-            text = raw.decode('utf-8-sig', errors='ignore')
-            reader = csv.DictReader(io.StringIO(text))
-            if not reader.fieldnames:
-                raise ValueError('No headers found in CSV file.')
-            for row in reader:
-                result = extract_row(row)
-                if result is None:
-                    skipped += 1
-                    continue
-                extracted.append(result)
-        else:
-            workbook = load_workbook(io.BytesIO(raw), data_only=True)
-            sheet = workbook.active
-            rows_iter = list(sheet.iter_rows(values_only=True))
-            if not rows_iter:
-                raise ValueError('Spreadsheet is empty.')
-
-            headers_raw = rows_iter[0]
-            headers = [str(h or '').strip().lower() for h in headers_raw]
-            if not any(headers):
-                raise ValueError('Header row is missing in the spreadsheet.')
-
-            for row_values in rows_iter[1:]:
-                row_dict = {}
-                for idx, header in enumerate(headers):
-                    if not header:
-                        continue
-                    value = row_values[idx] if idx < len(row_values) else None
-                    row_dict[header] = value
-                result = extract_row(row_dict)
-                if result is None:
-                    skipped += 1
-                    continue
-                extracted.append(result)
-    except ValueError as ve:
-        return jsonify({'status': 'error', 'error': str(ve)}), 400
-    except Exception as exc:
-        return jsonify({'status': 'error', 'error': f'Failed to process file: {exc}'}), 400
-
-    if not extracted:
-        return jsonify({'status': 'error', 'error': 'No valid rows found. Ensure the file includes both title and price columns.'}), 400
-
-    message = f"Loaded {len(extracted)} comparison rows"
-    if skipped:
-        message += f" (skipped {skipped} rows without title or price)"
-
-    return jsonify({'status': 'success', 'message': message, 'rows': extracted})
 
 
 # -------- Server Log Management & Inspection APIs --------

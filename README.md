@@ -1,16 +1,17 @@
 # Parts Extractor
 
-Parts Extractor is a production-oriented catalog scraper and dashboard for
-eight supplier catalogs. It collects category and product details, maintains
-SQLite-backed history, and supports resumable scheduled runs.
+Parts Extractor is a production-oriented catalog scraper for eight supplier
+catalogs. It discovers categories, collects product details, compares each run
+with saved data, and repeats the workflow on a schedule.
 
 ## Features
 
 - Supplier scrapers for MobileSentrix (US and Canada), XCell Parts, TX Parts
   (US and Canada), Parts4Cells, Phone LCD Parts, and GadgetFix.
-- Category discovery, product enrichment, price history, and duplicate-aware
-  catalog comparison.
-- Resumable automation with durable checkpoints.
+- Category scraping and product detail enrichment, including SKU and
+  description data.
+- Current-to-previous run comparison with SQLite-backed history.
+- Scheduled, resumable automation with durable checkpoints.
 - A bounded HTTP-first fetch pipeline using Scrapling and browser fallbacks.
 
 ## Production Deployment

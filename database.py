@@ -121,7 +121,6 @@ class DatabaseManager:
             if cursor.fetchone():
                 self._ensure_history_columns()
                 self._ensure_item_columns()
-                self._ensure_watchlist_columns()
                 self._ensure_automation_run_item_columns()
                 return
         except Exception:
@@ -175,234 +174,6 @@ class DatabaseManager:
             )
         ''')
 
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS watchlist_items (
-                url TEXT PRIMARY KEY,
-                site TEXT,
-                title TEXT,
-                price_value REAL,
-                price_currency TEXT,
-                price_text TEXT,
-                discounted_value REAL,
-                discounted_formatted TEXT,
-                original_formatted TEXT,
-                sku TEXT,
-                stock_status TEXT,
-                description TEXT,
-                extra_json TEXT,
-                source TEXT,
-                image_url TEXT,
-                created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS automation_jobs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                scraper_key TEXT NOT NULL,
-                category_query TEXT NOT NULL,
-                root_url TEXT NOT NULL,
-                interval_minutes INTEGER NOT NULL DEFAULT 1440,
-                enabled INTEGER NOT NULL DEFAULT 1,
-                auto_discover INTEGER NOT NULL DEFAULT 1,
-                crawl_pagination INTEGER NOT NULL DEFAULT 1,
-                max_pages INTEGER NOT NULL DEFAULT 10,
-                delay_ms INTEGER NOT NULL DEFAULT 50,
-                retries INTEGER NOT NULL DEFAULT 1,
-                verify_ssl INTEGER NOT NULL DEFAULT 1,
-                use_parallel INTEGER NOT NULL DEFAULT 1,
-                enrich_details INTEGER NOT NULL DEFAULT 1,
-                drop_pct REAL NOT NULL DEFAULT 10,
-                rules_json TEXT NOT NULL DEFAULT '{}',
-                last_discovery_at DATETIME,
-                last_run_at DATETIME,
-                next_run_at DATETIME,
-                last_status TEXT NOT NULL DEFAULT 'idle',
-                last_error TEXT DEFAULT '',
-                last_history_ids TEXT DEFAULT '[]',
-                created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS automation_job_targets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                job_id INTEGER NOT NULL,
-                label TEXT NOT NULL,
-                group_label TEXT,
-                url TEXT NOT NULL,
-                url_key TEXT NOT NULL,
-                active INTEGER NOT NULL DEFAULT 1,
-                position INTEGER NOT NULL DEFAULT 0,
-                created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL,
-                FOREIGN KEY (job_id) REFERENCES automation_jobs (id) ON DELETE CASCADE,
-                UNIQUE (job_id, url_key)
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS automation_runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                job_id INTEGER NOT NULL,
-                run_uuid TEXT NOT NULL UNIQUE,
-                trigger_type TEXT NOT NULL DEFAULT 'manual',
-                status TEXT NOT NULL DEFAULT 'running',
-                started_at DATETIME NOT NULL,
-                completed_at DATETIME,
-                current_history_id TEXT,
-                previous_history_id TEXT,
-                target_urls_json TEXT DEFAULT '[]',
-                items_count INTEGER NOT NULL DEFAULT 0,
-                summary_json TEXT DEFAULT '{}',
-                error_text TEXT DEFAULT '',
-                created_at DATETIME NOT NULL,
-                FOREIGN KEY (job_id) REFERENCES automation_jobs (id) ON DELETE CASCADE
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS automation_run_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                run_id INTEGER NOT NULL,
-                item_index INTEGER NOT NULL,
-                product_url_key TEXT,
-                item_json TEXT NOT NULL,
-                created_at DATETIME NOT NULL,
-                FOREIGN KEY (run_id) REFERENCES automation_runs (id) ON DELETE CASCADE,
-                UNIQUE (run_id, item_index)
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS automation_run_completed_targets (
-                run_id INTEGER NOT NULL,
-                target_url TEXT NOT NULL,
-                target_url_key TEXT NOT NULL,
-                completed_at DATETIME NOT NULL,
-                FOREIGN KEY (run_id) REFERENCES automation_runs (id) ON DELETE CASCADE,
-                UNIQUE (run_id, target_url_key)
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS automation_run_product_details (
-                run_id INTEGER NOT NULL,
-                product_url TEXT NOT NULL,
-                product_url_key TEXT NOT NULL,
-                item_json TEXT NOT NULL,
-                updated_at DATETIME NOT NULL,
-                FOREIGN KEY (run_id) REFERENCES automation_runs (id) ON DELETE CASCADE,
-                UNIQUE (run_id, product_url_key)
-            )
-        ''')
-
-        # ===== AUTO-SCRAPER TABLES =====
-
-        # Scraper runs tracking
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS scraper_runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                run_id TEXT UNIQUE NOT NULL,
-                status TEXT NOT NULL DEFAULT 'running',  -- running, completed, failed, stopped
-                started_at DATETIME NOT NULL,
-                completed_at DATETIME,
-                total_brands INTEGER DEFAULT 0,
-                total_categories INTEGER DEFAULT 0,
-                total_models INTEGER DEFAULT 0,
-                total_products INTEGER DEFAULT 0,
-                new_products INTEGER DEFAULT 0,
-                updated_products INTEGER DEFAULT 0,
-                errors_count INTEGER DEFAULT 0,
-                current_brand TEXT,
-                current_category TEXT,
-                current_model TEXT,
-                checkpoint TEXT,  -- JSON for resume capability
-                error_log TEXT,  -- JSON array of errors
-                config TEXT  -- JSON with schedule config
-            )
-        ''')
-
-        # Brands table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS ms_brands (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                slug TEXT UNIQUE NOT NULL,
-                url TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # Categories table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS ms_categories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                brand_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                slug TEXT NOT NULL,
-                url TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (brand_id) REFERENCES ms_brands (id) ON DELETE CASCADE,
-                UNIQUE (brand_id, slug)
-            )
-        ''')
-
-        # Models table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS ms_models (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                category_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                slug TEXT NOT NULL,
-                url TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (category_id) REFERENCES ms_categories (id) ON DELETE CASCADE,
-                UNIQUE (category_id, slug)
-            )
-        ''')
-
-        # Products table - the main data store
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS ms_products (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                model_id INTEGER NOT NULL,
-                sku TEXT UNIQUE NOT NULL,
-                title TEXT NOT NULL,
-                description TEXT,
-                price REAL,
-                stock_status TEXT,  -- in_stock, out_of_stock, back_order
-                availability TEXT,
-                condition TEXT,  -- New, OEM, Refurbished, etc.
-                product_url TEXT NOT NULL UNIQUE,
-                image_urls TEXT,  -- JSON array
-                variant_details TEXT,  -- JSON object (color, storage, grade, etc.)
-                compatibility TEXT,  -- JSON array of compatible models
-                bulk_discounts TEXT,  -- JSON object
-                last_scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (model_id) REFERENCES ms_models (id) ON DELETE CASCADE
-            )
-        ''')
-
-        # Users table for multi-user auth
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'viewer',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
         # Price history for tracking changes
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS ms_price_history (
@@ -418,7 +189,6 @@ class DatabaseManager:
         # Ensure schema migrations on existing databases before creating indexes.
         self._ensure_history_columns()
         self._ensure_item_columns()
-        self._ensure_watchlist_columns()
         self._ensure_automation_run_item_columns()
 
         # Create indexes for better performance
@@ -428,8 +198,6 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_url ON items (url)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_site ON items (site)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_sku ON items (sku)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_watchlist_site ON watchlist_items (site)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_watchlist_updated_at ON watchlist_items (updated_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_jobs_enabled ON automation_jobs (enabled)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_jobs_next_run ON automation_jobs (next_run_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_targets_job ON automation_job_targets (job_id)')
@@ -485,24 +253,6 @@ class DatabaseManager:
         self._ensure_column('items', 'stock_status', 'TEXT')
         self._ensure_column('items', 'description', 'TEXT')
         self._ensure_column('items', 'extra_json', 'TEXT')
-
-    def _ensure_watchlist_columns(self):
-        self._ensure_column('watchlist_items', 'site', 'TEXT')
-        self._ensure_column('watchlist_items', 'title', 'TEXT')
-        self._ensure_column('watchlist_items', 'price_value', 'REAL')
-        self._ensure_column('watchlist_items', 'price_currency', 'TEXT')
-        self._ensure_column('watchlist_items', 'price_text', 'TEXT')
-        self._ensure_column('watchlist_items', 'discounted_value', 'REAL')
-        self._ensure_column('watchlist_items', 'discounted_formatted', 'TEXT')
-        self._ensure_column('watchlist_items', 'original_formatted', 'TEXT')
-        self._ensure_column('watchlist_items', 'sku', 'TEXT')
-        self._ensure_column('watchlist_items', 'stock_status', 'TEXT')
-        self._ensure_column('watchlist_items', 'description', 'TEXT')
-        self._ensure_column('watchlist_items', 'extra_json', 'TEXT')
-        self._ensure_column('watchlist_items', 'source', 'TEXT')
-        self._ensure_column('watchlist_items', 'image_url', 'TEXT')
-        self._ensure_column('watchlist_items', 'created_at', 'DATETIME')
-        self._ensure_column('watchlist_items', 'updated_at', 'DATETIME')
 
     def _ensure_automation_run_item_columns(self):
         self._ensure_column('automation_run_items', 'product_url_key', 'TEXT')
@@ -635,27 +385,6 @@ class DatabaseManager:
             row['original_formatted'],
             row['price_text'],
         )
-
-    def _watchlist_row_to_item(self, row: sqlite3.Row) -> Dict[str, Any]:
-        return {
-            'url': row['url'],
-            'site': row['site'] or '',
-            'title': row['title'] or '',
-            'price_value': row['price_value'],
-            'price_currency': row['price_currency'] or '',
-            'price_text': row['price_text'] or '',
-            'discounted_value': row['discounted_value'],
-            'discounted_formatted': row['discounted_formatted'] or '',
-            'original_formatted': row['original_formatted'] or '',
-            'sku': row['sku'] or '',
-            'stock_status': row['stock_status'] or '',
-            'description': row['description'] or '',
-            'extra': json.loads(row['extra_json']) if row['extra_json'] else {},
-            'source': row['source'] or '',
-            'image_url': row['image_url'] or '',
-            'created_at': row['created_at'],
-            'updated_at': row['updated_at'],
-        }
 
     @staticmethod
     def _parse_json_text(value, fallback):
@@ -861,122 +590,6 @@ class DatabaseManager:
                     pass
             return False
 
-    def save_watchlist_item(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Create or update a saved watchlist item snapshot."""
-        conn = None
-        try:
-            item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
-            url = str(item_dict.get('url') or '').strip()
-            if not url:
-                return None
-
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            price_value, price_currency, price_text, discounted_value, discounted_formatted, original_formatted = self._extract_price_fields(item_dict)
-            sku, stock_status, description, extra_json = self._extract_item_metadata(item_dict)
-            site = str(item_dict.get('site') or '').strip()
-            title = str(item_dict.get('title') or '').strip()
-            source = str(item_dict.get('source') or '').strip()
-            image_url = str(item_dict.get('image_url') or '').strip()
-            now_iso = get_pakistan_time().isoformat()
-
-            cursor.execute('''
-                INSERT INTO watchlist_items (
-                    url, site, title, price_value, price_currency, price_text,
-                    discounted_value, discounted_formatted, original_formatted,
-                    sku, stock_status, description, extra_json, source,
-                    image_url, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(url) DO UPDATE SET
-                    site = excluded.site,
-                    title = excluded.title,
-                    price_value = excluded.price_value,
-                    price_currency = excluded.price_currency,
-                    price_text = excluded.price_text,
-                    discounted_value = excluded.discounted_value,
-                    discounted_formatted = excluded.discounted_formatted,
-                    original_formatted = excluded.original_formatted,
-                    sku = excluded.sku,
-                    stock_status = excluded.stock_status,
-                    description = excluded.description,
-                    extra_json = excluded.extra_json,
-                    source = excluded.source,
-                    image_url = excluded.image_url,
-                    updated_at = excluded.updated_at
-            ''', (
-                url,
-                site,
-                title,
-                price_value,
-                price_currency,
-                price_text,
-                discounted_value,
-                discounted_formatted,
-                original_formatted,
-                sku,
-                stock_status,
-                description,
-                extra_json,
-                source,
-                image_url,
-                now_iso,
-                now_iso,
-            ))
-            conn.commit()
-            return self.get_watchlist_item(url)
-        except Exception as e:
-            print(f"Error saving watchlist item: {e}")
-            if conn:
-                conn.rollback()
-            return None
-
-    def get_watchlist_item(self, url: str) -> Optional[Dict[str, Any]]:
-        normalized_url = str(url or '').strip()
-        if not normalized_url:
-            return None
-
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT
-                    url, site, title, price_value, price_currency, price_text,
-                    discounted_value, discounted_formatted, original_formatted,
-                    sku, stock_status, description, extra_json, source,
-                    image_url, created_at, updated_at
-                FROM watchlist_items
-                WHERE url = ?
-                LIMIT 1
-            ''', (normalized_url,))
-            row = cursor.fetchone()
-            return self._watchlist_row_to_item(row) if row else None
-        except Exception as e:
-            print(f"Error getting watchlist item: {e}")
-            return None
-
-    def get_watchlist_items(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            query = '''
-                SELECT
-                    url, site, title, price_value, price_currency, price_text,
-                    discounted_value, discounted_formatted, original_formatted,
-                    sku, stock_status, description, extra_json, source,
-                    image_url, created_at, updated_at
-                FROM watchlist_items
-                ORDER BY updated_at DESC, title COLLATE NOCASE ASC, url ASC
-            '''
-            params: Tuple[Any, ...] = ()
-            if limit is not None:
-                query += ' LIMIT ?'
-                params = (max(1, int(limit)),)
-            cursor.execute(query, params)
-            return [self._watchlist_row_to_item(row) for row in cursor.fetchall()]
-        except Exception as e:
-            print(f"Error getting watchlist items: {e}")
-            return []
-
     def get_product_metadata_cache(self, urls: List[str]) -> Dict[str, Dict[str, Any]]:
         """Look up known SKU, description, stock_status for a list of URLs from previous scrape items."""
         if not urls:
@@ -1008,49 +621,6 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error getting product metadata cache: {e}")
         return result
-
-    def get_watchlist_urls(self) -> List[str]:
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            cursor.execute('SELECT url FROM watchlist_items ORDER BY updated_at DESC, url ASC')
-            return [str(row['url']) for row in cursor.fetchall() if row['url']]
-        except Exception as e:
-            print(f"Error getting watchlist urls: {e}")
-            return []
-
-    def remove_watchlist_item(self, url: str) -> bool:
-        conn = None
-        normalized_url = str(url or '').strip()
-        if not normalized_url:
-            return False
-
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM watchlist_items WHERE url = ?', (normalized_url,))
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception as e:
-            print(f"Error removing watchlist item: {e}")
-            if conn:
-                conn.rollback()
-            return False
-
-    def clear_watchlist(self) -> int:
-        conn = None
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM watchlist_items')
-            deleted = cursor.rowcount if isinstance(cursor.rowcount, int) and cursor.rowcount > 0 else 0
-            conn.commit()
-            return int(deleted)
-        except Exception as e:
-            print(f"Error clearing watchlist: {e}")
-            if conn:
-                conn.rollback()
-            return 0
 
     def get_automation_job_targets(self, job_id: int) -> List[Dict[str, Any]]:
         try:
@@ -3785,27 +3355,6 @@ class MultiDatabaseManager:
         decorated['database_key'] = get_db_key(scraper_key)
         return decorated
 
-    def _decorate_watchlist_item(self, scraper_key: str, item: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        if not item:
-            return None
-        decorated = dict(item)
-        decorated['scraper_key'] = scraper_key
-        decorated['database_key'] = get_db_key(scraper_key)
-        return decorated
-
-    @staticmethod
-    def _watchlist_sort_key(item: Dict[str, Any]) -> Tuple[float, str]:
-        timestamp = str(item.get('updated_at') or item.get('created_at') or '')
-        if timestamp:
-            try:
-                dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                if dt.tzinfo is None:
-                    dt = PAKISTAN_TZ.localize(dt)
-                return dt.timestamp(), str(item.get('title') or '')
-            except Exception:
-                pass
-        return 0.0, str(item.get('title') or '')
-
     def close_connection(self):
         for manager in self.managers.values():
             manager.close_connection()
@@ -3926,74 +3475,6 @@ class MultiDatabaseManager:
         for manager in self.managers.values():
             result.update(manager.get_product_metadata_cache(urls))
         return result
-
-    def save_watchlist_item(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        item_dict = asdict(item) if hasattr(item, '__dict__') else dict(item or {})
-        scraper_key = detect_scraper_key(item_dict.get('url') or item_dict.get('site'))
-        saved = self._get_manager(scraper_key).save_watchlist_item(item_dict)
-        return self._decorate_watchlist_item(scraper_key, saved)
-
-    def get_watchlist_item(self, url: str) -> Optional[Dict[str, Any]]:
-        normalized_url = str(url or '').strip()
-        if not normalized_url:
-            return None
-
-        scraper_key = detect_scraper_key(normalized_url)
-        item = self._get_manager(scraper_key).get_watchlist_item(normalized_url)
-        if item:
-            return self._decorate_watchlist_item(scraper_key, item)
-
-        for candidate_key, manager in self.managers.items():
-            if candidate_key == scraper_key:
-                continue
-            item = manager.get_watchlist_item(normalized_url)
-            if item:
-                return self._decorate_watchlist_item(candidate_key, item)
-        return None
-
-    def get_watchlist_items(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        items: List[Dict[str, Any]] = []
-        for scraper_key, manager in self.managers.items():
-            for item in manager.get_watchlist_items():
-                decorated = self._decorate_watchlist_item(scraper_key, item)
-                if decorated:
-                    items.append(decorated)
-
-        items.sort(key=self._watchlist_sort_key, reverse=True)
-        if limit is not None:
-            return items[:max(1, int(limit))]
-        return items
-
-    def get_watchlist_urls(self) -> List[str]:
-        urls = []
-        seen = set()
-        for manager in self.managers.values():
-            for url in manager.get_watchlist_urls():
-                normalized = str(url or '').strip()
-                if not normalized or normalized in seen:
-                    continue
-                seen.add(normalized)
-                urls.append(normalized)
-        return urls
-
-    def remove_watchlist_item(self, url: str) -> bool:
-        normalized_url = str(url or '').strip()
-        if not normalized_url:
-            return False
-
-        scraper_key = detect_scraper_key(normalized_url)
-        if self._get_manager(scraper_key).remove_watchlist_item(normalized_url):
-            return True
-
-        for candidate_key, manager in self.managers.items():
-            if candidate_key == scraper_key:
-                continue
-            if manager.remove_watchlist_item(normalized_url):
-                return True
-        return False
-
-    def clear_watchlist(self) -> int:
-        return sum(manager.clear_watchlist() for manager in self.managers.values())
 
     def get_statistics(self) -> Dict:
         now_pakistan = get_pakistan_time()

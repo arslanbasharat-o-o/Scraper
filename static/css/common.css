@@ -1345,18 +1345,6 @@ body.modal-open {
   }
 }
 
-/* ── Watchlist bar ───────────────────────────────────────────── */
-.watchlist-bar {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: .65rem 1rem;
-  box-shadow: var(--shadow);
-}
-
 /* ── Results Card ────────────────────────────────────────────── */
 .results-card {
   overflow: hidden;
@@ -1496,11 +1484,6 @@ body.modal-open {
   width: 36px;
 }
 
-.col-star {
-  width: 78px;
-  text-align: center;
-}
-
 .col-img {
   width: 52px;
 }
@@ -1576,33 +1559,6 @@ body.modal-open {
   border: none;
   padding: 0;
   white-space: nowrap;
-}
-
-.star {
-  cursor: pointer;
-  user-select: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 54px;
-  padding: .18rem .45rem;
-  border: 1px solid var(--border-2);
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text-2);
-  font-size: .68rem;
-  font-weight: 700;
-  letter-spacing: .05em;
-  line-height: 1.1;
-  text-align: center;
-  text-transform: uppercase;
-  transition: transform .15s ease, border-color var(--transition), color var(--transition);
-}
-
-.star:hover {
-  transform: scale(1.05);
-  border-color: var(--primary);
-  color: var(--primary);
 }
 
 /* ── Empty State ─────────────────────────────────────────────── */

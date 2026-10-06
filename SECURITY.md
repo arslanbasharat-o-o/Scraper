@@ -31,7 +31,7 @@ By default, authentication is **disabled** for backward compatibility. To enable
 
 | Role | Permissions |
 |---|---|
-| `admin` | Full access including destructive operations (delete history, cleanup, purge watchlist) |
+| `admin` | Full access including destructive operations (delete history and clean up old records) |
 | `operator` | Read + trigger scrapes + manage automation jobs — no destructive deletes |
 | `viewer` | Read-only access to history and results |
 
@@ -71,7 +71,6 @@ The following endpoints require the `admin` role when auth is enabled:
 - `DELETE /api/automation/jobs/<id>` — delete a scheduled job
 - `DELETE /api/automation/runs/<id>` — delete a run record
 - `POST /api/automation/runs/<id>/delete` — same via POST
-- `POST /api/watchlist/clear` — wipe entire watchlist
 - `POST /api/cleanup` — database cleanup
 - `POST /api/menu-map/output/clear` — clear menu map output
 
