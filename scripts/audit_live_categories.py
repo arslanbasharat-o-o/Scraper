@@ -17,7 +17,7 @@ os.environ.setdefault('SCRAPER_LOCAL_BROWSER_CHALLENGE_WAIT_SECONDS', '5')
 os.environ.setdefault('SCRAPER_LOCAL_BROWSER_WAIT_SECONDS', '0.3')
 from bs4 import BeautifulSoup
 from app import enrich_scraped_items
-from scripts.test_live_all_scrapers import ENGINE_MODULES
+from scripts.live_supplier_smoke import ENGINE_MODULES
 from scrapers import detect_scraper_key
 from scrapers.browser_fetcher import browser_fetch_mode, fetch_html, _looks_like_browser_challenge
 SITES = ['mobilesentrix','mobilesentrix_canada','xcellparts','txparts','txparts_canada','parts4cells','phonelcdparts','gadgetfix']
@@ -183,7 +183,7 @@ def audit(task,out,max_pages):
     return result
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--count',type=int,default=50);parser.add_argument('--workers',type=int,default=4);parser.add_argument('--max-pages',type=int,default=100);parser.add_argument('--out',default='output/live-audit-20260917');parser.add_argument('--retry-failed',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--count',type=int,default=50);parser.add_argument('--workers',type=int,default=4);parser.add_argument('--max-pages',type=int,default=100);parser.add_argument('--out',default='output/live-category-audit');parser.add_argument('--retry-failed',action='store_true');args=parser.parse_args()
     out=ROOT/args.out;out.mkdir(parents=True,exist_ok=True)
     manifest=out/'manifest.json'
     if manifest.exists(): tasks=json.loads(manifest.read_text(encoding='utf-8'))

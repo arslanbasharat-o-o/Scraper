@@ -60,7 +60,7 @@ The scraper validates all supplier URLs before fetching:
 
 ## Cloudflare Tunnel
 
-When `cloudflared` is running, the application is publicly accessible. Ensure authentication is configured before exposing the tunnel. See `.env.example` for configuration.
+When `cloudflared` is running, the application is publicly accessible. Ensure authentication is configured before exposing the tunnel. See `.env.server-40gb.example` for configuration.
 
 ## Destructive Endpoint Protection
 

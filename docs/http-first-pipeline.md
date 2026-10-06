@@ -14,10 +14,10 @@ already fetched product HTML instead of requesting it twice.
 
 ## Updating a deployment
 
-After pulling changes, install the updated dependencies in the existing venv:
+From the deployed checkout, pull changes and run the deployment script:
 
 ```sh
-python -m pip install -r requirements.txt
+git pull origin main && bash deploy.sh
 ```
 
 Scrapling uses a detected local Chrome executable where available. If no Chrome
@@ -63,7 +63,8 @@ for display/export. It does not save incomplete data as a trusted baseline.
 ## Regression checks
 
 ```sh
-python -m py_compile app.py automation_service.py scripts/resume_automation_run.py scrapers/*.py
+python -m pip install -r requirements-dev.txt
+python -m py_compile app.py automation_service.py database.py scripts/*.py scrapers/*.py
 python -m pytest tests -q
 node --check static/js/main.js
 ```

@@ -7,7 +7,7 @@ Thank you for improving Parts Extractor.
 ```bash
 python -m venv .venv
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt pytest
+python -m pip install -r requirements-dev.txt
 ```
 
 ## Local Checks
@@ -15,7 +15,7 @@ python -m pip install -r requirements.txt pytest
 Run these before opening a pull request:
 
 ```bash
-python -m py_compile app.py automation_service.py database.py scripts/resume_automation_run.py scrapers/*.py
+python -m py_compile app.py automation_service.py database.py scripts/*.py scrapers/*.py
 pytest tests -q
 ```
 

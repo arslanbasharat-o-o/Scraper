@@ -1311,7 +1311,7 @@ def test_spawn_automation_run_worker_selects_sku_backfill_script(tmp_path, monke
     monkeypatch.setattr(app_module, "APP_ROOT", tmp_path)
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
-    backfill_script = scripts_dir / "enrich_completed_runs.py"
+    backfill_script = scripts_dir / "phase2_backfill_worker.py"
     backfill_script.write_text("# backfill worker", encoding="utf-8")
     standard_script = scripts_dir / "resume_automation_run.py"
     standard_script.write_text("# standard worker", encoding="utf-8")

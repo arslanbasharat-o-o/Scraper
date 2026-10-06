@@ -54,7 +54,7 @@ from automation_service import discover_category_targets
 AUTOMATION_CHECKPOINT_ITEM_LIMIT = 100
 AUTOMATION_LIVE_DETAIL_ITEM_LIMIT = 500
 AUTOMATION_PROGRESS_WRITE_INTERVAL_SECONDS = 0.25
-APP_VERSION = '8.5.10'
+APP_VERSION = (Path(__file__).resolve().parent / "VERSION").read_text(encoding="utf-8").strip()
 
 
 def load_local_env_file(path: str = ".env") -> None:
@@ -4258,7 +4258,7 @@ def _spawn_automation_run_worker(run_id: int, *, resume_from_checkpoint: bool) -
     normalized_run_id = int(run_id)
     run = db_manager.get_automation_run(normalized_run_id) or {}
     is_phase2 = str(run.get('trigger_type') or '').strip().lower() == 'phase2_sku_backfill'
-    script_name = 'enrich_completed_runs.py' if is_phase2 else 'resume_automation_run.py'
+    script_name = 'phase2_backfill_worker.py' if is_phase2 else 'resume_automation_run.py'
     script_path = APP_ROOT / 'scripts' / script_name
     if not script_path.exists():
         return False, 'Automation worker script is missing.'

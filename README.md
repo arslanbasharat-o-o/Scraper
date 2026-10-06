@@ -1,111 +1,65 @@
 # Parts Extractor
 
-Parts Extractor is a Flask dashboard for supplier catalog scraping, scheduled product extraction, price-change history, and menu-map discovery.
-
-Version: `8.5.10`
-Last Updated: 2026-09-24
+Parts Extractor is a production-oriented catalog scraper and dashboard for
+eight supplier catalogs. It collects category and product details, maintains
+SQLite-backed history, and supports resumable scheduled runs.
 
 ## Features
 
-- Supplier-specific scrapers for MobileSentrix, XCell Parts, Parts4Cells, Phone LCD Parts, TX Parts, and GadgetFix.
-- Scheduled automation with durable checkpoints and resumable runs.
-- Product detail enrichment for SKUs, stock status, descriptions, images, and pricing.
-- History comparison for changed, added, and removed products.
-- Canonical-URL deduplication across scrape results, saved histories, live automation previews, and product tables.
-- Duplicate detection keeps same-name products and valid multi-category listings separate.
-- Admin authentication with user and role management.
-- Menu-map discovery tools for supplier category navigation.
+- Supplier scrapers for MobileSentrix (US and Canada), XCell Parts, TX Parts
+  (US and Canada), Parts4Cells, Phone LCD Parts, and GadgetFix.
+- Category discovery, product enrichment, price history, and duplicate-aware
+  catalog comparison.
+- Resumable automation with durable checkpoints.
+- A bounded HTTP-first fetch pipeline using Scrapling and browser fallbacks.
 
-## Requirements
+## Production Deployment
 
-- Python `3.10`, `3.11`, or `3.12`
-- Chrome or Chromium for browser fallback
-- SQLite, bundled with Python on standard installations
-
-Python `3.13` is not recommended because some HTTP/TLS dependencies may not support it yet.
-
-## Installation
-
-On Windows, use `start.bat` to create the virtual environment, install
-requirements, and start the local dashboard. On Ubuntu/Linux, use `bash
-deploy.sh` to prepare the deployment environment and run readiness checks.
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.local-10gb.example .env  # local 10 GB workstation
-# Server deployments can start from .env.example and tune for their hardware.
-```
-
-Edit `.env` before running in production. At minimum, set a strong `SECRET_KEY` and admin credentials.
-
-## Development
-
-```powershell
-.\.venv\Scripts\python.exe -m flask --app app run --host=0.0.0.0 --port=5000 --debug
-```
-
-Open `http://127.0.0.1:5000`.
-
-## Production
-
-Run exactly one application process. The automation scheduler runs inside the Flask process, so multiple worker processes can create duplicate scheduled jobs.
-
-Windows:
-
-```powershell
-waitress-serve --listen=0.0.0.0:5000 app:app
-```
-
-Linux:
+The supported deployment target is Ubuntu/Linux with systemd. The deployment
+script prepares the virtual environment, installs dependencies, creates a
+secure `.env` from the 40 GB server template when needed, runs preflight checks,
+and installs or restarts a single-worker `scraper.service`.
 
 ```bash
-gunicorn -w 1 --threads 4 -b 0.0.0.0:5000 app:app
+git clone https://github.com/arslanbasharat-o-o/Scraper.git
+cd Scraper
+bash deploy.sh
 ```
+
+Review `.env` and configure supplier credentials and a proxy before running
+production scrape jobs. See [DEPLOYMENT.md](DEPLOYMENT.md) for prerequisites,
+updates, and server operations.
+
+## Configuration
+
+The 40 GB KVM example is [`.env.server-40gb.example`](.env.server-40gb.example).
+Copy it to `.env` only when configuring manually; never commit real credentials
+or secrets. See [SECURITY.md](SECURITY.md) before exposing the dashboard.
 
 ## Project Layout
 
 ```text
 .
 ├── app.py
-├── database.py
 ├── automation_service.py
+├── database.py
+├── deploy.sh
+├── data/menu_map_seeds/   # checked-in supplier category baselines
+├── docs/
 ├── scrapers/
-├── scripts/
+├── scripts/               # deployment operations and diagnostics
 ├── static/
 ├── templates/
-├── tests/
-├── docs/
-├── requirements.txt
-├── Dockerfile
-├── deploy.sh
-└── start.bat
+└── tests/
 ```
 
-## Architecture
+## Validation
 
-![Parts Extractor application architecture](docs/architecture.png)
-
-## Data
-
-Runtime data is intentionally excluded from Git.
-
-- Supplier databases: `data/site_dbs/`
-- Browser profiles: `data/browser_profiles/`
-- Logs and temporary files: `logs/`, `.tmp/`, `storage/temp/`
-- Exports: `storage/exports/`
-
-Keep persistent database directories on durable storage when deploying to a server.
-
-## Checks
-
-```powershell
-.\.venv\Scripts\python.exe -m py_compile app.py database.py automation_service.py scripts\resume_automation_run.py
-.\.venv\Scripts\python.exe -m pytest tests
+```bash
+python -m pip install -r requirements-dev.txt
+python -m py_compile app.py automation_service.py database.py scrapers/*.py
+pytest -q
 ```
-
-Install test dependencies with `python -m pip install -r requirements-dev.txt`.
 
 ## License
 

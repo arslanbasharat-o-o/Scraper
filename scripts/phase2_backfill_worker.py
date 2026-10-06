@@ -20,9 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# The local machine profile is the safe base for this worker. HTTP/Safari is
-# still primary; browser fallback is bounded to one Chrome window.
-os.environ.setdefault("SCRAPER_WORKER_PROFILE", "local_10gb")
+# Keep browser fallback bounded when no deployment-specific setting exists.
 os.environ.setdefault("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
 os.environ.setdefault("SCRAPER_LOCAL_BROWSER_MAX_WINDOWS", "1")
 
