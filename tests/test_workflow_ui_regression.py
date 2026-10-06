@@ -67,18 +67,23 @@ def test_menu_map_uses_styled_confirmation_modal_for_large_actions():
 
     assert "function showMenuMapConfirm({" in menu_map_script
     assert "menuMapConfirmModal" in menu_map_template
-    assert "Queue large automation run?" in menu_map_script
+    assert "Start a large category scrape?" in menu_map_script
     assert "window.confirm(`This will queue automation" not in menu_map_script
 
 
 def test_menu_map_automation_names_are_category_scoped_not_date_stamped():
     menu_map_script = (ROOT / "static" / "js" / "menu-map.js").read_text(encoding="utf-8")
+    menu_map_template = (ROOT / "templates" / "menu_map.html").read_text(encoding="utf-8")
     automation_script = (ROOT / "static" / "js" / "automation.js").read_text(encoding="utf-8")
     history_script = (ROOT / "static" / "js" / "history.js").read_text(encoding="utf-8")
 
     assert "function targetScopeForJob(site, targets)" in menu_map_script
     assert "name: `${cleanJobScopeLabel(site.name)} - ${scope}`" in menu_map_script
     assert "category_query: scope" in menu_map_script
+    assert "Send Categories to Scraper" in menu_map_template
+    assert "Scrape Visible Categories" in menu_map_template
+    assert "automationPayloadForSite(site, targets)" in menu_map_script
+    assert "fetchJson(`/api/automation/jobs/${encodeURIComponent(jobId)}/run`" in menu_map_script
     assert "Menu Map - ${site.name}" not in menu_map_script
     assert "function automationDisplayName(record)" in automation_script
     assert "function automationScopeLabel(record)" in automation_script

@@ -28,7 +28,7 @@ def test_logs_page_renders_ok(client):
 
 
 def test_nav_links_in_all_pages(client):
-    """Verify that every view contains the Server Logs link in its navigation, and Extractor is hidden from navbar."""
+    """Verify that every published view contains the Server Logs link."""
     for path in ["/", "/automation", "/menu-map", "/history", "/logs"]:
         res = client.get(path)
         assert res.status_code == 200
@@ -37,13 +37,12 @@ def test_nav_links_in_all_pages(client):
         assert 'href="/extractor"' not in html
 
 
-def test_extractor_accessible_via_url_only(client):
-    """Verify that /extractor is live and functional via direct URL, but does not show in the navbar."""
-    res = client.get("/extractor")
-    assert res.status_code == 200
-    html = res.data.decode("utf-8")
-    assert "Parts Extractor" in html
-    assert 'href="/extractor"' not in html
+def test_removed_extractor_routes_are_not_published(client):
+    assert client.get("/extractor").status_code == 404
+    assert client.get("/index").status_code == 404
+    assert client.post("/api/scrape", json={}).status_code == 404
+    assert client.post("/api/search", json={}).status_code == 404
+    assert client.post("/api/comparison/upload").status_code == 404
 
 
 def test_sitemap_contains_logs_page(client):
@@ -52,6 +51,7 @@ def test_sitemap_contains_logs_page(client):
     assert res.status_code == 200
     xml_data = res.data.decode("utf-8")
     assert "/logs</loc>" in xml_data
+    assert "/extractor</loc>" not in xml_data
 
 
 def test_api_get_server_log_files(client):

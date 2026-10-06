@@ -121,6 +121,7 @@ class DatabaseManager:
             if cursor.fetchone():
                 self._ensure_history_columns()
                 self._ensure_item_columns()
+                self._ensure_watchlist_columns()
                 self._ensure_automation_run_item_columns()
                 return
         except Exception:
@@ -174,6 +175,234 @@ class DatabaseManager:
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS watchlist_items (
+                url TEXT PRIMARY KEY,
+                site TEXT,
+                title TEXT,
+                price_value REAL,
+                price_currency TEXT,
+                price_text TEXT,
+                discounted_value REAL,
+                discounted_formatted TEXT,
+                original_formatted TEXT,
+                sku TEXT,
+                stock_status TEXT,
+                description TEXT,
+                extra_json TEXT,
+                source TEXT,
+                image_url TEXT,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                scraper_key TEXT NOT NULL,
+                category_query TEXT NOT NULL,
+                root_url TEXT NOT NULL,
+                interval_minutes INTEGER NOT NULL DEFAULT 1440,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                auto_discover INTEGER NOT NULL DEFAULT 1,
+                crawl_pagination INTEGER NOT NULL DEFAULT 1,
+                max_pages INTEGER NOT NULL DEFAULT 10,
+                delay_ms INTEGER NOT NULL DEFAULT 50,
+                retries INTEGER NOT NULL DEFAULT 1,
+                verify_ssl INTEGER NOT NULL DEFAULT 1,
+                use_parallel INTEGER NOT NULL DEFAULT 1,
+                enrich_details INTEGER NOT NULL DEFAULT 1,
+                drop_pct REAL NOT NULL DEFAULT 10,
+                rules_json TEXT NOT NULL DEFAULT '{}',
+                last_discovery_at DATETIME,
+                last_run_at DATETIME,
+                next_run_at DATETIME,
+                last_status TEXT NOT NULL DEFAULT 'idle',
+                last_error TEXT DEFAULT '',
+                last_history_ids TEXT DEFAULT '[]',
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_job_targets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                label TEXT NOT NULL,
+                group_label TEXT,
+                url TEXT NOT NULL,
+                url_key TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                position INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                FOREIGN KEY (job_id) REFERENCES automation_jobs (id) ON DELETE CASCADE,
+                UNIQUE (job_id, url_key)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                run_uuid TEXT NOT NULL UNIQUE,
+                trigger_type TEXT NOT NULL DEFAULT 'manual',
+                status TEXT NOT NULL DEFAULT 'running',
+                started_at DATETIME NOT NULL,
+                completed_at DATETIME,
+                current_history_id TEXT,
+                previous_history_id TEXT,
+                target_urls_json TEXT DEFAULT '[]',
+                items_count INTEGER NOT NULL DEFAULT 0,
+                summary_json TEXT DEFAULT '{}',
+                error_text TEXT DEFAULT '',
+                created_at DATETIME NOT NULL,
+                FOREIGN KEY (job_id) REFERENCES automation_jobs (id) ON DELETE CASCADE
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_run_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                item_index INTEGER NOT NULL,
+                product_url_key TEXT,
+                item_json TEXT NOT NULL,
+                created_at DATETIME NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES automation_runs (id) ON DELETE CASCADE,
+                UNIQUE (run_id, item_index)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_run_completed_targets (
+                run_id INTEGER NOT NULL,
+                target_url TEXT NOT NULL,
+                target_url_key TEXT NOT NULL,
+                completed_at DATETIME NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES automation_runs (id) ON DELETE CASCADE,
+                UNIQUE (run_id, target_url_key)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS automation_run_product_details (
+                run_id INTEGER NOT NULL,
+                product_url TEXT NOT NULL,
+                product_url_key TEXT NOT NULL,
+                item_json TEXT NOT NULL,
+                updated_at DATETIME NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES automation_runs (id) ON DELETE CASCADE,
+                UNIQUE (run_id, product_url_key)
+            )
+        ''')
+
+        # ===== AUTO-SCRAPER TABLES =====
+
+        # Scraper runs tracking
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS scraper_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT UNIQUE NOT NULL,
+                status TEXT NOT NULL DEFAULT 'running',  -- running, completed, failed, stopped
+                started_at DATETIME NOT NULL,
+                completed_at DATETIME,
+                total_brands INTEGER DEFAULT 0,
+                total_categories INTEGER DEFAULT 0,
+                total_models INTEGER DEFAULT 0,
+                total_products INTEGER DEFAULT 0,
+                new_products INTEGER DEFAULT 0,
+                updated_products INTEGER DEFAULT 0,
+                errors_count INTEGER DEFAULT 0,
+                current_brand TEXT,
+                current_category TEXT,
+                current_model TEXT,
+                checkpoint TEXT,  -- JSON for resume capability
+                error_log TEXT,  -- JSON array of errors
+                config TEXT  -- JSON with schedule config
+            )
+        ''')
+
+        # Brands table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ms_brands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                slug TEXT UNIQUE NOT NULL,
+                url TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Categories table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ms_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                brand_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                slug TEXT NOT NULL,
+                url TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (brand_id) REFERENCES ms_brands (id) ON DELETE CASCADE,
+                UNIQUE (brand_id, slug)
+            )
+        ''')
+
+        # Models table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ms_models (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                slug TEXT NOT NULL,
+                url TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES ms_categories (id) ON DELETE CASCADE,
+                UNIQUE (category_id, slug)
+            )
+        ''')
+
+        # Products table - the main data store
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ms_products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_id INTEGER NOT NULL,
+                sku TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                price REAL,
+                stock_status TEXT,  -- in_stock, out_of_stock, back_order
+                availability TEXT,
+                condition TEXT,  -- New, OEM, Refurbished, etc.
+                product_url TEXT NOT NULL UNIQUE,
+                image_urls TEXT,  -- JSON array
+                variant_details TEXT,  -- JSON object (color, storage, grade, etc.)
+                compatibility TEXT,  -- JSON array of compatible models
+                bulk_discounts TEXT,  -- JSON object
+                last_scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (model_id) REFERENCES ms_models (id) ON DELETE CASCADE
+            )
+        ''')
+
+        # Users table for multi-user auth
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'viewer',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Price history for tracking changes
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS ms_price_history (
@@ -189,6 +418,7 @@ class DatabaseManager:
         # Ensure schema migrations on existing databases before creating indexes.
         self._ensure_history_columns()
         self._ensure_item_columns()
+        self._ensure_watchlist_columns()
         self._ensure_automation_run_item_columns()
 
         # Create indexes for better performance
@@ -198,6 +428,8 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_url ON items (url)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_site ON items (site)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_sku ON items (sku)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_watchlist_site ON watchlist_items (site)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_watchlist_updated_at ON watchlist_items (updated_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_jobs_enabled ON automation_jobs (enabled)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_jobs_next_run ON automation_jobs (next_run_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_automation_targets_job ON automation_job_targets (job_id)')
@@ -253,6 +485,24 @@ class DatabaseManager:
         self._ensure_column('items', 'stock_status', 'TEXT')
         self._ensure_column('items', 'description', 'TEXT')
         self._ensure_column('items', 'extra_json', 'TEXT')
+
+    def _ensure_watchlist_columns(self):
+        self._ensure_column('watchlist_items', 'site', 'TEXT')
+        self._ensure_column('watchlist_items', 'title', 'TEXT')
+        self._ensure_column('watchlist_items', 'price_value', 'REAL')
+        self._ensure_column('watchlist_items', 'price_currency', 'TEXT')
+        self._ensure_column('watchlist_items', 'price_text', 'TEXT')
+        self._ensure_column('watchlist_items', 'discounted_value', 'REAL')
+        self._ensure_column('watchlist_items', 'discounted_formatted', 'TEXT')
+        self._ensure_column('watchlist_items', 'original_formatted', 'TEXT')
+        self._ensure_column('watchlist_items', 'sku', 'TEXT')
+        self._ensure_column('watchlist_items', 'stock_status', 'TEXT')
+        self._ensure_column('watchlist_items', 'description', 'TEXT')
+        self._ensure_column('watchlist_items', 'extra_json', 'TEXT')
+        self._ensure_column('watchlist_items', 'source', 'TEXT')
+        self._ensure_column('watchlist_items', 'image_url', 'TEXT')
+        self._ensure_column('watchlist_items', 'created_at', 'DATETIME')
+        self._ensure_column('watchlist_items', 'updated_at', 'DATETIME')
 
     def _ensure_automation_run_item_columns(self):
         self._ensure_column('automation_run_items', 'product_url_key', 'TEXT')

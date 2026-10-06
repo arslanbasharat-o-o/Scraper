@@ -224,10 +224,10 @@ function ensureExclusionUi() {
       strip.className = 'automation-launch-strip';
       strip.innerHTML = `
         <div>
-          <div class="automation-launch-strip__title">Automation From Visible Categories</div>
-          <div id="automationTargetSummary" class="automation-launch-strip__meta">Hide anything you do not want, then run automation for this website.</div>
+          <div class="automation-launch-strip__title">Send Categories to Scraper</div>
+          <div id="automationTargetSummary" class="automation-launch-strip__meta">Choose visible category links, then start product scraping, detail enrichment, and comparison.</div>
         </div>
-        <button id="runAutomationForSiteBtn" class="btn-run" type="button"><span>Run Automation</span></button>
+        <button id="runAutomationForSiteBtn" class="btn-run" type="button"><span>Scrape Visible Categories</span></button>
       `;
       fileStrip.insertAdjacentElement('afterend', strip);
       elements.automationTargetSummary = $('automationTargetSummary');
@@ -1206,9 +1206,9 @@ async function runAutomationForSelectedSite() {
   }
   if (targets.length > 500) {
     const confirmed = await showMenuMapConfirm({
-      title: 'Queue large automation run?',
-      message: `This will queue automation for ${targets.length.toLocaleString()} category URLs. Continue?`,
-      confirmLabel: 'Queue Automation',
+      title: 'Start a large category scrape?',
+      message: `This will submit ${targets.length.toLocaleString()} visible category URLs to the scraper for product collection, detail enrichment, and comparison. Continue?`,
+      confirmLabel: 'Start Scrape',
       cancelLabel: 'Cancel',
     });
     if (!confirmed) return;
@@ -1230,7 +1230,7 @@ async function runAutomationForSelectedSite() {
       method: 'POST',
       body: JSON.stringify({}),
     });
-    showAlert('success', `Automation queued for ${site.name} with ${targets.length.toLocaleString()} visible target URL${targets.length === 1 ? '' : 's'}.`);
+    showAlert('success', `Scrape started for ${site.name} with ${targets.length.toLocaleString()} visible category URL${targets.length === 1 ? '' : 's'}.`);
   } catch (err) {
     showAlert('error', err.message || 'Failed to queue automation.');
   } finally {

@@ -13,9 +13,12 @@ def test_open_access_ui_routes():
 
     client = app_module.app.test_client()
 
-    for path in ["/", "/automation", "/history", "/menu-map", "/extractor"]:
+    for path in ["/", "/automation", "/history", "/menu-map", "/logs"]:
         response = client.get(path)
         assert response.status_code == 200, f"Expected 200 for {path}, got {response.status_code}"
+
+    assert client.get("/extractor").status_code == 404
+    assert client.get("/index").status_code == 404
 
 
 def test_open_access_api_health():
