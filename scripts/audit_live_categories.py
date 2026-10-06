@@ -30,7 +30,15 @@ def norm(value):
 def select_targets(count):
     selected=[]
     for site in SITES:
-        rows=list(csv.DictReader((ROOT/'output'/site/'categories.csv').open(encoding='utf-8-sig')))
+        # ``output/`` is a runtime directory and is intentionally gitignored.
+        # Fall back to the checked-in seed manifest so this audit also works
+        # from a fresh clone before menu maps have been generated locally.
+        category_file=ROOT/'output'/site/'categories.csv'
+        if not category_file.exists():
+            category_file=ROOT/'data'/'menu_map_seeds'/site/'categories.csv'
+        if not category_file.exists():
+            raise FileNotFoundError(f'No category manifest for {site}: {category_file}')
+        rows=list(csv.DictReader(category_file.open(encoding='utf-8-sig')))
         unique={}
         for row in rows:
             url=(row.get('normalized_url') or row.get('child_url') or '').strip().rstrip('/')
@@ -66,6 +74,11 @@ def product_evidence(html,url,item):
     soup=BeautifulSoup(html,'lxml')
     h1=soup.find('h1')
     title=h1.get_text(' ',strip=True) if h1 else ''
+    if not title:
+        meta_title=soup.select_one('meta[property="og:title"]')
+        title=meta_title.get('content','') if meta_title is not None else ''
+    if not title and soup.title:
+        title=soup.title.get_text(' ',strip=True)
     products=[]
     def walk(obj):
         if isinstance(obj,list):
@@ -81,7 +94,7 @@ def product_evidence(html,url,item):
     product=(matching or (products if len(products)==1 else []) or [{}])[0]
     title=title or str(product.get('name') or '')
     source_skus=[str(product.get('sku') or '')]
-    for node in soup.select('[itemprop="sku"], .sku .value, .sku_wrapper .sku, .product-detail-right .badge-sku span:last-child, dt, th, .product-detail-label'):
+    for node in soup.select('[itemprop="sku"], .sku .value, .sku_wrapper .sku, .product-detail-right .badge-sku span:last-child, .blockitemNo, dt, th, .product-detail-label'):
         if node.name in ('dt','th') or 'product-detail-label' in node.get('class',[]):
             if norm(node.get_text()) not in ('sku','product code','item number','part number'): continue
             node=node.find_next_sibling()
@@ -97,7 +110,7 @@ def product_evidence(html,url,item):
         if isinstance(offer,dict) and offer.get('price') is not None:
             try: prices.append(float(offer['price']))
             except (ValueError,TypeError): pass
-    for node in soup.select('meta[itemprop="price"], .product-info-main [data-price-amount], .summary .price ins .amount, .summary .price > .amount, #product-price, .product-detail-right .price-box, [itemprop="price"]'):
+    for node in soup.select('meta[itemprop="price"], .product-info-main [data-price-amount], .summary .price ins .amount, .summary .price > .amount, #product-price, .product-detail-right .price-box, .itm-s-cart.price, [itemprop="price"]'):
         raw=node.get('content') or node.get('data-price-amount') or node.get('data-qtybasedgroupprice') or node.get_text(' ',strip=True)
         match=re.search(r'\d[\d,]*(?:\.\d+)?',raw)
         if match:
@@ -150,7 +163,12 @@ def audit(task,out,max_pages):
             links={urljoin(final,a['href']).split('#')[0].rstrip('/') for a in soup.select('a[href]')}
             result['sample_on_live_category']=listing['url'].split('#')[0].rstrip('/') in links
             check=result['verification']
-            ok=(check['title_matches'] and check['sku_present_in_html'] and check['price_matches'] is not False and result['sample_on_live_category'] and not result['duplicate_urls'] and not result['invalid_rows'])
+            # Some suppliers truncate listing titles or render product titles
+            # client-side. An exact structured SKU match corroborates identity
+            # when the live title is incomplete; still require the SKU in the
+            # live HTML and retain price/category/row-integrity checks.
+            identity_ok=check['title_matches'] or (check['sku_matches_structured'] and check['sku_present_in_html'])
+            ok=(identity_ok and check['sku_present_in_html'] and check['price_matches'] is not False and result['sample_on_live_category'] and not result['duplicate_urls'] and not result['invalid_rows'])
             result['status']='VERIFIED' if ok and check['price_matches'] else ('VERIFIED_PRICE_UNAVAILABLE' if ok else 'FAIL_VERIFICATION')
             last=attempts[-1]
             if last.get('errors') or last.get('error'): result['status']='FAIL_INCOMPLETE'

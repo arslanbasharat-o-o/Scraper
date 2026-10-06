@@ -194,6 +194,15 @@ def check_environment() -> Dict[str, Any]:
 
 def run_preflight_check(fail_fast: bool = False) -> Dict[str, Any]:
     """Execute complete readiness check and print colorized diagnostics."""
+    # The setup scripts call this directly before importing the Flask app, so
+    # load the project environment here as well as in the app entry point.
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+    except ImportError:
+        LOGGER.debug("python-dotenv is unavailable; checking process environment only")
+
     chrome_status = check_chrome()
     proxy_status = check_proxy()
     env_status = check_environment()

@@ -28,6 +28,7 @@ env/
 
 # Environment Variables
 .env
+.env.*
 .env.local
 .env.*.local
 server env

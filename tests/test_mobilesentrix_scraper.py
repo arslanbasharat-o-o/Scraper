@@ -65,6 +65,37 @@ def test_mobilesentrix_category_h1_is_not_misclassified_as_product():
     assert items[0].price_value == 173.47
 
 
+def test_empty_mobilesentrix_category_is_not_returned_as_a_phantom_product():
+    url = "https://www.mobilesentrix.com/accessories/screen-protectors/shop-by-model/samsung-galaxy/s-series/galaxy-s26-fe"
+    html = """
+    <html>
+      <head><title>Galaxy S26 FE - MobileSentrix</title></head>
+      <body>
+        <div class="page-title category-title">
+          <h1>Samsung Galaxy S26 FE Screen Protectors</h1>
+        </div>
+        <p>No products found.</p>
+      </body>
+    </html>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    assert is_category_page(soup) is True
+    assert is_product_page(soup) is False
+
+    with browser_fetch_mode(False):
+        items = scrape_url(
+            FakeSession(html),
+            url,
+            {"add_percent": 0, "percent_off": 0, "absolute_off": 0},
+            crawl_pagination=True,
+            max_pages=1,
+            delay_ms=0,
+        )
+
+    assert items == []
+
+
 def test_mobilesentrix_product_detail_still_scrapes_as_product():
     url = "https://www.mobilesentrix.ca/screen-assembly-s25-ultra"
     html = """

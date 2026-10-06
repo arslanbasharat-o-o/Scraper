@@ -4,6 +4,26 @@
 
 This application uses an embedded SQLite database and an in-process background scheduler for automation tasks. It is designed to be run as a single instance.
 
+### One-command Windows laptop setup
+
+From the project directory, run:
+
+```bat
+scripts\setup_windows_laptop.bat
+```
+
+The script creates the Python virtual environment, installs `requirements.txt`,
+creates `.env` from `.env.windows-laptop.example` when needed, creates the data
+directories, checks the browser/runtime, compiles the Python sources, and checks
+that the application imports successfully. It does not overwrite an existing
+`.env` or start a scrape automatically.
+
+After it reports `SETUP COMPLETE - LAPTOP READY`, start the app with:
+
+```bat
+start.bat
+```
+
 ### Prerequisites
 
 - Python 3.10, 3.11, or 3.12 (do not use 3.13 due to `curl_cffi` compatibility).
@@ -100,4 +120,3 @@ sudo systemctl restart scraper
 # 3. Verify readiness & version
 curl -s http://localhost:5000/readyz
 ```
-

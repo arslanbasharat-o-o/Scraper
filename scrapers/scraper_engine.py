@@ -816,10 +816,11 @@ def is_product_page(soup: BeautifulSoup) -> bool:
 
 
 def is_category_page(soup: BeautifulSoup) -> bool:
-    """Detect if page is a category/listing page"""
+    """Detect category pages, including empty or JavaScript-rendered listings."""
     return bool(soup.select_one('ul.product-listing li.item')) or \
            bool(soup.select_one('ol.products li.product-item')) or \
-           bool(soup.select_one('div.product-item-info, div.product-card, li.product'))
+           bool(soup.select_one('div.product-item-info, div.product-card, li.product')) or \
+           bool(soup.select_one('.page-title.category-title, h1.category-title, .category-view'))
 
 
 def find_next_page_url(soup: BeautifulSoup, base_url: str) -> Optional[str]:
