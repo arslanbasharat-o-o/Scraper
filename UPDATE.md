@@ -6,8 +6,9 @@ Update the checkout and run its deployment checks:
 git pull origin main && bash deploy.sh
 ```
 
-If `scraper.service` is installed, `deploy.sh` restarts it and checks `/readyz`.
-Without that service, the script prints the Gunicorn command to start the app.
+On systemd hosts, `deploy.sh` installs and enables `scraper.service` if needed,
+restarts it, and checks `/readyz`. Without systemd, the script prints the
+Gunicorn command to start the app.
 
 Useful endpoints:
 

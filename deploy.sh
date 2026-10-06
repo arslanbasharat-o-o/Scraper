@@ -84,26 +84,76 @@ from scrapers.system_check import run_preflight_check
 raise SystemExit(0 if run_preflight_check(fail_fast=False)["overall_ok"] else 1)
 PY
 
-if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files scraper.service --no-legend 2>/dev/null | grep -q '^scraper\.service'; then
-  if [[ $EUID -eq 0 ]]; then
-    systemctl restart scraper
+if command -v systemctl >/dev/null 2>&1; then
+  SERVICE_USER="${SUDO_USER:-$(id -un)}"
+  SERVICE_GROUP="$(id -gn "$SERVICE_USER")"
+  UNIT_PATH="/etc/systemd/system/scraper.service"
+  UNIT_TMP="$(mktemp)"
+  cat > "$UNIT_TMP" <<EOF
+[Unit]
+Description=Parts Extractor scraper dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${SERVICE_USER}
+Group=${SERVICE_GROUP}
+WorkingDirectory=${ROOT_DIR}
+EnvironmentFile=${ROOT_DIR}/.env
+ExecStart=${ROOT_DIR}/.venv/bin/gunicorn --workers 1 --threads 4 --bind 0.0.0.0:${APP_PORT} app:app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  if [[ -e "$UNIT_PATH" ]]; then
+    rm -f "$UNIT_TMP"
+  elif [[ $EUID -eq 0 ]]; then
+    install -m 644 "$UNIT_TMP" "$UNIT_PATH"
+    rm -f "$UNIT_TMP"
   elif command -v sudo >/dev/null 2>&1; then
-    sudo systemctl restart scraper
+    sudo install -m 644 "$UNIT_TMP" "$UNIT_PATH"
+    rm -f "$UNIT_TMP"
   else
-    echo "ERROR: scraper.service exists but restart requires root or sudo." >&2
+    rm -f "$UNIT_TMP"
+    echo "ERROR: systemd is available, but sudo is required to install scraper.service." >&2
     exit 1
   fi
-  for attempt in {1..30}; do
-    if curl --fail --silent --show-error "http://127.0.0.1:${APP_PORT}/readyz" >/dev/null 2>&1; then
-      echo "Deployment ready: http://127.0.0.1:${APP_PORT}/readyz"
-      exit 0
+
+  if [[ $EUID -eq 0 ]]; then
+    systemctl daemon-reload
+    systemctl enable scraper
+    systemctl restart scraper
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo systemctl daemon-reload
+    sudo systemctl enable scraper
+    sudo systemctl restart scraper
+  else
+    echo "ERROR: scraper.service needs root or sudo to enable and start." >&2
+    exit 1
+  fi
+
+  if [[ -e "$UNIT_PATH" ]]; then
+    for attempt in {1..30}; do
+      if curl --fail --silent --show-error "http://127.0.0.1:${APP_PORT}/readyz" >/dev/null 2>&1; then
+        echo "Deployment ready: http://127.0.0.1:${APP_PORT}/readyz"
+        exit 0
+      fi
+      sleep 2
+    done
+    echo "ERROR: scraper.service did not become ready within 60 seconds." >&2
+    if [[ $EUID -eq 0 ]]; then
+      systemctl --no-pager --full status scraper || true
+    else
+      sudo systemctl --no-pager --full status scraper || true
     fi
-    sleep 2
-  done
-  echo "ERROR: scraper.service restarted, but readiness did not pass within 60 seconds." >&2
-  systemctl --no-pager --full status scraper || true
-  exit 1
+    exit 1
+  fi
 fi
 
-echo "Environment and application checks passed. No scraper.service unit was found; start one Gunicorn process with:"
-echo "  .venv/bin/gunicorn --workers 1 --threads 4 --bind 0.0.0.0:${APP_PORT} app:app"
+if [[ ! $(command -v systemctl || true) ]]; then
+  echo "Systemd not detected. Start one Gunicorn process with:"
+  echo "  .venv/bin/gunicorn --workers 1 --threads 4 --bind 0.0.0.0:${APP_PORT} app:app"
+fi

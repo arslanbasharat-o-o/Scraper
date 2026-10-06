@@ -33,8 +33,9 @@ bash deploy.sh
 The script prepares Python 3.10–3.12 and dependencies, creates `.env` from the
 40 GB template only when absent, creates runtime directories, and runs the
 readiness check. Install Chrome and configure credentials/proxy separately.
-When a `scraper.service` systemd unit is installed, it restarts that service and
-waits for `/readyz`; otherwise it prints the single-worker Gunicorn command.
+On systemd hosts, it creates and enables `scraper.service` if needed, restarts
+the service, and waits for `/readyz`. On hosts without systemd, it prints the
+single-worker Gunicorn command.
 
 ---
 
