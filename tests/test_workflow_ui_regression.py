@@ -58,7 +58,7 @@ def test_menu_map_completed_runs_do_not_keep_the_page_busy_or_expand_all_logs():
     assert "activeJobId = '';" in menu_map_script
     assert "jobPanelMode === 'job'" in menu_map_script
     assert ".job-event--completed summary" in menu_map_styles
-    assert "Finished runs are cleared automatically" in menu_map_template
+    assert "Finished runs are cleared automatically" not in menu_map_template
 
 
 def test_menu_map_uses_styled_confirmation_modal_for_large_actions():
@@ -94,14 +94,55 @@ def test_menu_map_automation_names_are_category_scoped_not_date_stamped():
 
 def test_menu_map_state_controls_do_not_advertise_unavailable_actions():
     script = (ROOT / "static" / "js" / "menu-map.js").read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "menu_map.html").read_text(encoding="utf-8")
 
-    assert "elements.visibleMode.checked = false;" in script
+    assert "visible: Boolean(elements.visibleMode?.checked)" in script
+    assert 'id="visibleMode"' not in template
     assert "const validOutput = Boolean(site?.has_output && !site.parse_error && site.output_valid !== false);" in script
     assert "treeHasMissingUrls(site)" in script
     assert "No websites are available." in script
     assert "Menu-map output could not be read." in script
     assert "const link = isUsableUrl(childUrl)" in script
     assert "if (sitesLoadPromise) return sitesLoadPromise;" in script
+
+
+def test_menu_map_metrics_are_not_rendered_as_disabled_buttons():
+    template = (ROOT / "templates" / "menu_map.html").read_text(encoding="utf-8")
+
+    assert 'data-summary-action="parents"' not in template
+    assert 'data-summary-action="subs"' not in template
+    assert 'data-summary-action="children"' not in template
+    assert 'data-detail-action="parents"' not in template
+    assert 'data-detail-action="subs"' not in template
+    assert 'data-detail-action="children"' not in template
+
+
+def test_menu_map_tree_remove_actions_stay_at_the_end_of_each_row():
+    styles = (ROOT / "static" / "css" / "menu-map.css").read_text(encoding="utf-8")
+
+    assert ".tree-parent__head,\n.tree-sub__head" in styles
+    assert "justify-content: space-between;" in styles
+    assert "flex-wrap: nowrap;" in styles
+    assert "margin-left: auto;" in styles
+
+
+def test_automation_inspector_tabs_have_consistent_button_spacing():
+    styles = (ROOT / "static" / "css" / "automation.css").read_text(encoding="utf-8")
+
+    assert ".inspector-tabs" in styles
+    assert "gap: .5rem;" in styles
+    assert "min-height: 40px;" in styles
+    assert "padding: .6rem 1.05rem;" in styles
+
+
+def test_automation_panels_size_to_content_instead_of_forcing_empty_height():
+    styles = (ROOT / "static" / "css" / "automation.css").read_text(encoding="utf-8")
+
+    assert "min-height: 680px;" not in styles
+    assert "min-height: 600px;" not in styles
+    assert "min-height: 300px;" not in styles
+    assert "min-height: 160px;" in styles
+    assert "min-height: 180px;" in styles
 
 
 def test_automation_live_runs_keep_visible_progress_through_finalizing():
@@ -162,7 +203,7 @@ def test_automation_distinguishes_schedules_from_run_snapshots():
 
     assert "Saved Schedules" in template
     assert "Run History" in template
-    assert "Schedules control future scrapes. Run history preserves each result." in template
+    assert "Schedules control future scrapes. Run history preserves each result." not in template
     assert "function scheduleStatusChip(job)" in script
     assert "${scheduleStatusChip(job)}" in script
     assert "${statusChip(job.last_status)}" not in script

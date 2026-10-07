@@ -64,14 +64,19 @@ body {
 }
 
 .automation-supplier-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 38px;
-  padding: 0 18px;
+  padding: .55rem .9rem;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-2);
   font-size: .82rem;
   font-weight: 700;
+  font-family: inherit;
+  line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
   transition: all .18s ease;
@@ -95,7 +100,7 @@ body {
 .automation-dashboard {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
-  gap: 1.25rem;
+  gap: 1rem;
   align-items: start;
   transition: grid-template-columns .24s cubic-bezier(.2, .8, .2, 1);
 }
@@ -120,7 +125,7 @@ body {
 .automation-main-content {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: .75rem;
   min-width: 0;
   transition: transform .24s cubic-bezier(.2, .8, .2, 1);
 }
@@ -143,7 +148,7 @@ body {
 
 /* ── Panels ──────────────────────────────────────────────────── */
 .automation-panel {
-  padding: 18px;
+  padding: 16px;
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
   background: var(--surface);
@@ -151,7 +156,7 @@ body {
 }
 
 .automation-activity-panel {
-  padding: 16px;
+  padding: 14px;
 }
 
 .automation-activity-heading {
@@ -160,12 +165,12 @@ body {
 
 .automation-activity-stack {
   display: grid;
-  gap: .85rem;
+  gap: .65rem;
 }
 
 .automation-activity-section {
   min-width: 0;
-  min-height: 150px;
+  min-height: 0;
   contain: layout;
 }
 
@@ -179,12 +184,7 @@ body {
   font-size: .8rem;
 }
 
-.automation-dashboard {
-  min-height: 680px;
-}
-
 .automation-main-content > .cy-card:last-child {
-  min-height: 600px;
   contain: layout;
 }
 
@@ -195,7 +195,7 @@ body {
 
 .automation-activity-section + .automation-activity-section {
   border-top: 1px solid var(--border);
-  padding-top: .85rem;
+  padding-top: .65rem;
 }
 
 .automation-activity-section__head {
@@ -203,7 +203,7 @@ body {
   justify-content: space-between;
   gap: .7rem;
   align-items: baseline;
-  margin-bottom: .5rem;
+  margin-bottom: .4rem;
 }
 
 .automation-activity-section__head h3 {
@@ -308,7 +308,7 @@ body {
   border-radius: var(--r);
   background: var(--surface-2);
   color: var(--text);
-  padding: 10px 12px;
+  padding: 8px 10px;
   transition: border-color var(--transition);
 }
 
@@ -716,19 +716,24 @@ body {
 /* ── Inspector Tabs ──────────────────────────────────────────── */
 .inspector-tabs {
   display: flex;
-  gap: 0;
+  gap: .5rem;
   border-bottom: 2px solid var(--border);
 }
 
 .inspector-tab {
-  min-height: 38px;
-  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: .6rem 1.05rem;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--surface-2);
   color: var(--text-2);
   font-size: .82rem;
   font-weight: 700;
+  font-family: inherit;
+  line-height: 1.2;
   cursor: pointer;
   position: relative;
   transition: color .18s ease;
@@ -765,12 +770,12 @@ body {
 
 /* ── Run Detail Panel ────────────────────────────────────────── */
 .automation-run-detail {
-  min-height: 200px;
-  max-height: 520px;
+  min-height: 160px;
+  max-height: 480px;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--r);
-  padding: 18px;
+  padding: 14px;
   background: var(--surface-2);
   scrollbar-width: thin;
   scrollbar-color: var(--border-2) transparent;
@@ -791,15 +796,15 @@ body {
 .automation-detail-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: .6rem;
-  margin-bottom: 1rem;
+  gap: .5rem;
+  margin-bottom: .75rem;
 }
 
 .automation-detail-card {
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
   background: var(--surface);
-  padding: .75rem .8rem;
+  padding: .65rem .7rem;
   min-width: 0;
 }
 
@@ -1071,11 +1076,11 @@ body {
 
 /* ── Products Panel ──────────────────────────────────────────── */
 .automation-products {
-  min-height: 300px;
+  min-height: 180px;
   border: 1px dashed var(--border-2);
   border-radius: var(--r);
   background: var(--surface-2);
-  padding: 18px;
+  padding: 14px;
   overflow-anchor: none;
 }
 
@@ -1098,7 +1103,7 @@ body {
 .automation-products__no-match {
   display: grid;
   place-items: center;
-  min-height: 180px;
+  min-height: 120px;
   border: 1px dashed var(--border);
   border-radius: var(--r-sm);
   color: var(--text-3);
@@ -1712,11 +1717,12 @@ body {
   }
 
   .inspector-tabs {
-    gap: 0;
+    gap: .35rem;
   }
 
   .inspector-tab {
-    padding: .55rem .75rem;
+    min-height: 38px;
+    padding: .55rem .8rem;
     font-size: .78rem;
   }
 
@@ -1761,7 +1767,7 @@ body {
 
   .automation-supplier-tab {
     min-height: 36px;
-    padding: 0 12px;
+    padding: .5rem .75rem;
     font-size: .8rem;
     border-radius: 8px;
     flex-shrink: 0;
@@ -2044,9 +2050,11 @@ body {
 .automation-dashboard button:not(.automation-card-select),
 .automation-supplier-tab,
 .inspector-tab {
+  box-sizing: border-box;
   border-radius: 8px;
   font-family: inherit;
   font-weight: 600;
+  line-height: 1.2;
 }
 
 .page-shell .cy-card,

@@ -1,5 +1,10 @@
 # Changelog
 
+## [8.5.11] - 2026-10-07
+- Enable Scrapling Cloudflare challenge recovery after HTTP fetches fail, with bounded stealth-browser timeouts and the same fallback for Menu Map category discovery.
+- Refine Automation, Menu Map, History, and Logs layouts and controls; remove controls that do not perform an available action.
+- Document the supported Python 3.10–3.12 range and runtime/test dependency manifests; verify installed packages without changing dependency versions.
+
 ## [8.5.10] - 2026-09-24
 - Improve Automation, Menu Map, and Server Logs usability with more consistent controls, clearer labels, and stronger state feedback.
 - Group Menu Map downloads by format and add progressive loading for large category hierarchies.

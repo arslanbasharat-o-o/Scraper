@@ -1,3 +1,5 @@
+# Runtime dependencies for Python 3.10–3.12 (deployment and CI support range).
+# Keep this as the single runtime package manifest; test tools live in requirements-dev.txt.
 Flask>=3.0.0,<4
 python-dotenv>=1.0.0
 requests>=2.31.0

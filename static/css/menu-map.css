@@ -79,7 +79,7 @@
   transition: border-color var(--transition), background var(--transition), transform var(--transition);
 }
 
-.menu-map-stats--global .menu-stat:not(:disabled) {
+.menu-map-stats--global button.menu-stat:not(:disabled) {
   background: color-mix(in srgb, var(--primary) 9%, var(--surface-2));
   border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
 }
@@ -87,6 +87,18 @@
 .detail-grid .detail-stat {
   background: var(--surface-2);
   border-style: dashed;
+}
+
+.menu-stat:not(button),
+.detail-stat:not(button) {
+  cursor: default;
+}
+
+.menu-stat:not(button):hover,
+.detail-stat:not(button):hover {
+  border-color: var(--border);
+  background: var(--surface-2);
+  transform: none;
 }
 
 .scope-heading {
@@ -415,7 +427,7 @@
   margin-top: .85rem;
   border: 1px dashed var(--border-2);
   border-radius: var(--r);
-  padding: 2rem;
+  padding: 1.25rem;
   color: var(--text-3);
   text-align: center;
 }
@@ -480,18 +492,21 @@
 .tree-parent__head,
 .tree-sub__head {
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
   align-items: center;
   gap: .75rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   padding: .75rem .85rem .75rem 2rem;
 }
 
 .tree-node-actions {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: .45rem;
   min-width: fit-content;
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
 .tree-remove-btn {
@@ -526,6 +541,7 @@
 
 .tree-parent__name,
 .tree-sub__name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text);
@@ -536,11 +552,6 @@
 .tree-parent__name::first-letter,
 .tree-sub__name::first-letter {
   text-transform: uppercase;
-}
-
-.tree-parent__head .tree-node-actions,
-.tree-sub__head .tree-node-actions {
-  margin-left: .35rem;
 }
 
 .tree-parent__meta,
