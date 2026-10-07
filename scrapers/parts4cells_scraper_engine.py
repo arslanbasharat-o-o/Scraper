@@ -201,6 +201,25 @@ def _is_product_page(soup: BeautifulSoup) -> bool:
     )
 
 
+def _extract_visible_sku(container) -> str:
+    """Read the SKU presented to shoppers, never an opaque listing/cart ID."""
+    if container is None:
+        return ""
+    sku_value = container.select_one(
+        '.product.attribute.sku .value, .product-info-stock-sku .sku .value, '
+        '[itemprop="sku"]'
+    )
+    if sku_value:
+        value = clean_sku(sku_value.get_text(' ', strip=True) or sku_value.get('content'))
+        if value:
+            return value
+    match = re.search(
+        r'\bSKU\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._/-]{1,})',
+        container.get_text(' ', strip=True), re.I
+    )
+    return clean_sku(match.group(1)) if match else ""
+
+
 def parse_parts4cells_product_detail_fast(html: str, url: str, rules: dict | None = None) -> Optional[Item]:
     """Extract Parts4Cells Magento detail fields without full DOM parsing."""
     if not html:
@@ -235,8 +254,6 @@ def parse_parts4cells_product_detail_fast(html: str, url: str, rules: dict | Non
         r'class=["\'][^"\']*product-info-stock-sku[^"\']*["\'][^>]*>.*?class=["\'][^"\']*sku[^"\']*["\'][^>]*>.*?class=["\'][^"\']*value[^"\']*["\'][^>]*>(.*?)<',
         r'[itemprop=["\']sku["\'][^>]*content=["\']([^"\']+)["\']',
         r'[itemprop=["\']sku["\'][^>]*>(.*?)<',
-        r'data-product-sku=["\']([^"\']+)["\']',
-        r'data-product_sku=["\']([^"\']+)["\']',
     ])
     sku = clean_sku(sku)
     if not sku:
@@ -394,6 +411,8 @@ def scrape_product_page(url: str, rules: dict, logger=None,
     if sku_elem:
         item.sku = clean_sku(sku_elem.get('content') or sku_elem.get_text())
     if not item.sku:
+        item.sku = _extract_visible_sku(soup)
+    if not item.sku:
         item.sku = extract_jsonld_sku(soup, item.url)
 
     stock_elem = (
@@ -517,10 +536,9 @@ def _extract_product(li, base_url: str) -> Optional[Item]:
             if src and not any(p in src for p in _PLACEHOLDERS):
                 item.image_url = src if src.startswith('http') else urljoin(base_url, src)
 
-        # SKU is available on add-to-cart forms in the listing HTML.
-        sku_holder = li.select_one('[data-product-sku]')
-        if sku_holder:
-            item.sku = clean_text(sku_holder.get('data-product-sku', ''))
+        # Listing/cart attributes can contain a catalog identifier; only use
+        # the SKU that the supplier presents to shoppers.
+        item.sku = _extract_visible_sku(li)
 
         # Stock
         cls = ' '.join(li.get('class', []))

@@ -268,32 +268,6 @@ def _best_image_from_card(card, base_url: str) -> str:
     return ""
 
 
-def extract_sku_from_title_and_url(title: str, url: str) -> str:
-    slug = str(url or '').rstrip('/').split('/')[-1]
-    slug = re.sub(r'\.html$', '', slug).lower()
-
-    words = re.findall(r'[a-zA-Z0-9]+', str(title or '').lower())
-    if not words:
-        return ''
-
-    for i in range(len(words) - 1, max(-1, len(words) - 5), -1):
-        w = words[i]
-        idx = slug.rfind('-' + w + '-')
-        if idx != -1:
-            potential_sku = slug[idx + len(w) + 2:].strip('-')
-            if potential_sku and len(potential_sku) >= 2:
-                return clean_sku(potential_sku.upper())
-        idx_end = slug.rfind('-' + w)
-        if idx_end != -1 and idx_end + len(w) + 1 < len(slug):
-            potential_sku = slug[idx_end + len(w) + 2:].strip('-')
-            if potential_sku and len(potential_sku) >= 2:
-                return clean_sku(potential_sku.upper())
-    parts = slug.split('-')
-    if len(parts) >= 2:
-        return clean_sku(parts[-1].upper())
-    return ''
-
-
 def extract_product_from_listing(card, base_url: str) -> Optional[Item]:
     link = (
         card.select_one('a.product-item-link[href]')
@@ -327,21 +301,19 @@ def extract_product_from_listing(card, base_url: str) -> Optional[Item]:
             item.original_formatted = fmt_price(price_val)
             item.discounted_formatted = fmt_price(price_val)
 
-    sku_holder = card.select_one('[data-product-sku], [data-product_sku], [data-sku]')
-    if sku_holder:
-        item.sku = clean_text(
-            sku_holder.get('data-product-sku')
-            or sku_holder.get('data-product_sku')
-            or sku_holder.get('data-sku')
-            or ''
-        )
+    # Listing attributes can be catalog/cart identifiers rather than the
+    # customer-facing SKU. Prefer the visible SKU field when the card has one.
+    sku_value = card.select_one('.product.attribute.sku .value, .product-info-stock-sku .sku .value, [itemprop="sku"], .sku')
+    if sku_value:
+        item.sku = clean_sku(sku_value.get_text(' ', strip=True) or sku_value.get('content'))
+    if not item.sku:
+        visible_sku = re.search(r'\bSKU\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._/-]{1,})', card.get_text(' ', strip=True), re.I)
+        if visible_sku:
+            item.sku = clean_sku(visible_sku.group(1))
     if not item.sku:
         sku_match = re.search(r"\$store\.cart\.getQty\('([^']+)'\)", str(card))
         if sku_match:
             item.sku = clean_text(sku_match.group(1).encode('utf-8').decode('unicode_escape'))
-    if not item.sku and item.url and item.title:
-        item.sku = extract_sku_from_title_and_url(item.title, item.url)
-
     stock_text = clean_text(card.get_text(' ', strip=True))
     if 'out of stock' in stock_text.lower() or 'out-of-stock' in ' '.join(card.get('class', [])).lower():
         item.stock_status = "Out of Stock"

@@ -360,11 +360,9 @@ def parse_txparts_product_detail_fast(html: str, url: str, rules: dict | None = 
             sku = clean_sku(text_from_fragment(spans[-1]))
     if not sku:
         sku = first_match([
-            r'class=["\'][^"\']*(?:product_meta.*?sku_wrapper.*?sku|sku)[^"\']*["\'][^>]*>(.*?)<',
+            r'class=["\'][^"\']*product_meta[^"\']*sku_wrapper[^"\']*sku[^"\']*["\'][^>]*>(.*?)<',
             r'[itemprop=["\']sku["\'][^>]*content=["\']([^"\']+)["\']',
             r'[itemprop=["\']sku["\'][^>]*>(.*?)<',
-            r'data-product-sku=["\']([^"\']+)["\']',
-            r'data-product_sku=["\']([^"\']+)["\']',
         ])
         sku = clean_sku(sku)
     if not sku:
@@ -530,13 +528,10 @@ def scrape_product_page(session, url: str, rules: dict, logger=None) -> Optional
     sku_elem = (
         soup.select_one('.badge-sku span:last-child') or
         soup.select_one('.product_meta .sku_wrapper .sku') or
-        soup.select_one('.sku') or
-        soup.select_one('[itemprop="sku"]') or
-        soup.select_one('[data-product-sku]') or
-        soup.select_one('[data-product_sku]')
+        soup.select_one('[itemprop="sku"]')
     )
     if sku_elem:
-        item.sku = clean_sku(sku_elem.get_text() or sku_elem.get('content') or sku_elem.get('data-product-sku') or sku_elem.get('data-product_sku', ''))
+        item.sku = clean_sku(sku_elem.get('content') or sku_elem.get_text())
     if not item.sku:
         item.sku = extract_jsonld_sku(soup, item.url)
     if not item.sku:

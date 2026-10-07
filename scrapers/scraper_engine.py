@@ -27,6 +27,7 @@ from .browser_fetcher import (
     get_shared_supplier_cookies,
 )
 from .fetch_pipeline import fetch_with_pipeline, is_cancellation_exception, copy_fetch_metadata
+from .sku_utils import extract_jsonld_sku
 
 # Optional curl_cffi for better Cloudflare bypass
 try:
@@ -592,19 +593,17 @@ def extract_best_image_url(container: BeautifulSoup, base_url: str = "") -> str:
 def _extract_text_from_element(el) -> str:
     if not el:
         return ""
-    for attr in ('content', 'value', 'data-product-sku', 'data-sku', 'data-product_sku'):
-        if el.get(attr):
-            return clean_text(el.get(attr))
-    return clean_text(el.get_text(' ', strip=True))
+    visible_text = clean_text(el.get_text(' ', strip=True))
+    if visible_text:
+        return visible_text
+    return clean_text(el.get('content') or el.get('value') or '')
 
 
-def extract_sku(soup: BeautifulSoup, jsonld_products: Optional[List[dict]] = None) -> str:
+def extract_sku(soup: BeautifulSoup, jsonld_products: Optional[List[dict]] = None, product_url: str = '') -> str:
     """Extract SKU from structured data or common product page selectors."""
-    jsonld_products = jsonld_products or find_jsonld_products(soup)
-    for obj in jsonld_products:
-        sku = clean_text(obj.get('sku') or obj.get('mpn') or '')
-        if sku:
-            return sku
+    jsonld_sku = extract_jsonld_sku(soup, product_url)
+    if jsonld_sku:
+        return jsonld_sku
 
     for sel in (
         '[itemprop="sku"]',
@@ -612,8 +611,6 @@ def extract_sku(soup: BeautifulSoup, jsonld_products: Optional[List[dict]] = Non
         '.product-info-stock-sku .sku .value',
         '.sku_wrapper .sku',
         '.sku',
-        '[data-product-sku]',
-        '[data-product_sku]',
     ):
         el = soup.select_one(sel)
         text = _extract_text_from_element(el)
@@ -711,7 +708,7 @@ def extract_product_detail_snapshot(soup: BeautifulSoup, final_url: str) -> Dict
             source = src
 
     image_url = extract_best_image_url(soup, final_url)
-    sku = extract_sku(soup, jsonld_products)
+    sku = extract_sku(soup, jsonld_products, final_url)
     description = extract_description(soup, jsonld_products)
     stock_status = extract_stock_status(soup, jsonld_products)
 
@@ -965,14 +962,12 @@ def scrape_category_page(sess, final_url: str, html: str, rules: Dict, logger=No
 
         # Extract SKU directly from card markup if present
         sku = ''
-        sku_el = card.select_one('[data-product-sku], [data-sku], .sku, [itemprop="sku"]')
+        sku_el = card.select_one('.product.attribute.sku .value, .sku, [itemprop="sku"]')
         if sku_el:
             sku = clean_text(
-                sku_el.get('data-product-sku')
-                or sku_el.get('data-sku')
+                sku_el.get_text()
                 or sku_el.get('content')
                 or sku_el.get('value')
-                or sku_el.get_text()
                 or ''
             )
             sku = re.sub(r'^sku\s*[:#-]?\s*', '', sku, flags=re.IGNORECASE).strip()

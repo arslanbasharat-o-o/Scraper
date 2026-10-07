@@ -19,11 +19,16 @@ from scrapers.txparts_scraper_engine import (
     _looks_like_block_page as txparts_looks_blocked,
     parse_txparts_product_detail_fast,
 )
-from scrapers.parts4cells_scraper_engine import parse_parts4cells_product_detail_fast
+from scrapers.parts4cells_scraper_engine import (
+    _extract_product as extract_parts4cells_listing_product,
+    parse_parts4cells_product_detail_fast,
+)
 from scrapers.xcell_scraper_engine import (
+    extract_product_from_listing as extract_xcell_listing_product,
     extract_items_from_category_soup as extract_xcell_items,
     parse_xcell_product_detail_fast,
 )
+from scrapers.scraper_engine import extract_sku as extract_mobilesentrix_detail_sku, scrape_category_page as scrape_mobilesentrix_category
 from scrapers.registry import detect_scraper_key
 from scrapers.sku_utils import extract_jsonld_sku
 
@@ -70,6 +75,30 @@ def test_jsonld_sku_matches_requested_product_not_recommendation():
     soup = BeautifulSoup(html, "html.parser")
 
     assert extract_jsonld_sku(soup, "https://example.com/product/main") == "MAIN-1"
+
+
+def test_detail_sku_extraction_never_substitutes_mpn_or_product_attribute():
+    soup = BeautifulSoup("""
+      <html><body>
+        <div itemprop="sku" content="210000018304" data-product-sku="999999999998">309640</div>
+        <div data-product-sku="999999999999"></div>
+      </body></html>
+    """, "html.parser")
+
+    assert extract_mobilesentrix_detail_sku(soup) == "309640"
+
+
+def test_mobilesentrix_listings_ignore_cart_attributes_but_keep_visible_sku():
+    html = """
+      <ul class="product-listing">
+        <li class="item"><a href="/product-a">Product A</a><span data-product-sku="210000018304"></span></li>
+        <li class="item"><a href="/product-b">Product B</a><span data-sku="210000018305"></span><span class="sku">309641</span></li>
+      </ul>
+    """
+
+    items = scrape_mobilesentrix_category(None, "https://www.mobilesentrix.com/catalog", html, {})
+
+    assert [item.sku for item in items] == ["", "309641"]
 
 
 def test_security_script_words_do_not_hide_real_catalog_pages():
@@ -271,6 +300,20 @@ def test_txparts_fast_detail_parser_extracts_required_metadata_without_dom():
     assert item.image_url.endswith("/screen.jpg")
 
 
+def test_txparts_detail_does_not_promote_cart_attribute_to_sku():
+    html = """
+    <html><body>
+      <h1 class="product_title">iPhone Screen</h1>
+      <form data-product-sku="210000018304"><button>Add to cart</button></form>
+    </body></html>
+    """
+
+    item = parse_txparts_product_detail_fast(html, "https://txparts.com/product/iphone-screen", {})
+
+    assert item is not None
+    assert item.sku == ""
+
+
 def test_parts4cells_fast_detail_parser_extracts_required_metadata_without_dom():
     html = """
     <html><head>
@@ -292,6 +335,67 @@ def test_parts4cells_fast_detail_parser_extracts_required_metadata_without_dom()
     assert item.stock_status == "In Stock"
     assert item.description == "High cycle life replacement battery."
     assert item.image_url.endswith("/bat.jpg")
+
+
+def test_parts4cells_listing_uses_displayed_sku_not_cart_identifier():
+    html = """
+    <li class="product-item">
+      <a class="product-item-link" href="/samsung-note-20-screen.html">Samsung Note 20 Screen</a>
+      <form data-product-sku="210000018304"></form>
+      <div class="product-info-stock-sku"><span class="sku"><span class="value">309640</span></span></div>
+    </li>
+    """
+    card = BeautifulSoup(html, "html.parser").select_one("li.product-item")
+
+    item = extract_parts4cells_listing_product(card, "https://parts4cells.com/")
+
+    assert item is not None
+    assert item.sku == "309640"
+
+
+def test_parts4cells_listing_does_not_export_cart_identifier_as_sku():
+    html = """
+    <li class="product-item">
+      <a class="product-item-link" href="/samsung-note-20-screen.html">Samsung Note 20 Screen</a>
+      <form data-product-sku="210000018304"></form>
+    </li>
+    """
+    card = BeautifulSoup(html, "html.parser").select_one("li.product-item")
+
+    item = extract_parts4cells_listing_product(card, "https://parts4cells.com/")
+
+    assert item is not None
+    assert item.sku == ""
+
+
+def test_xcell_listing_ignores_woocommerce_product_id_and_uses_sku_copy_value():
+    html = """
+    <li class="product">
+      <a href="/product/screen/"><h2 class="woocommerce-loop-product__title">Screen</h2></a>
+      <button data-product_sku="210000018304" data-xcell-copy="309640">Copy SKU</button>
+    </li>
+    """
+    card = BeautifulSoup(html, "html.parser").select_one("li.product")
+
+    item = extract_xcell_listing_product(card, "https://xcellparts.com/")
+
+    assert item is not None
+    assert item.sku == "309640"
+
+
+def test_xcell_listing_does_not_treat_woocommerce_product_id_as_sku():
+    html = """
+    <li class="product">
+      <a href="/product/screen/"><h2 class="woocommerce-loop-product__title">Screen</h2></a>
+      <button data-product_sku="210000018304">Add to cart</button>
+    </li>
+    """
+    card = BeautifulSoup(html, "html.parser").select_one("li.product")
+
+    item = extract_xcell_listing_product(card, "https://xcellparts.com/")
+
+    assert item is not None
+    assert item.sku == ""
 
 
 def test_phonelcdparts_fast_detail_parser_extracts_required_metadata_without_dom():
@@ -410,7 +514,7 @@ def test_phonelcdparts_parent_category_expands_direct_child_categories():
 
     assert len(items) == 1
     assert items[0].title == "QMAX iPhone Battery"
-    assert items[0].sku == "QMAX-IP-BAT"
+    assert items[0].sku == ""
 
 
 def test_phonelcdparts_product_page_ignores_related_product_cards():

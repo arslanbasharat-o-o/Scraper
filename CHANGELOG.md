@@ -1,5 +1,11 @@
 # Changelog
 
+## [8.5.12] - 2026-10-07
+- Ensure supplier scrapers export the product SKU instead of unverified catalog/cart identifiers from listing attributes or guessed URL slugs.
+- Prefer visible and supplier-specific SKU fields across MobileSentrix, Parts4Cells, PhoneLCDParts, TXParts, and XCellParts; keep SKU empty when only an unverified listing identifier is available.
+- Remove MPN substitution from generic and XCellParts SKU extraction so manufacturer part numbers are not mislabeled as SKUs.
+- Add regression coverage for conflicting visible SKU, structured data, and listing/cart identifier values.
+
 ## [8.5.11] - 2026-10-07
 - Enable Scrapling Cloudflare challenge recovery after HTTP fetches fail, with bounded stealth-browser timeouts and the same fallback for Menu Map category discovery.
 - Refine Automation, Menu Map, History, and Logs layouts and controls; remove controls that do not perform an available action.

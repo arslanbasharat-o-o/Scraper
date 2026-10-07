@@ -558,12 +558,11 @@ def extract_product_from_listing(product_elem, base_url: str) -> Optional[Item]:
             item.original_formatted = fmt_price(price_val)
             item.discounted_formatted = fmt_price(price_val)
 
-        # SKU is exposed in the add-to-cart button on listing pages.
-        # In extract_product_from_listing the product_elem IS the <li class="product">
-        # so [data-product_sku] search is safely scoped to this one product.
-        sku_elem = product_elem.select_one('[data-product_sku]')
+        # The copy control contains the product's displayed SKU. Avoid the
+        # WooCommerce data-product_sku attribute, which can be a catalog ID.
+        sku_elem = product_elem.select_one('[data-xcell-copy]')
         if sku_elem:
-            item.sku = clean_text(sku_elem.get('data-product_sku', ''))
+            item.sku = clean_text(sku_elem.get('data-xcell-copy', ''))
         product_id_elem = product_elem.select_one('[data-product_id], [data-product-id], [name="add-to-cart"]')
         if product_id_elem:
             item.extra["product_id"] = clean_text(
@@ -718,7 +717,7 @@ def extract_product_from_link_group(anchors, url: str, base_url: str, rules: dic
     # SKU on listing page (must be strictly scoped to this product's anchor/card)
     item.sku = ""
     for anchor in anchors:
-        sku_val = anchor.get("data-xcell-copy", "") or anchor.get("data-product_sku", "")
+        sku_val = anchor.get("data-xcell-copy", "")
         if sku_val and clean_text(sku_val):
             item.sku = clean_text(sku_val)
             break
@@ -731,9 +730,9 @@ def extract_product_from_link_group(anchors, url: str, base_url: str, rules: dic
             if is_product_href(a.get("href", ""))
         }
         if card_product_urls == {normalized_url}:
-            sku_elem = card.select_one("[data-xcell-copy], [data-product_sku]")
+            sku_elem = card.select_one("[data-xcell-copy]")
             if sku_elem:
-                item.sku = clean_text(sku_elem.get("data-xcell-copy") or sku_elem.get("data-product_sku") or "")
+                item.sku = clean_text(sku_elem.get("data-xcell-copy") or "")
 
     product_id_elem = card.select_one('[data-product_id], [data-product-id], [name="add-to-cart"]') if card else None
     if product_id_elem:
@@ -848,7 +847,7 @@ def _enrich_items_from_jsonld(soup: BeautifulSoup, base_url: str, items: List[It
             if product_url and entry.get('@type') in ('Product', 'product'):
                 norm = normalize_product_url(product_url, base_url)
                 desc = strip_markup(str(entry.get('description') or '').strip())
-                sku = clean_text(str(entry.get('sku') or entry.get('mpn') or ''))
+                sku = clean_text(str(entry.get('sku') or ''))
                 if desc or sku:
                     ld_map[norm] = {'description': desc, 'sku': sku}
             # ItemList wrapping multiple products
@@ -861,7 +860,7 @@ def _enrich_items_from_jsonld(soup: BeautifulSoup, base_url: str, items: List[It
                     if product_url:
                         norm = normalize_product_url(product_url, base_url)
                         desc = strip_markup(str(item_data.get('description') or '').strip())
-                        sku = clean_text(str(item_data.get('sku') or item_data.get('mpn') or ''))
+                        sku = clean_text(str(item_data.get('sku') or ''))
                         if desc or sku:
                             ld_map[norm] = {'description': desc, 'sku': sku}
 
