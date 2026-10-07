@@ -315,3 +315,58 @@ def test_empty_output_keeps_seed_suppressed_until_new_records_exist(tmp_path):
     )
     export_outputs(config, site_dir, ScrapeResult(records=[record]), headless=True, duplicates=[])
     assert not marker.exists()
+
+
+def test_scrapling_menu_fallback_enables_cf_solver_and_extracts_menu(monkeypatch, tmp_path):
+    import logging
+    import sys
+    from types import SimpleNamespace
+    from scrapers.menu_map.common import scrapling_menu_fallback
+
+    calls = {}
+    hierarchy = [{"name": "Parts", "url": "https://example.com/parts", "order": 1, "sub_children": []}]
+
+    class FakePage:
+        def locator(self, _selector):
+            return SimpleNamespace(count=lambda: 0)
+
+        def evaluate(self, _script, *_args):
+            return hierarchy
+
+    class FakeResponse:
+        def css(self, _selector):
+            return SimpleNamespace(get=lambda: "Example parts")
+
+    class FakeStealthyFetcher:
+        @staticmethod
+        def fetch(url, **kwargs):
+            calls.update({"url": url, **kwargs})
+            kwargs["page_action"](FakePage())
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "scrapling.fetchers", SimpleNamespace(StealthyFetcher=FakeStealthyFetcher))
+    config = SiteConfig(
+        website="Example",
+        website_url="https://example.com",
+        output_slug="example",
+        base_url="https://example.com",
+        parent_nav_selector="#nav",
+        parent_item_selector="#nav > li > a",
+        mega_menu_selector="",
+        sub_child_panel_selector="",
+        sub_child_item_selector="",
+        active_sub_child_selector="",
+        child_panel_selector="",
+        child_link_selector="",
+        scroll_container_selector="",
+        menu_close_selector="",
+        search_selector="",
+        mobile_menu_selector="",
+    )
+
+    records = scrapling_menu_fallback(config, logging.getLogger("test-scrapling-menu"), 0)
+
+    assert calls["solve_cloudflare"] is True
+    assert calls["timeout"] >= 60000
+    assert calls["real_chrome"] is True
+    assert [record.parent_name for record in records] == ["Parts"]

@@ -54,6 +54,38 @@ def test_pipeline_falls_through_scrapling_before_botasaurus(monkeypatch):
     assert transports == ["scrapling-stealth"]
 
 
+def test_scrapling_cloudflare_solver_is_enabled_by_default_and_can_be_disabled(monkeypatch):
+    monkeypatch.delenv("SCRAPER_SCRAPLING_SOLVE_CLOUDFLARE", raising=False)
+    assert fetch_pipeline.scrapling_cloudflare_solver_enabled() is True
+    monkeypatch.setenv("SCRAPER_SCRAPLING_SOLVE_CLOUDFLARE", "0")
+    assert fetch_pipeline.scrapling_cloudflare_solver_enabled() is False
+
+
+def test_browser_fallback_is_enabled_by_default_and_can_be_disabled(monkeypatch):
+    monkeypatch.delenv("SCRAPER_LOCAL_BROWSER_FALLBACK", raising=False)
+    monkeypatch.setattr(fetch_pipeline, "should_use_browser_fetch", lambda: False)
+    monkeypatch.setattr(fetch_pipeline, "browser_fetch_requested", lambda: False)
+    assert fetch_pipeline.browser_fallback_enabled() is True
+    monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "0")
+    assert fetch_pipeline.browser_fallback_enabled() is False
+
+
+def test_stealth_fallback_gets_cloudflare_timeout_budget(monkeypatch):
+    session = FakeSession([FakeResponse(403, "Access denied", "https://supplier.test/product")])
+    seen = []
+    monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
+    monkeypatch.setenv("SCRAPER_SCRAPLING_STEALTH_TIMEOUT", "60")
+    monkeypatch.setattr(fetch_pipeline, "scrapling_enabled", lambda: True)
+    monkeypatch.setattr(fetch_pipeline, "_scrapling_http", lambda *_args, **_kwargs: (403, "https://supplier.test/product", "denied"))
+    monkeypatch.setattr(fetch_pipeline, "_scrapling_stealth", lambda _url, timeout, *_args, **_kwargs: seen.append(timeout) or (200, "https://supplier.test/product", "<html>recovered</html>"))
+
+    result = fetch_pipeline.fetch_with_pipeline(session, "https://supplier.test/product", http_attempts=1, browser_timeout=18)
+
+    assert result is not None
+    assert result.transport == "scrapling-stealth"
+    assert seen == [60]
+
+
 def test_explicit_browser_mode_skips_http_and_uses_one_browser_fetch(monkeypatch):
     session = FakeSession([FakeResponse(200, "should not be used", "https://supplier.test/product")])
     calls = []
@@ -192,6 +224,7 @@ def test_broken_warm_scrapling_session_is_closed_and_replaced(monkeypatch):
     import threading
     from scrapers import botasaurus_wrapper
     instances = []
+    fetch_options = []
     class StealthySession:
         def __init__(self, **_kwargs):
             self.closed = False
@@ -199,6 +232,7 @@ def test_broken_warm_scrapling_session_is_closed_and_replaced(monkeypatch):
         def __enter__(self):
             return self
         def fetch(self, url, **_kwargs):
+            fetch_options.append(_kwargs)
             if self is instances[0]:
                 raise RuntimeError("browser disconnected")
             return SimpleNamespace(body=b"<html>catalog</html>", status=200, url=url, headers={})
@@ -214,6 +248,7 @@ def test_broken_warm_scrapling_session_is_closed_and_replaced(monkeypatch):
     result = fetch_pipeline._stealth_fetch_on_worker("url", 5, None, None)
     assert result[0] == 200
     assert len(instances) == 2
+    assert all(options["solve_cloudflare"] is True for options in fetch_options)
 
 
 def test_standard_engine_cancellation_is_not_recorded_as_supplier_block():

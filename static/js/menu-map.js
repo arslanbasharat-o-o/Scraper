@@ -57,6 +57,8 @@ let pollTimer = null;
 let pollRequestPending = false;
 let pollFailureCount = 0;
 let sitesLoadPending = false;
+let sitesLoadPromise = null;
+let sitesLoadToken = 0;
 let completedJobClearTimer = null;
 let jobPanelMode = 'idle';
 let runSubmissionPending = false;
@@ -198,7 +200,7 @@ function showAlert(type, message) {
 
 function ensureExclusionUi() {
   if (!elements.resetHiddenBtn) {
-    const toolbar = document.querySelector('.toolbar-right');
+    const toolbar = document.querySelector('.menu-map-toolbar .toolbar-right');
     if (toolbar) {
       const button = document.createElement('button');
       button.id = 'resetHiddenBtn';
@@ -241,7 +243,12 @@ async function fetchJson(url, options = {}) {
   if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   const response = await fetch(url, { ...options, headers });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Server ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(data.error || `Server ${response.status}`);
+    error.status = response.status;
+    error.job = data.job;
+    throw error;
+  }
   return data;
 }
 
@@ -252,7 +259,8 @@ function formatNumber(value) {
 function loadExclusions() {
   try {
     const parsed = JSON.parse(localStorage.getItem('menu_map_exclusions') || '{}');
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, keys]) => Array.isArray(keys)));
   } catch (_err) {
     return {};
   }
@@ -261,18 +269,23 @@ function loadExclusions() {
 function loadTreeOpenState() {
   try {
     const parsed = JSON.parse(localStorage.getItem('menu_map_tree_open_state') || '{}');
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, state]) => state && typeof state === 'object' && !Array.isArray(state)));
   } catch (_err) {
     return {};
   }
 }
 
 function saveTreeOpenState() {
-  localStorage.setItem('menu_map_tree_open_state', JSON.stringify(treeOpenStateBySite));
+  try {
+    localStorage.setItem('menu_map_tree_open_state', JSON.stringify(treeOpenStateBySite));
+  } catch (_err) { /* Keep the current view usable when browser storage is unavailable. */ }
 }
 
 function saveExclusions() {
-  localStorage.setItem('menu_map_exclusions', JSON.stringify(excludedBySite));
+  try {
+    localStorage.setItem('menu_map_exclusions', JSON.stringify(excludedBySite));
+  } catch (_err) { /* Exclusions still apply for the current page session. */ }
 }
 
 function exclusionSet(slug) {
@@ -391,6 +404,37 @@ function isUsableUrl(url) {
   return Boolean(value) && !/^(#|javascript[:;]?|javascript:void\(0\))/i.test(value);
 }
 
+function treeHasMissingUrls(site) {
+  const tree = Array.isArray(site?.tree) ? site.tree : [];
+  return tree.some(parent => {
+    if (!parent || typeof parent !== 'object') return false;
+    if (!isUsableUrl(parent.parent_url)) return true;
+    const subs = Array.isArray(parent.sub_children) ? parent.sub_children : [];
+    return subs.some(sub => {
+      if (!sub || typeof sub !== 'object') return false;
+      if (!isUsableUrl(sub.sub_child_url)) return true;
+      const children = Array.isArray(sub.children) ? sub.children : [];
+      return children.some(child => child && typeof child === 'object' && !isUsableUrl(child.child_url));
+    });
+  });
+}
+
+function normalizeSite(rawSite) {
+  if (!rawSite || typeof rawSite !== 'object') return null;
+  const tree = Array.isArray(rawSite.tree)
+    ? rawSite.tree.filter(parent => parent && typeof parent === 'object').map(parent => ({
+      ...parent,
+      sub_children: Array.isArray(parent.sub_children)
+        ? parent.sub_children.filter(sub => sub && typeof sub === 'object').map(sub => ({
+          ...sub,
+          children: Array.isArray(sub.children) ? sub.children.filter(child => child && typeof child === 'object') : [],
+        }))
+        : [],
+    }))
+    : [];
+  return { ...rawSite, tree };
+}
+
 function addTarget(targets, seen, target) {
   const url = String(target.url || '').trim();
   if (!isUsableUrl(url)) return;
@@ -467,9 +511,6 @@ function cleanJobScopeLabel(label) {
 }
 
 function targetScopeForJob(site, targets) {
-  const query = compactLabel(elements.treeSearch?.value || '');
-  if (query) return cleanJobScopeLabel(query);
-
   const topGroups = new Map();
   targets.forEach(target => {
     const group = compactLabel(target.group_label);
@@ -521,6 +562,7 @@ function selectedSites() {
 function syncRunSelection() {
   const availableSlugs = new Set(sites.map(site => site.slug));
   if (!runSelectionInitialized) {
+    if (!sites.length) return;
     selectedRunSites = new Set(availableSlugs);
     runSelectionInitialized = true;
     return;
@@ -536,25 +578,56 @@ function isMenuRunBusy() {
 
 function updateRunControls() {
   const menuRunBusy = isMenuRunBusy();
-  if (elements.clearRunSelectedBtn) elements.clearRunSelectedBtn.disabled = sitesLoadPending || menuRunBusy || selectedSites().length === 0;
-  if (elements.runSelectedBtn) elements.runSelectedBtn.disabled = sitesLoadPending || menuRunBusy || selectedSites().length === 0;
-  if (elements.runAllBtn) elements.runAllBtn.disabled = sitesLoadPending || menuRunBusy || sites.length === 0;
-  [elements.visibleMode, elements.validateUrls, elements.inspectOnly].forEach(control => {
-    if (control) control.disabled = menuRunBusy;
+  const controlsBusy = sitesLoadPending || menuRunBusy || automationSubmissionPending;
+  if (elements.refreshBtn) elements.refreshBtn.disabled = controlsBusy;
+  if (elements.clearRunSelectedBtn) elements.clearRunSelectedBtn.disabled = controlsBusy || selectedSites().length === 0;
+  if (elements.runSelectedBtn) elements.runSelectedBtn.disabled = controlsBusy || selectedSites().length === 0;
+  if (elements.runAllBtn) elements.runAllBtn.disabled = controlsBusy || sites.length === 0;
+  // The server always runs headless; this is a locked indicator, not a run option.
+  if (elements.visibleMode) {
+    elements.visibleMode.checked = false;
+    elements.visibleMode.disabled = true;
+  }
+  [elements.validateUrls, elements.inspectOnly].forEach(control => {
+    if (control) control.disabled = controlsBusy;
   });
   elements.siteCards?.querySelectorAll('.site-select').forEach(input => {
-    input.disabled = menuRunBusy;
+    input.disabled = controlsBusy;
   });
 
   const site = sites.find(item => item.slug === selectedSite);
-  const hasAutomationTargets = Boolean(site?.has_output && buildAutomationTargets(site).length);
-  const hasExportTargets = Boolean(site?.has_output && buildAutomationTargets(site, true).length);
-  [elements.exportVisibleCsvBtn, elements.exportVisibleXlsxBtn, elements.exportFullCsvBtn, elements.exportFullXlsxBtn].forEach(button => {
+  const validOutput = Boolean(site?.has_output && !site.parse_error && site.output_valid !== false);
+  const hasAutomationTargets = Boolean(validOutput && buildAutomationTargets(site).length);
+  const hasExportTargets = Boolean(validOutput && buildAutomationTargets(site, true).length);
+  [elements.exportVisibleCsvBtn, elements.exportVisibleXlsxBtn].forEach(button => {
+    if (button) button.disabled = sitesLoadPending || !hasAutomationTargets;
+  });
+  [elements.exportFullCsvBtn, elements.exportFullXlsxBtn].forEach(button => {
     if (button) button.disabled = sitesLoadPending || !hasExportTargets;
   });
   if (elements.runAutomationForSiteBtn) {
-    elements.runAutomationForSiteBtn.disabled = sitesLoadPending || menuRunBusy || automationSubmissionPending || !hasAutomationTargets;
+    elements.runAutomationForSiteBtn.disabled = controlsBusy || !hasAutomationTargets;
   }
+  const hasTree = Boolean(site?.tree?.length);
+  [elements.treeSearch, elements.expandAllBtn, elements.collapseAllBtn].forEach(control => {
+    if (control) control.disabled = sitesLoadPending || !hasTree;
+  });
+  if (elements.resetHiddenBtn) elements.resetHiddenBtn.disabled = sitesLoadPending || !site || hiddenCount(site.slug) === 0;
+  document.querySelectorAll('[data-detail-action]').forEach(card => {
+    const action = card.dataset.detailAction;
+    const actionable = site && (
+      (action === 'missing' && (activeTreeFilter === 'missing' || treeHasMissingUrls(site)) && hasTree)
+      || (action === 'duplicates' && site.duplicate_rows > 0 && site.files?.['duplicate_urls.csv'])
+      || (action === 'errors' && (site.error_count > 0 || site.parse_error || site.errors?.length) && !menuRunBusy)
+    );
+    card.disabled = sitesLoadPending || !actionable;
+  });
+  document.querySelectorAll('[data-summary-action]').forEach(card => {
+    const action = card.dataset.summaryAction;
+    card.disabled = sitesLoadPending || (action === 'sites' ? !sites.length
+      : action === 'issues' ? !sites.some(item => item.error_count > 0 || item.missing_urls > 0 || item.parse_error || treeHasMissingUrls(item))
+      : true);
+  });
 }
 
 function statusFor(site) {
@@ -589,19 +662,18 @@ function renderCards() {
         </div>
       </article>
     `;
-  }).join('');
+  }).join('') || '<div class="site-list-state">No websites are available.</div>';
 
   elements.siteCards.querySelectorAll('.site-card').forEach(card => {
     card.addEventListener('click', event => {
       if (event.target.closest('.site-card__checks')) return;
-      selectedSite = card.dataset.site;
-      render();
+      selectSite(card.dataset.site);
     });
     card.addEventListener('keydown', event => {
       if (event.target.closest('.site-card__checks') || !['Enter', ' '].includes(event.key)) return;
       event.preventDefault();
-      selectedSite = card.dataset.site;
-      render();
+      selectSite(card.dataset.site);
+      [...elements.siteCards.querySelectorAll('.site-card')].find(item => item.dataset.site === selectedSite)?.focus({ preventScroll: true });
     });
   });
   elements.siteCards.querySelectorAll('.site-select').forEach(input => {
@@ -613,13 +685,36 @@ function renderCards() {
   });
 }
 
+function selectSite(slug) {
+  captureTreeOpenState(selectedSite);
+  if (selectedSite !== slug) {
+    activeTreeFilter = 'all';
+    elements.treeSearch.value = '';
+    treeVisibleLimit = 20;
+    if (jobPanelMode === 'site-errors') clearSiteErrorPanel();
+  }
+  selectedSite = slug;
+  render();
+}
+
+function clearSiteErrorPanel() {
+  jobPanelMode = 'idle';
+  if (activeJobId && ['queued', 'running'].includes(activeJobStatus)) {
+    elements.jobPanel.className = 'job-panel-empty';
+    elements.jobPanel.textContent = 'Menu scraper job is still running.';
+    elements.jobPanel.setAttribute('aria-busy', 'true');
+    return;
+  }
+  renderJob(null);
+}
+
 function renderOverall() {
   const totals = sites.reduce((acc, site) => {
     const summary = visibleSummary(site);
     acc.parents += summary.parents || 0;
     acc.subs += summary.sub_children || 0;
     acc.children += summary.children || 0;
-    acc.issues += (site.error_count || 0) + (site.missing_urls || 0);
+    acc.issues += (site.error_count || 0) + (site.missing_urls || 0) + (site.parse_error ? 1 : 0);
     return acc;
   }, { parents: 0, subs: 0, children: 0, issues: 0 });
   elements.statSites.textContent = formatNumber(sites.length);
@@ -631,7 +726,24 @@ function renderOverall() {
 
 function renderDetail() {
   const site = sites.find(item => item.slug === selectedSite) || sites[0];
-  if (!site) return;
+  if (!site) {
+    selectedSite = '';
+    elements.siteTitle.textContent = 'Select a website';
+    elements.siteSubtitle.textContent = 'No websites are available. Refresh outputs to try again.';
+    elements.siteBadges.innerHTML = '';
+    elements.siteBehavior.textContent = '';
+    [elements.detailParents, elements.detailSubs, elements.detailChildren, elements.detailMissing, elements.detailDuplicates, elements.detailErrors].forEach(element => { element.textContent = '0'; });
+    elements.fileStrip.innerHTML = '';
+    if (elements.automationTargetSummary) elements.automationTargetSummary.textContent = 'Select a website with output to start a scrape.';
+    if (elements.exportTargetSummary) elements.exportTargetSummary.textContent = 'Select a website with output to export links.';
+    elements.treeSummary.textContent = 'No hierarchy loaded.';
+    elements.treeContainer.className = 'menu-tree-empty';
+    elements.treeContainer.textContent = 'No websites are available.';
+    if (elements.hiddenSummary) elements.hiddenSummary.textContent = '';
+    lazyTreeChildren = new Map();
+    updateRunControls();
+    return;
+  }
   selectedSite = site.slug;
   const status = statusFor(site);
   const summary = visibleSummary(site);
@@ -647,7 +759,7 @@ function renderDetail() {
   elements.detailChildren.textContent = formatNumber(summary.children);
   elements.detailMissing.textContent = formatNumber(site.missing_urls);
   elements.detailDuplicates.textContent = formatNumber(site.duplicate_rows);
-  elements.detailErrors.textContent = formatNumber(site.error_count);
+  elements.detailErrors.textContent = formatNumber((site.error_count || 0) + (site.parse_error ? 1 : 0));
   document.querySelectorAll('[data-detail-action]').forEach(card => {
     const action = card.dataset.detailAction;
     const summaryOnly = ['parents', 'subs', 'children'].includes(action);
@@ -662,27 +774,29 @@ function renderDetail() {
     card.classList.remove('active');
     card.removeAttribute('aria-pressed');
   });
-  const automationTargets = buildAutomationTargets(site);
+  const validOutput = Boolean(site.has_output && !site.parse_error && site.output_valid !== false);
+  const automationTargets = validOutput ? buildAutomationTargets(site) : [];
   if (elements.automationTargetSummary) {
     const hidden = hiddenCount(site.slug);
-    elements.automationTargetSummary.textContent = site.has_output
-      ? `${formatNumber(automationTargets.length)} visible target URL${automationTargets.length === 1 ? '' : 's'} will be saved and queued. ${hidden ? `${formatNumber(hidden)} hidden item${hidden === 1 ? ' is' : 's are'} excluded.` : 'Nothing is hidden.'}`
-      : 'Run this scraper first so Menu Map has category targets for automation.';
+    elements.automationTargetSummary.textContent = validOutput
+      ? `${formatNumber(automationTargets.length)} visible link${automationTargets.length === 1 ? '' : 's'} ready to scrape.${hidden ? ` ${formatNumber(hidden)} hidden.` : ''}`
+      : 'Run this scraper first to create category links.';
   }
   if (elements.exportTargetSummary) {
     const fullTargets = buildAutomationTargets(site, true);
-    elements.exportTargetSummary.textContent = site.has_output
-      ? `${formatNumber(automationTargets.length)} visible link${automationTargets.length === 1 ? '' : 's'} or ${formatNumber(fullTargets.length)} full link${fullTargets.length === 1 ? '' : 's'} can be exported.`
-      : 'Run this scraper first to create exportable menu links.';
+    elements.exportTargetSummary.textContent = validOutput
+      ? `${formatNumber(automationTargets.length)} visible / ${formatNumber(fullTargets.length)} total links.`
+      : 'Run this scraper first to create menu links.';
   }
   renderFiles(site);
   renderTree(site);
+  updateRunControls();
 }
 
 function renderFiles(site) {
   const files = Object.values(site.files || {});
   if (!files.length) {
-    elements.fileStrip.innerHTML = '<span class="section-subtitle">No output files yet. Run this scraper to create them.</span>';
+    elements.fileStrip.innerHTML = '<span class="section-subtitle">No output files yet.</span>';
     return;
   }
   const groups = new Map();
@@ -705,15 +819,37 @@ function textMatches(text, query) {
   return !query || String(text || '').toLowerCase().includes(query);
 }
 
+function renderTreeChild(child, parent, sub) {
+  const childUrl = String(child.child_url || '').trim();
+  const content = `<span>${escapeHtml(child.child_name)}</span><span class="tree-child__order">#${escapeHtml(child.display_order || '')}</span>`;
+  const link = isUsableUrl(childUrl)
+    ? `<a class="tree-child__link" href="${escapeHtml(childUrl)}" target="_blank" rel="noreferrer">${content}</a>`
+    : `<span class="tree-child__link" aria-disabled="true" title="No usable URL was recorded">${content}</span>`;
+  return `
+    <div class="tree-child">
+      ${link}
+      <button class="tree-remove-btn tree-remove-btn--child" type="button" data-hide-key="${escapeHtml(childKey(parent, sub, child))}" data-hide-label="${escapeHtml(`${parent.parent_name} > ${sub.sub_child_name} > ${child.child_name}`)}" title="Hide child category" aria-label="Hide child category ${escapeHtml(child.child_name)}">X</button>
+    </div>
+  `;
+}
+
 function renderTree(site) {
   const tree = Array.isArray(site.tree) ? site.tree : [];
   const slug = site.slug;
   const query = (elements.treeSearch.value || '').trim().toLowerCase();
   if (!tree.length) {
-    elements.treeSummary.textContent = 'No hierarchy loaded yet.';
+    const stateMessage = site.parse_error
+      ? 'Menu-map output could not be read. Open Errors for details or run the scraper again.'
+      : site.output_empty
+        ? 'The scraper returned valid output, but no categories were found.'
+        : site.has_output
+          ? 'No categories were found in the current output.'
+          : 'Run this scraper or refresh outputs to load the category tree.';
+    elements.treeSummary.textContent = stateMessage;
     if (elements.hiddenSummary) elements.hiddenSummary.textContent = '';
     elements.treeContainer.className = 'menu-tree-empty';
-    elements.treeContainer.textContent = 'Run this scraper or refresh outputs to load the category tree.';
+    elements.treeContainer.textContent = stateMessage;
+    lazyTreeChildren = new Map();
     return;
   }
 
@@ -733,6 +869,7 @@ function renderTree(site) {
     const pKey = parentKey(parent);
     if (isExcluded(slug, pKey)) return '';
     const subs = Array.isArray(parent.sub_children) ? parent.sub_children : [];
+    let parentVisibleSubs = 0;
     const renderedSubs = subs.map(sub => {
       const sKey = subKey(parent, sub);
       if (isExcluded(slug, sKey)) return '';
@@ -747,7 +884,8 @@ function renderTree(site) {
       const subIsMissing = !isUsableUrl(sub.sub_child_url);
       if (activeTreeFilter === 'missing' && !subIsMissing && !filteredChildren.length) return '';
       if (query && !filteredChildren.length && !textMatches(subBlob, query)) return '';
-      visibleSubs += 1;
+       visibleSubs += 1;
+       parentVisibleSubs += 1;
       visibleChildren += filteredChildren.length;
       lazyTreeChildren.set(sKey, { children: filteredChildren, parent, sub });
       const lazyChildren = !query && activeTreeFilter === 'all';
@@ -763,15 +901,7 @@ function renderTree(site) {
             </div>
           </summary>
           <div class="tree-child-list" data-lazy-children="${lazyChildren ? 'true' : 'false'}">
-            ${lazyChildren ? '' : filteredChildren.map(child => `
-              <div class="tree-child">
-                <a class="tree-child__link" href="${escapeHtml(child.child_url || '#')}" target="_blank" rel="noreferrer">
-                  <span>${escapeHtml(child.child_name)}</span>
-                  <span class="tree-child__order">#${escapeHtml(child.display_order || '')}</span>
-                </a>
-                <button class="tree-remove-btn tree-remove-btn--child" type="button" data-hide-key="${escapeHtml(childKey(parent, sub, child))}" data-hide-label="${escapeHtml(`${parent.parent_name} > ${sub.sub_child_name} > ${child.child_name}`)}" title="Hide child category" aria-label="Hide child category ${escapeHtml(`${parent.parent_name} > ${sub.sub_child_name} > ${child.child_name}`)}">X</button>
-              </div>
-            `).join('') || (lazyChildren ? '' : '<div class="section-subtitle">No matching child links.</div>')}
+            ${lazyChildren ? '' : filteredChildren.map(child => renderTreeChild(child, parent, sub)).join('') || '<div class="section-subtitle">No matching child links.</div>'}
           </div>
         </details>
       `;
@@ -787,7 +917,7 @@ function renderTree(site) {
           <div class="tree-parent__head">
             <span class="tree-parent__name">${escapeHtml(parent.parent_name)}</span>
             <span class="tree-node-actions">
-              <span class="tree-parent__meta">${formatNumber(subs.length)} sub groups</span>
+              <span class="tree-parent__meta">${formatNumber(parentVisibleSubs)} sub groups</span>
               <button class="tree-remove-btn" type="button" data-hide-key="${escapeHtml(pKey)}" data-hide-label="${escapeHtml(parent.parent_name)}" title="Hide parent category" aria-label="Hide parent category ${escapeHtml(parent.parent_name)}">X</button>
             </span>
           </div>
@@ -811,15 +941,7 @@ function renderTree(site) {
       if (!list) return;
       const entry = lazyTreeChildren.get(detail.dataset.treeKey) || {};
       const children = entry.children || [];
-      list.innerHTML = children.map(child => `
-        <div class="tree-child">
-          <a class="tree-child__link" href="${escapeHtml(child.child_url || '#')}" target="_blank" rel="noreferrer">
-            <span>${escapeHtml(child.child_name)}</span>
-            <span class="tree-child__order">#${escapeHtml(child.display_order || '')}</span>
-          </a>
-          <button class="tree-remove-btn tree-remove-btn--child" type="button" data-hide-key="${escapeHtml(childKey(entry.parent, entry.sub, child))}" data-hide-label="${escapeHtml(`${entry.parent.parent_name} > ${entry.sub.sub_child_name} > ${child.child_name}`)}" title="Hide child category" aria-label="Hide child category ${escapeHtml(child.child_name)}">X</button>
-        </div>
-      `).join('') || '<div class="section-subtitle">No matching child links.</div>';
+      list.innerHTML = children.map(child => renderTreeChild(child, entry.parent, entry.sub)).join('') || '<div class="section-subtitle">No matching child links.</div>';
       list.querySelectorAll('.tree-remove-btn').forEach(button => {
         button.addEventListener('click', event => {
           event.preventDefault();
@@ -851,10 +973,9 @@ function focusElement(element) {
 
 function setTreeFilter(filter) {
   const site = sites.find(item => item.slug === selectedSite);
-  // Avoid leaving the hierarchy viewer blank when a site has no missing URLs.
-  // The counts can still be populated, which otherwise makes the empty view
-  // look like the menu failed to load.
-  activeTreeFilter = filter === 'missing' && !(site?.missing_urls > 0) ? 'all' : filter;
+  // Avoid leaving the hierarchy viewer blank when the current tree has no
+  // missing nodes, even if an older CSV report still contains missing rows.
+  activeTreeFilter = filter === 'missing' && !treeHasMissingUrls(site) ? 'all' : filter;
   elements.treeSearch.value = '';
   renderDetail();
   focusElement(elements.treeContainer.closest('.menu-map-panel'));
@@ -865,7 +986,10 @@ function showSiteErrors(site) {
   completedJobClearTimer = null;
   jobPanelMode = 'site-errors';
   elements.jobPanel.setAttribute('aria-busy', 'false');
-  const errors = Array.isArray(site.errors) ? site.errors : [];
+  const errors = Array.isArray(site.errors) ? site.errors.slice() : [];
+  if (site.parse_error) {
+    errors.unshift({ failed_action: 'Menu-map output', error_type: 'OutputParseError', error_message: site.parse_error });
+  }
   elements.jobPanel.className = errors.length ? 'job-event-list' : 'job-panel-empty';
   elements.jobPanel.innerHTML = errors.length
     ? errors.map(error => `
@@ -904,15 +1028,15 @@ function handleSummaryAction(action) {
     return;
   }
   if (action === 'issues') {
-    const issueSite = sites.find(site => (site.error_count || 0) + (site.missing_urls || 0) > 0);
+    const issueSite = sites.find(site => (site.error_count || 0) + (site.missing_urls || 0) > 0 || site.parse_error || treeHasMissingUrls(site));
     if (!issueSite) {
       showAlert('success', 'No menu-map issues were found.');
       return;
     }
-    selectedSite = issueSite.slug;
-    render();
-    if (issueSite.error_count) showSiteErrors(issueSite);
-    else setTreeFilter('missing');
+    selectSite(issueSite.slug);
+    if (issueSite.error_count || issueSite.parse_error) showSiteErrors(issueSite);
+    else if (treeHasMissingUrls(issueSite)) setTreeFilter('missing');
+    else showAlert('info', `${formatNumber(issueSite.missing_urls)} missing URL${issueSite.missing_urls === 1 ? '' : 's'} are recorded in the scraper output, but no matching hierarchy node is available to display.`);
     return;
   }
 }
@@ -1013,6 +1137,17 @@ function renderTreeSkeleton() {
 }
 
 async function loadSites() {
+  if (sitesLoadPromise) return sitesLoadPromise;
+  sitesLoadPromise = loadSitesInternal();
+  try {
+    return await sitesLoadPromise;
+  } finally {
+    sitesLoadPromise = null;
+  }
+}
+
+async function loadSitesInternal() {
+  const loadToken = ++sitesLoadToken;
   const hadSites = sites.length > 0;
   sitesLoadPending = true;
   elements.siteCards.setAttribute('aria-busy', 'true');
@@ -1024,7 +1159,8 @@ async function loadSites() {
 
   try {
     const data = await fetchJson('/api/menu-map/sites?include_tree=1');
-    sites = data.sites || [];
+    if (loadToken !== sitesLoadToken) return;
+    sites = Array.isArray(data.sites) ? data.sites.map(normalizeSite).filter(site => site?.slug) : [];
     syncRunSelection();
     if (!selectedSite && sites.length) selectedSite = sites[0].slug;
 
@@ -1054,21 +1190,30 @@ async function loadSites() {
       renderJob(null);
     }
   } catch (error) {
-    if (!hadSites) {
+    if (!hadSites && loadToken === sitesLoadToken) {
+      sites = [];
+      selectedSite = '';
+      renderCards();
+      renderDetail();
       elements.siteCards.innerHTML = `
         <div class="site-list-state site-list-state--error" role="alert">
           <span>Websites could not be loaded.</span>
           <button type="button" class="btn-export" data-retry-sites>Retry</button>
         </div>`;
+      elements.treeSummary.textContent = 'Websites could not be loaded.';
+      elements.treeContainer.className = 'menu-tree-empty';
+      elements.treeContainer.textContent = 'Websites could not be loaded. Use Retry to try again.';
       elements.siteCards.querySelector('[data-retry-sites]')?.addEventListener('click', () => {
         loadSites().catch(err => showAlert('error', err.message));
       });
     }
     throw error;
   } finally {
-    sitesLoadPending = false;
-    elements.siteCards.setAttribute('aria-busy', 'false');
-    updateRunControls();
+    if (loadToken === sitesLoadToken) {
+      sitesLoadPending = false;
+      elements.siteCards.setAttribute('aria-busy', 'false');
+      updateRunControls();
+    }
   }
 }
 
@@ -1077,7 +1222,8 @@ async function startRun(siteList) {
     showAlert('info', 'A menu scraper job is already being submitted or is still active.');
     return;
   }
-  if (!siteList.length) {
+  const uniqueSiteList = [...new Set(siteList)].filter(slug => sites.some(site => site.slug === slug));
+  if (!uniqueSiteList.length) {
     showAlert('warn', 'Select at least one website.');
     return;
   }
@@ -1087,18 +1233,29 @@ async function startRun(siteList) {
     const data = await fetchJson('/api/menu-map/run', {
       method: 'POST',
       body: JSON.stringify({
-        sites: siteList,
-        visible: Boolean(elements.visibleMode.checked),
+        sites: uniqueSiteList,
+        visible: Boolean(elements.visibleMode?.checked),
         validate_urls: Boolean(elements.validateUrls.checked),
         inspect_only: Boolean(elements.inspectOnly.checked),
       }),
     });
     window.clearTimeout(completedJobClearTimer);
     completedJobClearTimer = null;
+    if (!data.job?.id) throw new Error('Menu scraper job was not returned by the server.');
     activeJobId = data.job.id;
     renderJob(data.job);
     showAlert('info', 'Menu scraper job started. This can take a few minutes.');
     beginPolling();
+  } catch (error) {
+    if (error.status === 409 && error.job?.id) {
+      activeJobId = error.job.id;
+      activeJobStatus = error.job.status || 'running';
+      renderJob(error.job);
+      beginPolling();
+      showAlert('info', 'A selected website already has an active menu scraper job. Showing its progress.');
+      return;
+    }
+    throw error;
   } finally {
     runSubmissionPending = false;
     updateRunControls();
@@ -1110,7 +1267,7 @@ async function clearAndRunSelected() {
     showAlert('info', 'A menu scraper job is already active.');
     return;
   }
-  const siteList = selectedSites();
+  const siteList = [...new Set(selectedSites())];
   if (!siteList.length) {
     showAlert('warn', 'Select at least one website.');
     return;
@@ -1142,6 +1299,16 @@ async function clearAndRunSelected() {
     saveTreeOpenState();
     await loadSites();
     showAlert('success', `Cleared old menu-map output for ${formatNumber(data.cleared_count || 0)} selected site${Number(data.cleared_count || 0) === 1 ? '' : 's'}. Starting fresh scrape.`);
+  } catch (error) {
+    if (error.status === 409 && error.job?.id) {
+      activeJobId = error.job.id;
+      activeJobStatus = error.job.status || 'running';
+      renderJob(error.job);
+      beginPolling();
+      showAlert('info', 'A selected website already has an active menu scraper job. Showing its progress.');
+      return;
+    }
+    throw error;
   } finally {
     runSubmissionPending = false;
     updateRunControls();
@@ -1246,6 +1413,7 @@ async function pollJob() {
   try {
     const data = await fetchJson(`/api/menu-map/jobs/${encodeURIComponent(polledJobId)}`);
     if (activeJobId !== polledJobId) return;
+    if (!data.job) throw new Error('Menu scraper status was empty.');
     renderJob(data.job);
     if (!['queued', 'running'].includes(data.job.status)) {
       stopPolling();
@@ -1256,6 +1424,16 @@ async function pollJob() {
         renderJob(null);
       }
     }
+  } catch (error) {
+    if (error.status === 404 && activeJobId === polledJobId) {
+      stopPolling();
+      activeJobId = '';
+      activeJobStatus = '';
+      renderJob(null);
+      showAlert('error', 'The menu scraper job is no longer available. Refresh outputs to check the latest files.');
+      return;
+    }
+    throw error;
   } finally {
     pollRequestPending = false;
   }

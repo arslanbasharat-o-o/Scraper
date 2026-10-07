@@ -92,6 +92,18 @@ def test_menu_map_automation_names_are_category_scoped_not_date_stamped():
     assert "elements.historyContainer.innerHTML = Array.from({ length: 5 })" in history_script
 
 
+def test_menu_map_state_controls_do_not_advertise_unavailable_actions():
+    script = (ROOT / "static" / "js" / "menu-map.js").read_text(encoding="utf-8")
+
+    assert "elements.visibleMode.checked = false;" in script
+    assert "const validOutput = Boolean(site?.has_output && !site.parse_error && site.output_valid !== false);" in script
+    assert "treeHasMissingUrls(site)" in script
+    assert "No websites are available." in script
+    assert "Menu-map output could not be read." in script
+    assert "const link = isUsableUrl(childUrl)" in script
+    assert "if (sitesLoadPromise) return sitesLoadPromise;" in script
+
+
 def test_automation_live_runs_keep_visible_progress_through_finalizing():
     automation_script = (ROOT / "static" / "js" / "automation.js").read_text(encoding="utf-8")
     automation_styles = (ROOT / "static" / "css" / "automation.css").read_text(encoding="utf-8")

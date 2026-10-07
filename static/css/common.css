@@ -568,23 +568,35 @@ body {
 .btn-run {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: .5rem;
   background: var(--primary);
   color: #fff;
   border: none;
   border-radius: var(--r);
   padding: .6rem 1.4rem;
+  min-height: 36px;
   font-size: .85rem;
   font-weight: 700;
+  font-family: inherit;
+  line-height: 1.2;
   cursor: pointer;
   transition: all var(--transition);
   box-shadow: 0 4px 16px var(--primary-glow);
+}
+
+.btn-run:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px var(--primary-glow);
 }
 
 .btn-run:focus-visible:not(:disabled) {
   background: var(--primary-hover);
   transform: translateY(-2px);
   box-shadow: 0 10px 24px var(--primary-glow);
+  outline: 2px solid var(--primary-2);
+  outline-offset: 2px;
 }
 
 .btn-run:active:not(:disabled) {
@@ -1147,15 +1159,28 @@ select.field-input {
 }
 
 .btn-export {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text-2);
   border-radius: var(--r-sm);
   padding: .4rem .85rem;
+  min-height: 36px;
   font-size: .78rem;
   font-weight: 700;
+  font-family: inherit;
+  line-height: 1.2;
   cursor: pointer;
   transition: all var(--transition);
+}
+
+.btn-export:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--surface-3);
+  color: var(--text);
+  transform: translateY(-1px);
 }
 
 .btn-export:focus-visible:not(:disabled) {
@@ -1163,6 +1188,8 @@ select.field-input {
   color: var(--primary);
   transform: translateY(-1px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, .18);
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .btn-export:active:not(:disabled) {

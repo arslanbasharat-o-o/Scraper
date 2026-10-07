@@ -15,10 +15,41 @@
   flex-wrap: wrap;
 }
 
+.menu-map-actions {
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.menu-map-actions > button,
+.menu-export-strip__actions > button,
+.automation-launch-strip > .btn-run,
+.menu-map-toolbar .toolbar-right > button {
+  min-height: 36px;
+  padding: .5rem .85rem;
+  line-height: 1.2;
+}
+
+.menu-map-actions > button,
+.menu-export-strip__actions > button {
+  white-space: nowrap;
+}
+
 .menu-map-options {
   margin-top: 1rem;
   padding-top: .85rem;
   border-top: 1px solid var(--border);
+  column-gap: .9rem;
+  row-gap: .55rem;
+}
+
+.menu-map-options .toggle-field:has(input:disabled),
+.menu-map-options .toggle-cb:disabled {
+  cursor: default;
+}
+
+.menu-map-options .toggle-cb:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .menu-map-stats,
@@ -31,10 +62,15 @@
 
 .menu-stat,
 .detail-stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   width: 100%;
+  min-height: 68px;
   color: inherit;
   text-align: left;
   font: inherit;
+  line-height: 1.2;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r);
@@ -43,7 +79,7 @@
   transition: border-color var(--transition), background var(--transition), transform var(--transition);
 }
 
-.menu-map-stats--global .menu-stat {
+.menu-map-stats--global .menu-stat:not(:disabled) {
   background: color-mix(in srgb, var(--primary) 9%, var(--surface-2));
   border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
 }
@@ -62,22 +98,28 @@
 
 .menu-stat:focus-visible,
 .detail-stat:focus-visible,
-.menu-stat:focus-visible,
-.detail-stat:focus-visible,
 .menu-stat.active,
 .detail-stat.active {
   border-color: var(--primary);
   background: var(--surface-3);
   transform: translateY(-1px);
-  outline: none;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.menu-stat:hover:not(:disabled),
+.detail-stat:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--surface-3);
+  transform: translateY(-1px);
 }
 
 .menu-stat:disabled,
 .detail-stat:disabled,
 .menu-stat:disabled:hover,
 .detail-stat:disabled:hover {
-  border-color: var(--border);
-  background: var(--surface-2);
+  border-color: transparent;
+  background: transparent;
   transform: none;
   opacity: 1;
   cursor: default;
@@ -150,6 +192,11 @@
   border-color: var(--primary);
   background: var(--surface-3);
   outline: none;
+}
+
+.site-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .site-card__top {
@@ -246,6 +293,16 @@
   align-items: flex-start;
 }
 
+.menu-map-detail-head > :first-child,
+.menu-map-toolbar > :first-child {
+  min-width: 0;
+}
+
+.menu-map-badges {
+  justify-content: flex-end;
+  min-width: 0;
+}
+
 .behavior-note {
   margin-top: .85rem;
   background: var(--surface-2);
@@ -307,15 +364,29 @@
   background: rgba(240, 107, 107, .12);
 }
 
+.menu-map-actions .btn-danger-soft:hover:not(:disabled),
+.menu-map-actions .btn-danger-soft:focus-visible:not(:disabled) {
+  border-color: rgba(240, 107, 107, .75);
+  background: rgba(240, 107, 107, .12);
+  color: var(--danger);
+}
+
 .menu-export-strip,
 .automation-launch-strip {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: .85rem;
+  flex-wrap: wrap;
   margin-top: 1rem;
   padding-top: .9rem;
   border-top: 1px solid var(--border);
+}
+
+.menu-export-strip > :first-child,
+.automation-launch-strip > :first-child {
+  min-width: 0;
+  flex: 1 1 240px;
 }
 
 .menu-export-strip__title,
@@ -412,6 +483,7 @@
   justify-content: flex-start;
   align-items: center;
   gap: .75rem;
+  flex-wrap: wrap;
   padding: .75rem .85rem .75rem 2rem;
 }
 
@@ -441,13 +513,21 @@
   flex-shrink: 0;
 }
 
-.tree-remove-btn:focus-visible {
+.tree-remove-btn:hover:not(:disabled),
+.tree-remove-btn:focus-visible:not(:disabled) {
   border-color: rgba(240, 107, 107, .8);
   background: rgba(240, 107, 107, .18);
 }
 
+.tree-remove-btn:focus-visible:not(:disabled) {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+}
+
 .tree-parent__name,
 .tree-sub__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--text);
   font-weight: 800;
   text-transform: lowercase;
@@ -465,6 +545,9 @@
 
 .tree-parent__meta,
 .tree-sub__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text-3);
   font-size: .74rem;
   white-space: nowrap;
@@ -644,6 +727,7 @@
   .toolbar-right,
   .menu-map-actions {
     width: 100%;
+    justify-content: flex-start;
   }
 
   .toolbar-right .search-input {
@@ -652,6 +736,12 @@
 }
 
 @media (max-width: 600px) {
+  .menu-map-hero,
+  .menu-map-panel,
+  .menu-map-sidebar {
+    padding: .85rem;
+  }
+
   .menu-map-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -669,8 +759,41 @@
     align-items: center;
     justify-content: center;
     text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
     border-radius: var(--r-sm);
     box-sizing: border-box;
+  }
+
+  .menu-export-strip,
+  .automation-launch-strip {
+    align-items: flex-start;
+  }
+
+  .menu-export-strip__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .menu-export-strip__actions > button {
+    flex: 1 1 9rem;
+    white-space: normal;
+  }
+
+  .automation-launch-strip > .btn-run {
+    width: 100%;
+  }
+
+  .tree-parent__head,
+  .tree-sub__head {
+    padding: .65rem .7rem .65rem 1.85rem;
+  }
+
+  .tree-parent__head .tree-node-actions,
+  .tree-sub__head .tree-node-actions {
+    width: 100%;
+    justify-content: flex-end;
+    margin-left: 0;
   }
 }
 
@@ -690,6 +813,12 @@
     font-size: .73rem;
     padding: .4rem .35rem;
     min-height: 38px;
+  }
+
+  .menu-stat,
+  .detail-stat {
+    min-height: 64px;
+    padding: .65rem .7rem;
   }
 }
 
@@ -716,11 +845,17 @@
   z-index: 1000;
 }
 
+.scroll-top-btn:hover,
 .scroll-top-btn:focus-visible {
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);
   transform: translateY(-3px);
+}
+
+.scroll-top-btn:focus-visible {
+  outline: 2px solid var(--primary-2);
+  outline-offset: 2px;
 }
 
 .scroll-top-btn.visible {
@@ -730,6 +865,6 @@
 
 /* Keep the page's core surfaces and controls on shared geometry. */
 .page-shell .cy-card { border-radius: 12px; }
-.page-shell button:not(.tree-remove-btn):not(.scroll-top-btn),
+.page-shell button:not(.tree-remove-btn):not(.scroll-top-btn):not(.menu-stat):not(.detail-stat),
 .page-shell input:not([type="checkbox"]):not([type="radio"]),
 .page-shell select { border-radius: 8px; }

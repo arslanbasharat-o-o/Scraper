@@ -123,6 +123,8 @@ MOBILESENTRIX_JS = """
 }
 """
 
+CONFIG.scrapling_menu_js = MOBILESENTRIX_JS
+
 
 async def extract(page, config, args, output_dir, logger):
     count = await page.locator(config.parent_item_selector).count()

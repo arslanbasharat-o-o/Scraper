@@ -31,7 +31,7 @@ from scrapers.botasaurus_wrapper import (
     remove_chrome_run_profile,
     resolve_chrome_executable,
 )
-from scrapers.browser_fetcher import MOBILESENTRIX_CANADA_POPUP_DISMISS_JS
+from scrapers.browser_fetcher import MOBILESENTRIX_CANADA_POPUP_DISMISS_JS, _local_browser_slot
 
 
 TRACKING_PARAMS = {
@@ -75,6 +75,7 @@ class SiteConfig:
     sub_child_activation_method: str = "dom-inspection"
     http_fallback_extractor: Any = None
     prefer_http_fallback: bool = False
+    scrapling_menu_js: str = ""
 
 
 @dataclass(slots=True)
@@ -1072,6 +1073,35 @@ async def run_site(
         page.set_default_timeout(args.timeout)
         result.browser_version = driver.user_agent or "Botasaurus Chromium"
 
+        async def try_scrapling_fallback(reason: str) -> None:
+            if args.inspect_only or result.records:
+                return
+            specialized_fallback = getattr(config, "http_fallback_extractor", None)
+            if specialized_fallback and not config.prefer_http_fallback:
+                try:
+                    logger.warning("%s; trying the supplier-specific fallback", reason)
+                    result.records = await asyncio.to_thread(specialized_fallback, config, output_dir, logger)
+                except Exception as exc:
+                    logger.warning("Supplier-specific fallback failed: %s", exc)
+            if result.records:
+                return
+            if str(os.getenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")).strip().lower() in {"0", "false", "no", "off"}:
+                logger.info("Scrapling Menu Map fallback disabled by SCRAPER_LOCAL_BROWSER_FALLBACK")
+                return
+            if str(os.getenv("SCRAPER_SCRAPLING_ENABLED", "1")).strip().lower() in {"0", "false", "no", "off"}:
+                logger.info("Scrapling Menu Map fallback disabled by SCRAPER_SCRAPLING_ENABLED")
+                return
+            try:
+                logger.warning("%s; trying Scrapling stealth with Cloudflare solving", reason)
+                result.records = await asyncio.to_thread(
+                    scrapling_menu_fallback,
+                    config,
+                    logger,
+                    args.interaction_delay,
+                )
+            except Exception as exc:
+                logger.warning("Scrapling Menu Map fallback failed: %s", exc)
+
         async def _extract() -> None:
             try:
                 logger.info("Opening %s with Botasaurus", config.website_url)
@@ -1127,22 +1157,14 @@ async def run_site(
                 is_challenge = any(marker in current_title.lower() for marker in ("just a moment", "cloudflare", "attention required"))
 
                 if not result.inspection or is_challenge:
-                    fallback_fn = getattr(config, "http_fallback_extractor", None)
-                    if fallback_fn and not args.inspect_only:
-                        logger.warning("Browser hit verification page or empty DOM; activating HTTP menu fallback...")
-                        result.records = await asyncio.to_thread(fallback_fn, config, output_dir, logger)
+                    await try_scrapling_fallback("Browser hit a verification page or empty DOM")
                     if not result.records:
                         raise RuntimeError("Site returned an access verification page or no menu DOM was available.")
                 elif not args.inspect_only:
                     result.records = await adaptively_extract_menu(page, config, args, output_dir, logger, extractor)
             except Exception as exc:
-                fallback_fn = getattr(config, "http_fallback_extractor", None)
-                if fallback_fn and not args.inspect_only and not result.records:
-                    try:
-                        logger.warning("Browser extraction failed (%s); activating HTTP menu fallback...", exc)
-                        result.records = await asyncio.to_thread(fallback_fn, config, output_dir, logger)
-                    except Exception as fb_exc:
-                        logger.exception("HTTP fallback also failed: %s", fb_exc)
+                if not result.records:
+                    await try_scrapling_fallback(f"Browser extraction failed ({exc})")
                 if not result.records:
                     await record_error(result.errors, page, output_dir, config.website, "site_scrape", exc)
                     logger.exception("Site scrape failed")
@@ -1274,4 +1296,83 @@ def records_from_hierarchy(config: SiteConfig, hierarchy: list[dict[str, Any]]) 
                 continue
             for child in children:
                 records.append(make_record(config, parent, sub, child, hierarchy_level=3, scraped_at=stamp))
+    return records
+
+
+def scrapling_menu_fallback(
+    config: SiteConfig,
+    logger: logging.Logger,
+    interaction_delay_ms: int = 600,
+) -> list[CategoryRecord]:
+    """Retry a failed menu page in Scrapling's stealth browser, then extract its live DOM."""
+    from scrapling.fetchers import StealthyFetcher
+
+    hierarchy_result: dict[str, Any] = {}
+
+    def interact_and_extract(page) -> None:
+        try:
+            count = page.locator(config.parent_item_selector).count() if config.parent_item_selector else 0
+        except Exception:
+            count = 0
+        for index in range(count):
+            try:
+                item = page.locator(config.parent_item_selector).nth(index)
+                if config.parent_open_method in {"hover", "hover-and-click"}:
+                    item.hover(timeout=5000)
+                    page.wait_for_timeout(min(max(interaction_delay_ms, 0), 1000))
+                if config.parent_open_method != "hover":
+                    item.click(force=True, timeout=5000)
+                    page.wait_for_timeout(min(max(interaction_delay_ms, 0), 1000))
+            except Exception as exc:
+                logger.debug("Scrapling menu interaction failed for parent %d: %s", index, exc)
+
+        script = config.scrapling_menu_js
+        if script:
+            hierarchy_result["hierarchy"] = page.evaluate(script)
+        else:
+            hierarchy_result["hierarchy"] = page.evaluate(SEMANTIC_MENU_JS, config.parent_nav_selector)
+
+    try:
+        timeout_ms = int(os.getenv("SCRAPER_SCRAPLING_STEALTH_TIMEOUT", "60000") or 60000)
+    except (TypeError, ValueError):
+        timeout_ms = 60000
+    timeout_ms = max(60000, min(120000, timeout_ms))
+    solve_cloudflare = str(os.getenv("SCRAPER_SCRAPLING_SOLVE_CLOUDFLARE", "1")).strip().lower() not in {
+        "0", "false", "no", "off",
+    }
+    proxy = (
+        os.getenv("SCRAPER_PROXY_URL")
+        or os.getenv("HTTPS_PROXY")
+        or os.getenv("HTTP_PROXY")
+        or os.getenv("https_proxy")
+        or os.getenv("http_proxy")
+        or ""
+    ).strip()
+    logger.info(
+        "Starting Scrapling stealth Menu Map fallback (Cloudflare solver: %s, timeout: %ss)",
+        solve_cloudflare,
+        timeout_ms // 1000,
+    )
+    fetch_options = {}
+    if proxy:
+        fetch_options["proxy"] = proxy
+    with _local_browser_slot(timeout=timeout_ms / 1000):
+        response = StealthyFetcher.fetch(
+            config.website_url,
+            real_chrome=True,
+            solve_cloudflare=solve_cloudflare,
+            timeout=timeout_ms,
+            wait=500,
+            retries=0,
+            page_action=interact_and_extract,
+            **fetch_options,
+        )
+    hierarchy = hierarchy_result.get("hierarchy")
+    if not isinstance(hierarchy, list) or not hierarchy:
+        title = response.css("title::text").get() or "unknown page"
+        raise RuntimeError(f"Scrapling did not recover the category menu (page title: {title}).")
+    records = records_from_hierarchy(config, hierarchy)
+    if not records:
+        raise RuntimeError("Scrapling found no category links in the live menu DOM.")
+    logger.info("Scrapling recovered %d Menu Map records for %s", len(records), config.website)
     return records

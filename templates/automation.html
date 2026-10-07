@@ -121,15 +121,18 @@
       border-bottom: 1px solid var(--border);
       margin-bottom: 1rem;
     }
-    .inspector-tab {
-      background: none;
-      border: none;
-      padding: .5rem .75rem;
-      color: var(--text-2);
-      font-weight: 600;
-      font-size: .9rem;
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
+     .inspector-tab {
+       background: none;
+       border: none;
+       min-height: 36px;
+       padding: .55rem .85rem;
+       color: var(--text-2);
+       font-weight: 600;
+       font-family: inherit;
+       font-size: .9rem;
+       line-height: 1.2;
+       cursor: pointer;
+       border-bottom: 2px solid transparent;
     }
     .inspector-tab.is-active {
       color: var(--primary);
@@ -215,6 +218,7 @@
               <h2 class="section-title">Schedules & Runs</h2>
             </div>
           </div>
+          <p class="automation-activity-hint">Schedules control future scrapes. Run history preserves each result.</p>
           <div class="automation-activity-stack">
             <div id="automationJobsPanel" class="automation-activity-section">
               <div class="automation-activity-section__head">
@@ -233,7 +237,6 @@
               </div>
             </div>
           </div>
-          <p class="automation-activity-hint">Schedules control future scrapes. Run history preserves each result.</p>
         </section>
       </aside>
 
@@ -316,7 +319,6 @@
           <div class="section-heading mb-3">
             <div>
               <h2 class="section-title">Run Inspector</h2>
-              <p class="section-subtitle">Compare snapshots and review product changes.</p>
             </div>
             <div class="automation-detail-filter">
               <label class="field-label-sm" for="automationModelFilter">Model scope</label>
@@ -347,7 +349,6 @@
             <div class="section-heading mb-3">
               <div>
                 <h2 class="section-title">Product Explorer</h2>
-                <p class="section-subtitle">Current run products and change results.</p>
               </div>
               <div class="automation-product-actions">
                 <button id="automationProductsCsvBtn" class="btn-export" type="button" disabled>CSV</button>

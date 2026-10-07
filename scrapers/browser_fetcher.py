@@ -338,6 +338,11 @@ def browser_fetch_requested() -> bool:
     return bool(_BROWSER_FETCH_DIRECT.get())
 
 
+def browser_fetch_explicitly_disabled() -> bool:
+    """Whether the current scope explicitly opted out of browser fetching."""
+    return _BROWSER_FETCH_ENABLED.get() is False
+
+
 def should_use_browser_fetch() -> bool:
     explicit = _BROWSER_FETCH_ENABLED.get()
     if explicit is not None:

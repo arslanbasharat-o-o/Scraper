@@ -112,10 +112,6 @@
 
       <div class="menu-map-options">
         <label class="toggle-field">
-          <input type="checkbox" id="visibleMode" class="toggle-cb" disabled>
-          <span class="toggle-label-text">Browser rendering (locked)</span>
-        </label>
-        <label class="toggle-field">
           <input type="checkbox" id="validateUrls" class="toggle-cb">
           <span class="toggle-label-text">Validate URLs after scrape</span>
         </label>
@@ -128,9 +124,9 @@
       <h2 class="scope-heading">Across all websites</h2>
       <div class="menu-map-stats menu-map-stats--global" id="overallStats">
         <button class="menu-stat" type="button" data-summary-action="sites"><span id="statSites">0</span><small>Sites</small></button>
-        <button class="menu-stat" type="button" data-summary-action="parents"><span id="statParents">0</span><small>Parents</small></button>
-        <button class="menu-stat" type="button" data-summary-action="subs"><span id="statSubs">0</span><small>Sub-Children</small></button>
-        <button class="menu-stat" type="button" data-summary-action="children"><span id="statChildren">0</span><small>Children</small></button>
+        <div class="menu-stat" role="status"><span id="statParents">0</span><small>Parents</small></div>
+        <div class="menu-stat" role="status"><span id="statSubs">0</span><small>Sub-Children</small></div>
+        <div class="menu-stat" role="status"><span id="statChildren">0</span><small>Children</small></div>
         <button class="menu-stat" type="button" data-summary-action="issues"><span id="statIssues">0</span><small>Issues</small></button>
       </div>
     </section>
@@ -140,7 +136,6 @@
         <div class="section-heading mb-3">
           <div>
             <h2 class="section-title">Websites</h2>
-            <p class="section-subtitle">Select a site to inspect its hierarchy.</p>
           </div>
         </div>
         <div id="siteCards" class="site-card-list" aria-busy="true"><div class="site-list-state">Loading websites...</div></div>
@@ -151,7 +146,7 @@
           <div class="menu-map-detail-head">
             <div>
               <h2 id="siteTitle" class="section-title">Select a website</h2>
-              <p id="siteSubtitle" class="section-subtitle">Run a scraper or open an existing output.</p>
+              <p id="siteSubtitle" class="section-subtitle">Choose a website to inspect its menu.</p>
             </div>
             <div id="siteBadges" class="menu-map-badges"></div>
           </div>
@@ -159,9 +154,9 @@
           <div id="siteBehavior" class="behavior-note"></div>
 
           <div class="detail-grid">
-            <button class="detail-stat" type="button" data-detail-action="parents"><span id="detailParents">0</span><small>Parent Categories</small></button>
-            <button class="detail-stat" type="button" data-detail-action="subs"><span id="detailSubs">0</span><small>Sub-Child Categories</small></button>
-            <button class="detail-stat" type="button" data-detail-action="children"><span id="detailChildren">0</span><small>Child Categories</small></button>
+            <div class="detail-stat" role="status"><span id="detailParents">0</span><small>Parent Categories</small></div>
+            <div class="detail-stat" role="status"><span id="detailSubs">0</span><small>Sub-Child Categories</small></div>
+            <div class="detail-stat" role="status"><span id="detailChildren">0</span><small>Child Categories</small></div>
             <button class="detail-stat" type="button" data-detail-action="missing"><span id="detailMissing">0</span><small>Missing URLs</small></button>
             <button class="detail-stat" type="button" data-detail-action="duplicates"><span id="detailDuplicates">0</span><small>Duplicate Rows</small></button>
             <button class="detail-stat" type="button" data-detail-action="errors"><span id="detailErrors">0</span><small>Errors</small></button>
@@ -172,7 +167,7 @@
           <div class="menu-export-strip">
             <div>
               <div class="menu-export-strip__title">Export Menu Links</div>
-              <div id="exportTargetSummary" class="menu-export-strip__meta">Download links from the selected website.</div>
+              <div id="exportTargetSummary" class="menu-export-strip__meta">Menu links ready to export.</div>
             </div>
             <div class="menu-export-strip__actions">
               <button id="exportVisibleCsvBtn" class="btn-export" type="button" disabled>Visible CSV</button>
@@ -185,7 +180,7 @@
           <div class="automation-launch-strip">
             <div>
               <div class="automation-launch-strip__title">Send Categories to Scraper</div>
-              <div id="automationTargetSummary" class="automation-launch-strip__meta">Choose the visible category links above, then start a scrape with product-detail enrichment and comparison.</div>
+              <div id="automationTargetSummary" class="automation-launch-strip__meta">Choose categories, then send them to the scraper.</div>
             </div>
             <button id="runAutomationForSiteBtn" class="btn-run" type="button" disabled><span>Scrape Visible Categories</span></button>
           </div>
@@ -210,10 +205,10 @@
 
         <section class="cy-card menu-map-panel">
           <div class="section-heading mb-3">
-            <div>
-              <h2 class="section-title">Run Status</h2>
-              <p class="section-subtitle">Active scraper progress. Finished runs are cleared automatically; expand a site for its output.</p>
-            </div>
+          <div>
+            <h2 class="section-title">Run Status</h2>
+            <p class="section-subtitle">Finished runs are cleared automatically; expand a site for its output.</p>
+          </div>
           </div>
           <div id="jobPanel" class="job-panel-empty" role="status" aria-live="polite">No menu scraper is running.</div>
         </section>

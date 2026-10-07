@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from .browser_fetcher import (
+    browser_fetch_explicitly_disabled,
     browser_fetch_requested,
     fetch_html as botasaurus_fetch_html,
     _local_browser_slot,
@@ -61,13 +62,21 @@ def is_cancellation_exception(exc: BaseException) -> bool:
 
 def browser_fallback_enabled() -> bool:
     """Return whether a failed HTTP/Scrapling request may use a browser."""
-    value = str(os.getenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "0")).strip().lower()
+    configured_value = os.getenv("SCRAPER_LOCAL_BROWSER_FALLBACK")
+    if browser_fetch_explicitly_disabled() and configured_value is None:
+        return False
+    value = str(configured_value if configured_value is not None else "1").strip().lower()
     configured = value in {"1", "true", "yes", "on"}
     return configured or should_use_browser_fetch() or browser_fetch_requested()
 
 
 def scrapling_enabled() -> bool:
     value = str(os.getenv("SCRAPER_SCRAPLING_ENABLED", "1")).strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def scrapling_cloudflare_solver_enabled() -> bool:
+    value = str(os.getenv("SCRAPER_SCRAPLING_SOLVE_CLOUDFLARE", "1")).strip().lower()
     return value not in {"0", "false", "no", "off"}
 
 
@@ -145,15 +154,14 @@ def _stealth_fetch_on_worker(url, timeout, proxy, stop_check):
     from scrapling.fetchers import StealthySession  # optional reusable API
     from .botasaurus_wrapper import resolve_chrome_executable
 
+    solve_cloudflare = scrapling_cloudflare_solver_enabled()
     kwargs = {
         "headless": True,
-        # Installed Scrapling waits for navigation, load and DOM separately.
-        # Divide the operation budget to bound their combined worst case.
-        "timeout": max(100, (float(timeout) * 1000 - 300) / 3),
+        "timeout": max(100, float(timeout) * 1000 - 300),
         "wait": 300,
         "load_dom": True,
         "network_idle": False,
-        "solve_cloudflare": False,
+        "solve_cloudflare": solve_cloudflare,
     }
     if proxy:
         kwargs["proxy"] = proxy
@@ -194,7 +202,7 @@ def _stealth_fetch_on_worker(url, timeout, proxy, stop_check):
     remaining = deadline - time.monotonic()
     if remaining <= 0.3:
         raise TimeoutError("Scrapling browser startup exhausted the fetch budget")
-    fetch_kwargs["timeout"] = max(100, (remaining * 1000 - 300) / 3)
+    fetch_kwargs["timeout"] = max(100, remaining * 1000 - 300)
     try:
         response = warmed.fetch(url, **_supported_kwargs(warmed.fetch, fetch_kwargs))
     except Exception as exc:
@@ -392,8 +400,15 @@ def fetch_with_pipeline(
             session.fetch_browser_attempted = True
             session.fetch_last_transport = "scrapling-stealth"
         try:
+            scrapling_timeout = browser_timeout
+            if scrapling_cloudflare_solver_enabled():
+                try:
+                    configured_timeout = int(os.getenv("SCRAPER_SCRAPLING_STEALTH_TIMEOUT", "60") or 60)
+                except (TypeError, ValueError):
+                    configured_timeout = 60
+                scrapling_timeout = max(60, min(120, configured_timeout))
             status, final_url, html, headers = _transport_response(
-                _scrapling_stealth(url, browser_timeout, _session_proxy(session, proxy), stop_check=check_stop)
+                _scrapling_stealth(url, scrapling_timeout, _session_proxy(session, proxy), stop_check=check_stop)
             )
             last_status = status or last_status
             blocked = is_blocked(status, html, headers)
