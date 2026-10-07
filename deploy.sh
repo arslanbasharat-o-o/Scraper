@@ -71,7 +71,7 @@ print(port)
 PY
 )"
 
-mkdir -p data/site_dbs data/browser_profiles logs storage/temp storage/exports
+mkdir -p data/site_dbs data/browser_profiles logs storage/exports
 if command -v google-chrome >/dev/null 2>&1; then
   export SCRAPER_CHROME_PATH="${SCRAPER_CHROME_PATH:-$(command -v google-chrome)}"
 elif [[ -x /opt/google/chrome/google-chrome ]]; then

@@ -8,9 +8,13 @@ Parts Extractor keeps runtime state outside version control.
 data/site_dbs/        Supplier SQLite databases
 data/browser_profiles Browser profiles for fallback scraping
 logs/                 Application logs
-storage/exports/      Generated exports
-storage/temp/         Temporary files
+storage/exports/      Local generated workbooks
+storage/image_cache/  Disposable proxied-product image cache
+storage/run_cache/    Disposable automation response cache
 ```
+
+The application creates its cache directories on startup. Cache files and
+generated workbooks are local runtime data and are excluded from version control.
 
 Back up `data/site_dbs/` before deployments, schema changes, or manual data maintenance.
 

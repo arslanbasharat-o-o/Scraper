@@ -45,7 +45,7 @@ readiness endpoint.
 - Readiness: `http://127.0.0.1:5000/readyz`
 - Liveness: `http://127.0.0.1:5000/livez`
 - SQLite data: `data/site_dbs/`
-- Exports: `storage/exports/`
+- Generated workbooks: `storage/exports/`
 
 Keep exactly one Gunicorn worker. Threads handle concurrent requests while the
 single process owns the scheduler. Back up `data/site_dbs/` before maintenance
