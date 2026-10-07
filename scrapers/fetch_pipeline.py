@@ -21,6 +21,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable, Optional
+from urllib.parse import urlparse
 
 from .browser_fetcher import (
     browser_fetch_explicitly_disabled,
@@ -111,6 +112,18 @@ def _session_proxy(session, fallback: Optional[str]) -> Optional[str]:
         if proxy:
             return str(proxy)
     return fallback
+
+
+def _last_resort_proxy_for_url(url: str) -> Optional[str]:
+    """Enable the residential proxy only for the requested final-fallback hosts."""
+    proxy = str(os.getenv("SCRAPER_LAST_RESORT_PROXY_URL") or "").strip()
+    if not proxy:
+        return None
+    host = (urlparse(url).hostname or "").lower().rstrip(".")
+    allowed = ("mobilesentrix.com", "mobilesentrix.ca", "phonelcdparts.com")
+    if any(host == domain or host.endswith(f".{domain}") for domain in allowed):
+        return proxy
+    return None
 
 
 def _supported_kwargs(callable_, kwargs: dict) -> dict:
@@ -387,15 +400,12 @@ def fetch_with_pipeline(
 
     if allow_browsers is None:
         allow_browsers = browser_fallback_enabled()
-    if not allow_browsers:
-        return None
-
     browser_timeout = max(5, min(120, int(browser_timeout or timeout)))
     # Scrapling stealth is optional. If it is not installed or cannot solve a
     # challenge, continue to the already-supported Botasaurus adapter exactly
     # once.
     check_stop()
-    if scrapling_enabled() and not direct_browser:
+    if allow_browsers and scrapling_enabled() and not direct_browser:
         if session is not None:
             session.fetch_browser_attempted = True
             session.fetch_last_transport = "scrapling-stealth"
@@ -421,22 +431,64 @@ def fetch_with_pipeline(
             abort_if_cancelled(exc)
             log.debug("[fetch] Scrapling stealth failed for %s: %s", url, exc)
 
-    check_stop()
-    if session is not None:
-        session.fetch_browser_attempted = True
-        session.fetch_last_transport = "botasaurus"
-    browser_fetcher = browser_fetch_fn or botasaurus_fetch_html
-    try:
-        result = browser_fetcher(url, **_supported_kwargs(browser_fetcher, {
-            "timeout": browser_timeout, "logger": log, "stop_check": check_stop,
-        }))
-        status = int(getattr(result, "status_code", 200) or 200)
-        final_url = getattr(result, "final_url", None) or url
-        blocked = is_blocked(status, result.html, getattr(result, "headers", {}) or {})
-        record(status, final_url, "botasaurus", blocked)
-        if _usable_response(status, result.html, blocked):
-            return PipelineFetchResult(result.html, final_url, status, "botasaurus", attempts)
-    except Exception as exc:
-        abort_if_cancelled(exc)
-        log.warning("[fetch] All transports failed for %s (last HTTP status %s): %s", url, last_status, exc)
+    if allow_browsers:
+        check_stop()
+        if session is not None:
+            session.fetch_browser_attempted = True
+            session.fetch_last_transport = "botasaurus"
+        browser_fetcher = browser_fetch_fn or botasaurus_fetch_html
+        try:
+            result = browser_fetcher(url, **_supported_kwargs(browser_fetcher, {
+                "timeout": browser_timeout, "logger": log, "stop_check": check_stop,
+            }))
+            status = int(getattr(result, "status_code", 200) or 200)
+            final_url = getattr(result, "final_url", None) or url
+            blocked = is_blocked(status, result.html, getattr(result, "headers", {}) or {})
+            record(status, final_url, "botasaurus", blocked)
+            if _usable_response(status, result.html, blocked):
+                return PipelineFetchResult(result.html, final_url, status, "botasaurus", attempts)
+        except Exception as exc:
+            abort_if_cancelled(exc)
+            log.warning("[fetch] Direct transports failed for %s (last HTTP status %s): %s", url, last_status, exc)
+
+    # The residential proxy is deliberately isolated from normal traffic. It is
+    # tried only after all direct transports, and only for MobileSentrix and
+    # PhoneLCDParts, where residential egress is an explicit recovery tactic.
+    fallback_proxy = _last_resort_proxy_for_url(url)
+    if fallback_proxy:
+        log.warning("[fetch] Direct tactics failed; trying the configured last-resort proxy for %s", url)
+        if scrapling_enabled():
+            check_stop()
+            if session is not None:
+                session.fetch_last_transport = "last-resort-proxy-scrapling-http"
+            try:
+                status, final_url, html, headers = _transport_response(
+                    _scrapling_http(url, timeout, fallback_proxy, session)
+                )
+                last_status = status or last_status
+                blocked = is_blocked(status, html, headers)
+                record(status, final_url, "last-resort-proxy-scrapling-http", blocked)
+                if _usable_response(status, html, blocked):
+                    return PipelineFetchResult(html, final_url, status, "last-resort-proxy-scrapling-http", attempts)
+            except Exception as exc:
+                abort_if_cancelled(exc)
+                log.debug("[fetch] Last-resort proxy HTTP failed for %s: %s", url, exc)
+
+            if allow_browsers:
+                check_stop()
+                if session is not None:
+                    session.fetch_browser_attempted = True
+                    session.fetch_last_transport = "last-resort-proxy-scrapling-stealth"
+                try:
+                    status, final_url, html, headers = _transport_response(
+                        _scrapling_stealth(url, browser_timeout, fallback_proxy, stop_check=check_stop)
+                    )
+                    last_status = status or last_status
+                    blocked = is_blocked(status, html, headers)
+                    record(status, final_url, "last-resort-proxy-scrapling-stealth", blocked)
+                    if _usable_response(status, html, blocked):
+                        return PipelineFetchResult(html, final_url, status, "last-resort-proxy-scrapling-stealth", attempts)
+                except Exception as exc:
+                    abort_if_cancelled(exc)
+                    log.warning("[fetch] Last-resort proxy browser failed for %s: %s", url, exc)
     return None

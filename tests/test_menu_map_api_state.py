@@ -370,3 +370,46 @@ def test_scrapling_menu_fallback_enables_cf_solver_and_extracts_menu(monkeypatch
     assert calls["timeout"] >= 60000
     assert calls["real_chrome"] is True
     assert [record.parent_name for record in records] == ["Parts"]
+
+
+def test_scrapling_menu_fallback_accepts_explicit_last_resort_proxy(monkeypatch):
+    import logging
+    import sys
+    from types import SimpleNamespace
+    from scrapers.menu_map.common import scrapling_menu_fallback
+
+    calls = {}
+    hierarchy = [{"name": "Parts", "url": "https://example.com/parts", "order": 1, "sub_children": []}]
+
+    class FakePage:
+        def locator(self, _selector):
+            return SimpleNamespace(count=lambda: 0)
+
+        def evaluate(self, _script, *_args):
+            return hierarchy
+
+    class FakeResponse:
+        def css(self, _selector):
+            return SimpleNamespace(get=lambda: "Example parts")
+
+    class FakeStealthyFetcher:
+        @staticmethod
+        def fetch(_url, **kwargs):
+            calls.update(kwargs)
+            kwargs["page_action"](FakePage())
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "scrapling.fetchers", SimpleNamespace(StealthyFetcher=FakeStealthyFetcher))
+    monkeypatch.delenv("SCRAPER_PROXY_URL", raising=False)
+    config = SiteConfig(
+        website="Example", website_url="https://example.com", output_slug="example",
+        base_url="https://example.com", parent_nav_selector="#nav", parent_item_selector="#nav > li > a",
+        mega_menu_selector="", sub_child_panel_selector="", sub_child_item_selector="",
+        active_sub_child_selector="", child_panel_selector="", child_link_selector="",
+        scroll_container_selector="", menu_close_selector="", search_selector="", mobile_menu_selector="",
+    )
+
+    scrapling_menu_fallback(config, logging.getLogger("test-scrapling-menu-proxy"), 0,
+                            "http://user:pass@proxy.example:1080")
+
+    assert calls["proxy"] == "http://user:pass@proxy.example:1080"

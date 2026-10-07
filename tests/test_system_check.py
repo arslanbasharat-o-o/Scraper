@@ -14,7 +14,8 @@ def test_mask_proxy_url():
     # With credentials
     masked = mask_proxy_url("http://john:secretpass@gw.dataimpulse.com:823")
     assert "secretpass" not in masked
-    assert "john:*****@gw.dataimpulse.com:823" in masked
+    assert "john" not in masked
+    assert "*****:*****@gw.dataimpulse.com:823" in masked
 
     # Without credentials
     masked_no_auth = mask_proxy_url("http://127.0.0.1:8080")
@@ -23,6 +24,7 @@ def test_mask_proxy_url():
 
 def test_check_proxy_disabled(monkeypatch):
     monkeypatch.delenv("SCRAPER_PROXY_URL", raising=False)
+    monkeypatch.delenv("SCRAPER_LAST_RESORT_PROXY_URL", raising=False)
     monkeypatch.delenv("HTTPS_PROXY", raising=False)
     monkeypatch.delenv("HTTP_PROXY", raising=False)
 
@@ -40,6 +42,21 @@ def test_check_proxy_configured(monkeypatch):
     assert status["host"] == "p.webshare.io"
     assert status["port"] == 80
     assert "secret123" not in status["masked_url"]
+
+
+def test_check_proxy_reports_last_resort_proxy_without_global_mode(monkeypatch):
+    monkeypatch.delenv("SCRAPER_PROXY_URL", raising=False)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("HTTP_PROXY", raising=False)
+    monkeypatch.setenv("SCRAPER_LAST_RESORT_PROXY_URL", "http://residential:secret@proxy.example:1080")
+
+    status = check_proxy()
+
+    assert status["configured"] is True
+    assert status["mode"] == "last-resort"
+    assert status["host"] == "proxy.example"
+    assert "residential" not in status["masked_url"]
+    assert "secret" not in status["masked_url"]
 
 
 def test_check_chrome_missing(monkeypatch):

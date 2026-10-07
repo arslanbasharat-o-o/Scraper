@@ -1101,6 +1101,20 @@ async def run_site(
                 )
             except Exception as exc:
                 logger.warning("Scrapling Menu Map fallback failed: %s", exc)
+            if not result.records:
+                last_resort_proxy = str(os.getenv("SCRAPER_LAST_RESORT_PROXY_URL") or "").strip()
+                if last_resort_proxy:
+                    try:
+                        logger.warning("Direct Menu Map tactics failed; trying the configured last-resort proxy")
+                        result.records = await asyncio.to_thread(
+                            scrapling_menu_fallback,
+                            config,
+                            logger,
+                            args.interaction_delay,
+                            last_resort_proxy,
+                        )
+                    except Exception as exc:
+                        logger.warning("Scrapling Menu Map proxy fallback failed: %s", exc)
 
         async def _extract() -> None:
             try:
@@ -1162,6 +1176,8 @@ async def run_site(
                         raise RuntimeError("Site returned an access verification page or no menu DOM was available.")
                 elif not args.inspect_only:
                     result.records = await adaptively_extract_menu(page, config, args, output_dir, logger, extractor)
+                    if not result.records:
+                        await try_scrapling_fallback("Browser menu extraction returned no categories")
             except Exception as exc:
                 if not result.records:
                     await try_scrapling_fallback(f"Browser extraction failed ({exc})")
@@ -1303,6 +1319,7 @@ def scrapling_menu_fallback(
     config: SiteConfig,
     logger: logging.Logger,
     interaction_delay_ms: int = 600,
+    proxy_override: str | None = None,
 ) -> list[CategoryRecord]:
     """Retry a failed menu page in Scrapling's stealth browser, then extract its live DOM."""
     from scrapling.fetchers import StealthyFetcher
@@ -1340,7 +1357,7 @@ def scrapling_menu_fallback(
     solve_cloudflare = str(os.getenv("SCRAPER_SCRAPLING_SOLVE_CLOUDFLARE", "1")).strip().lower() not in {
         "0", "false", "no", "off",
     }
-    proxy = (
+    proxy = proxy_override if proxy_override is not None else (
         os.getenv("SCRAPER_PROXY_URL")
         or os.getenv("HTTPS_PROXY")
         or os.getenv("HTTP_PROXY")

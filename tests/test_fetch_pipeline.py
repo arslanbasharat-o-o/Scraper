@@ -152,6 +152,69 @@ def test_pipeline_rejects_error_status_from_stealth_and_runs_final_browser_once(
     assert calls == ["scrapling-http", "stealth", "botasaurus"]
 
 
+def test_last_resort_proxy_runs_after_direct_tactics_only_for_allowed_suppliers(monkeypatch):
+    proxy = "http://user:pass@proxy.example:1080"
+    url = "https://www.mobilesentrix.com/product"
+    session = FakeSession([FakeResponse(403, "denied", url)])
+    calls = []
+    monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
+    monkeypatch.setenv("SCRAPER_LAST_RESORT_PROXY_URL", proxy)
+    monkeypatch.delenv("SCRAPER_PROXY_URL", raising=False)
+    monkeypatch.setattr(fetch_pipeline, "scrapling_enabled", lambda: True)
+
+    def fake_scrapling(_url, _timeout, proxy_arg, *_args, **_kwargs):
+        calls.append(("scrapling", proxy_arg))
+        return (403, _url, "denied") if proxy_arg is None else (200, _url, "<html>proxy recovered</html>")
+
+    monkeypatch.setattr(fetch_pipeline, "_scrapling_http", fake_scrapling)
+    monkeypatch.setattr(fetch_pipeline, "_scrapling_stealth", lambda _url, _timeout, proxy_arg, **_kwargs: calls.append(("stealth", proxy_arg)) or (403, _url, "denied"))
+    monkeypatch.setattr(fetch_pipeline, "botasaurus_fetch_html", lambda _url, **_kwargs: calls.append(("botasaurus", None)) or SimpleNamespace(final_url=_url, html="denied", status_code=403))
+
+    result = fetch_pipeline.fetch_with_pipeline(session, url, http_attempts=1)
+
+    assert result is not None
+    assert result.transport == "last-resort-proxy-scrapling-http"
+    assert calls == [("scrapling", None), ("stealth", None), ("botasaurus", None), ("scrapling", proxy)]
+
+
+def test_last_resort_proxy_is_scoped_to_mobilesentrix_and_phonelcdparts(monkeypatch):
+    proxy = "http://user:pass@proxy.example:1080"
+    monkeypatch.setenv("SCRAPER_LAST_RESORT_PROXY_URL", proxy)
+
+    assert fetch_pipeline._last_resort_proxy_for_url("https://ca.mobilesentrix.com/x") == proxy
+    assert fetch_pipeline._last_resort_proxy_for_url("https://www.phonelcdparts.com/x") == proxy
+    assert fetch_pipeline._last_resort_proxy_for_url("https://parts4cells.com/x") is None
+
+
+def test_last_resort_proxy_uses_stealth_after_its_http_request_is_blocked(monkeypatch):
+    proxy = "http://user:pass@proxy.example:1080"
+    url = "https://www.phonelcdparts.com/product"
+    calls = []
+    session = FakeSession([FakeResponse(403, "denied", url)])
+    monkeypatch.setenv("SCRAPER_LOCAL_BROWSER_FALLBACK", "1")
+    monkeypatch.setenv("SCRAPER_LAST_RESORT_PROXY_URL", proxy)
+    monkeypatch.delenv("SCRAPER_PROXY_URL", raising=False)
+    monkeypatch.setattr(fetch_pipeline, "scrapling_enabled", lambda: True)
+
+    def fake_http(_url, _timeout, proxy_arg, *_args, **_kwargs):
+        calls.append(("http", proxy_arg))
+        return (403, _url, "denied")
+
+    def fake_stealth(_url, _timeout, proxy_arg, **_kwargs):
+        calls.append(("stealth", proxy_arg))
+        return (200, _url, "<html>recovered</html>") if proxy_arg == proxy else (403, _url, "denied")
+
+    monkeypatch.setattr(fetch_pipeline, "_scrapling_http", fake_http)
+    monkeypatch.setattr(fetch_pipeline, "_scrapling_stealth", fake_stealth)
+    monkeypatch.setattr(fetch_pipeline, "botasaurus_fetch_html", lambda _url, **_kwargs: SimpleNamespace(final_url=_url, html="denied", status_code=403))
+
+    result = fetch_pipeline.fetch_with_pipeline(session, url, http_attempts=1)
+
+    assert result is not None
+    assert result.transport == "last-resort-proxy-scrapling-stealth"
+    assert calls == [("http", None), ("stealth", None), ("http", proxy), ("stealth", proxy)]
+
+
 @pytest.mark.parametrize("status", [404, 410])
 def test_terminal_http_status_preserved_without_fallback(monkeypatch, status):
     session = FakeSession([FakeResponse(status, "gone", "https://supplier.test/product")])

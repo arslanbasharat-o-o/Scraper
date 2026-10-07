@@ -26,10 +26,8 @@ def mask_proxy_url(proxy_url: str | None) -> str:
     try:
         parsed = urlparse(proxy_url.strip())
         if not parsed.scheme or not parsed.netloc:
-            return proxy_url[:10] + "..."
-        auth = ""
-        if parsed.username:
-            auth = f"{parsed.username}:*****@"
+            return "configured (credentials hidden)"
+        auth = "*****:*****@" if parsed.username or parsed.password else ""
         host_port = parsed.hostname or ""
         if parsed.port:
             host_port += f":{parsed.port}"
@@ -114,6 +112,7 @@ def check_chrome() -> Dict[str, Any]:
 
 def check_proxy() -> Dict[str, Any]:
     """Inspect proxy environment configuration."""
+    proxy_mode = "global"
     raw_proxy = (
         os.getenv("SCRAPER_PROXY_URL")
         or os.getenv("HTTPS_PROXY")
@@ -122,6 +121,10 @@ def check_proxy() -> Dict[str, Any]:
         or os.getenv("http_proxy")
         or ""
     ).strip()
+    if not raw_proxy:
+        raw_proxy = str(os.getenv("SCRAPER_LAST_RESORT_PROXY_URL") or "").strip()
+        if raw_proxy:
+            proxy_mode = "last-resort"
 
     if not raw_proxy:
         return {
@@ -140,7 +143,7 @@ def check_proxy() -> Dict[str, Any]:
             return {
                 "configured": False,
                 "status": "malformed",
-                "masked_url": raw_proxy[:15],
+                "masked_url": mask_proxy_url(raw_proxy),
                 "error": "Proxy URL must include scheme and host, e.g. http://user:pass@host:port",
             }
         return {
@@ -150,6 +153,8 @@ def check_proxy() -> Dict[str, Any]:
             "scheme": parsed.scheme,
             "host": parsed.hostname,
             "port": parsed.port,
+            "mode": proxy_mode,
+            "note": "Only used after direct fetch tactics fail for Menu Map, MobileSentrix, and PhoneLCDParts." if proxy_mode == "last-resort" else None,
             "error": None,
         }
     except Exception as exc:

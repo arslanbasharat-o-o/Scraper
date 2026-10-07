@@ -1,5 +1,11 @@
 # Changelog
 
+## [8.5.13] - 2026-10-07
+- Add a credentialed residential proxy as a last-resort recovery path after direct HTTP, Scrapling, and browser tactics fail.
+- Scope last-resort proxy requests to Menu Map recovery plus MobileSentrix and PhoneLCDParts; normal supplier traffic remains direct.
+- Retry empty Menu Map extractions through Scrapling and then the last-resort proxy, and report last-resort proxy configuration safely in readiness checks.
+- Add regression tests for fallback order, supplier scoping, Menu Map proxy forwarding, and masked proxy status.
+
 ## [8.5.12] - 2026-10-07
 - Ensure supplier scrapers export the product SKU instead of unverified catalog/cart identifiers from listing attributes or guessed URL slugs.
 - Prefer visible and supplier-specific SKU fields across MobileSentrix, Parts4Cells, PhoneLCDParts, TXParts, and XCellParts; keep SKU empty when only an unverified listing identifier is available.
