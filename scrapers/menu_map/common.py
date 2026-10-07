@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import csv
 import html
 import json
@@ -655,6 +656,9 @@ def is_valid_nonempty_output(categories_path: Path) -> bool:
 
 def restore_from_seed_output(slug: str, output_dir: Path, logger: logging.Logger) -> bool:
     """Restores baseline seed files to output_dir if present in data/menu_map_seeds."""
+    if (output_dir / '.menu-map-seed-disabled').exists():
+        logger.info("Bundled baseline restore is disabled for %s after Clear and Run", slug)
+        return False
     seed_dir = Path(__file__).resolve().parent.parent.parent / "data" / "menu_map_seeds" / slug
     if not seed_dir.exists() or not is_valid_nonempty_output(seed_dir / "categories.json"):
         return False
@@ -742,6 +746,8 @@ def export_outputs(
         for name, df in sheets.items():
             df.to_excel(writer, sheet_name=name[:31], index=False)
     format_workbook(xlsx)
+    if records:
+        (output_dir / '.menu-map-seed-disabled').unlink(missing_ok=True)
 
 
 def format_workbook(path: Path) -> None:
@@ -758,7 +764,9 @@ def format_workbook(path: Path) -> None:
         headers = {cell.value: i + 1 for i, cell in enumerate(ws[1])}
         for row in ws.iter_rows(min_row=2):
             for cell in row:
-                cell.alignment = cell.alignment.copy(wrap_text=True)
+                alignment = copy.copy(cell.alignment)
+                alignment.wrap_text = True
+                cell.alignment = alignment
                 if isinstance(cell.value, str) and cell.value.startswith(("http://", "https://")):
                     cell.hyperlink = cell.value
                     cell.style = "Hyperlink"

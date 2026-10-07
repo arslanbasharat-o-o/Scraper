@@ -3,6 +3,7 @@ import json
 
 import app as app_module
 from scripts.run_menu_map_scrapers import site_result_failed
+from scrapers.menu_map.common import CategoryRecord, ScrapeResult, SiteConfig, export_outputs
 
 
 def test_menu_map_site_reports_invalid_categories_json(tmp_path, monkeypatch):
@@ -94,8 +95,30 @@ def test_menu_map_clear_output_removes_selected_site_only(tmp_path, monkeypatch)
 
     assert response.status_code == 200
     assert response.get_json()["cleared"] == ["xcellparts"]
-    assert not xcell_root.exists()
+    assert list(path.name for path in xcell_root.iterdir()) == [".menu-map-seed-disabled"]
     assert parts_root.exists()
+
+
+def test_clear_and_run_disables_bundled_seed_until_live_output_is_written(tmp_path, monkeypatch):
+    output_root = tmp_path / "output"
+    monkeypatch.setattr(app_module, "get_menu_map_output_root", lambda: output_root)
+
+    response = app_module.app.test_client().post(
+        "/api/menu-map/output/clear",
+        json={"sites": ["phonelcdparts"]},
+    )
+
+    marker = output_root / "phonelcdparts" / ".menu-map-seed-disabled"
+    assert response.status_code == 200
+    assert marker.exists()
+    assert app_module.ensure_menu_map_seeded("phonelcdparts", marker.parent) is False
+    assert not (marker.parent / "categories.json").exists()
+
+
+def test_menu_map_subprocess_errors_mark_job_failed_despite_zero_exit():
+    assert app_module.menu_map_subprocess_failed(0, "Errors: 1\n") is True
+    assert app_module.menu_map_subprocess_failed(0, "Errors: 0\n") is False
+    assert app_module.menu_map_subprocess_failed(1, "Errors: 0\n") is True
 
 
 def test_menu_map_clear_output_rejects_active_site(tmp_path, monkeypatch):
@@ -247,3 +270,48 @@ def test_menu_map_restore_from_seed_output(tmp_path):
     restored = restore_from_seed_output("phonelcdparts", test_dir, logger)
     assert restored is True
     assert is_valid_nonempty_output(test_dir / "categories.json")
+
+    cleared_dir = tmp_path / "cleared-phonelcdparts"
+    cleared_dir.mkdir()
+    (cleared_dir / ".menu-map-seed-disabled").touch()
+    assert restore_from_seed_output("phonelcdparts", cleared_dir, logger) is False
+    assert not (cleared_dir / "categories.json").exists()
+
+
+def test_empty_output_keeps_seed_suppressed_until_new_records_exist(tmp_path):
+    site_dir = tmp_path / "phonelcdparts"
+    site_dir.mkdir()
+    marker = site_dir / ".menu-map-seed-disabled"
+    marker.touch()
+    config = SiteConfig(
+        website="Example",
+        website_url="https://example.com",
+        output_slug="example",
+        base_url="https://example.com",
+        parent_nav_selector="",
+        parent_item_selector="",
+        mega_menu_selector="",
+        sub_child_panel_selector="",
+        sub_child_item_selector="",
+        active_sub_child_selector="",
+        child_panel_selector="",
+        child_link_selector="",
+        scroll_container_selector="",
+        menu_close_selector="",
+        search_selector="",
+        mobile_menu_selector="",
+    )
+
+    export_outputs(config, site_dir, ScrapeResult(), headless=True, duplicates=[])
+    assert marker.exists()
+
+    record = CategoryRecord(
+        website="Example",
+        website_url="https://example.com",
+        parent_name="Parts",
+        parent_url="https://example.com/parts",
+        parent_display_order=1,
+        parent_open_method="click",
+    )
+    export_outputs(config, site_dir, ScrapeResult(records=[record]), headless=True, duplicates=[])
+    assert not marker.exists()

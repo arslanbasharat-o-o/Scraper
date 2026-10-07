@@ -5029,6 +5029,8 @@ def ensure_menu_map_seeded(slug: str, output_dir: Path | None = None) -> bool:
         return False
     if output_dir is None:
         output_dir = get_menu_map_output_root() / slug
+    if (output_dir / '.menu-map-seed-disabled').exists():
+        return False
     categories_json = output_dir / 'categories.json'
 
     if categories_json.exists():
@@ -5353,8 +5355,12 @@ def api_menu_map_output_clear():
             return jsonify({'error': 'Invalid menu-map output path'}), 400
         if not site_dir.exists():
             missing.append(site)
-            continue
-        shutil.rmtree(site_dir)
+        else:
+            shutil.rmtree(site_dir)
+        site_dir.mkdir(parents=True, exist_ok=True)
+        (site_dir / '.menu-map-seed-disabled').write_text(
+            'Bundled baseline disabled by explicit Clear and Run.\n', encoding='utf-8'
+        )
         cleared.append(site)
 
     return jsonify({
@@ -5439,6 +5445,16 @@ def api_menu_map_links_export():
     )
 
 
+def menu_map_extraction_error_count(stdout: str) -> int:
+    error_match = re.search(r'^Errors:\s*(\d+)\s*$', stdout or '', re.MULTILINE)
+    return int(error_match.group(1)) if error_match else 0
+
+
+def menu_map_subprocess_failed(returncode: int, stdout: str) -> bool:
+    """Detect extraction failures even when a site scraper exits with status 0."""
+    return returncode != 0 or menu_map_extraction_error_count(stdout) > 0
+
+
 def run_menu_map_job(job_id: str, sites: List[str], options: Dict[str, object]) -> None:
     with MENU_MAP_JOBS_LOCK:
         job = MENU_MAP_JOBS[job_id]
@@ -5488,10 +5504,12 @@ def run_menu_map_job(job_id: str, sites: List[str], options: Dict[str, object]) 
                 'stdout': completed.stdout[-4000:],
                 'stderr': completed.stderr[-4000:],
             }
+            event['extraction_errors'] = menu_map_extraction_error_count(completed.stdout)
+            site_failed = menu_map_subprocess_failed(completed.returncode, completed.stdout)
             with MENU_MAP_JOBS_LOCK:
                 job = MENU_MAP_JOBS[job_id]
                 job['events'].append(event)
-                job['site_status'][site] = 'success' if completed.returncode == 0 else 'failed'
+                job['site_status'][site] = 'failed' if site_failed else 'success'
         except Exception as exc:
             with MENU_MAP_JOBS_LOCK:
                 job = MENU_MAP_JOBS[job_id]
