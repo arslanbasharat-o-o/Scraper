@@ -1,25 +1,26 @@
 # Parts Extractor
 
-Parts Extractor is a production-oriented catalog scraper for eight supplier
-catalogs. It discovers categories, collects product details, compares each run
-with saved data, and repeats the workflow on a schedule.
+![Project overview](docs/assets/github-header.svg)
 
-## Features
+Supplier catalog extraction, product enrichment, and price-history tracking for repair-parts operations.
 
-- Supplier scrapers for MobileSentrix (US and Canada), XCell Parts, TX Parts
-  (US and Canada), Parts4Cells, Phone LCD Parts, and GadgetFix.
-- Category scraping and product detail enrichment, including SKU and
-  description data.
-- Current-to-previous run comparison with SQLite-backed history.
-- Scheduled, resumable automation with durable checkpoints.
-- A bounded HTTP-first fetch pipeline using Scrapling and browser fallbacks.
+[Latest release](https://github.com/arslanbasharat-o-o/Scraper/releases/latest) · [Deployment](DEPLOYMENT.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
-## Production Deployment
+## What it does
 
-The supported deployment target is Ubuntu/Linux with systemd. The deployment
-script prepares the virtual environment, installs dependencies, creates a
-secure `.env` from the 40 GB server template when needed, runs preflight checks,
-and installs or restarts a single-worker `scraper.service`.
+- Collects categories and product details from eight supplier catalogs.
+- Supports MobileSentrix US/Canada, XCell Parts, TX Parts US/Canada, Parts4Cells, Phone LCD Parts, and GadgetFix.
+- Compares extraction runs with saved data and SQLite-backed history.
+- Runs scheduled jobs with resumable checkpoints.
+- Uses bounded HTTP-first fetching with browser fallbacks.
+
+## Stack
+
+Python · Flask · SQLite · Scrapling · Browser automation · Linux/systemd
+
+## Get started
+
+The supported production target is Ubuntu/Linux with systemd. Review [DEPLOYMENT.md](DEPLOYMENT.md) before installing.
 
 ```bash
 git clone https://github.com/arslanbasharat-o-o/Scraper.git
@@ -27,40 +28,33 @@ cd Scraper
 bash deploy.sh
 ```
 
-Review `.env` and configure supplier credentials and a proxy before running
-production scrape jobs. See [DEPLOYMENT.md](DEPLOYMENT.md) for prerequisites,
-updates, and server operations.
+The deployment script prepares the Python environment, checks prerequisites, and installs or restarts `scraper.service`. Configure supplier credentials and proxies in the local `.env` file before running extraction jobs.
 
-## Configuration
+[`.env.server-40gb.example`](.env.server-40gb.example) documents the server configuration. Keep populated environment files, catalog credentials, and runtime data outside Git.
 
-The 40 GB KVM example is [`.env.server-40gb.example`](.env.server-40gb.example).
-Copy it to `.env` only when configuring manually; never commit real credentials
-or secrets. See [SECURITY.md](SECURITY.md) before exposing the dashboard.
+## Project map
 
-## Project Layout
+| Path | Purpose |
+| :--- | :--- |
+| `app.py` | Dashboard and request handling |
+| `automation_service.py` | Scheduled extraction and recovery |
+| `database.py` | Persistence and history |
+| `scrapers/` | Supplier integrations |
+| `data/menu_map_seeds/` | Checked-in category baselines |
+| `scripts/` | Operational tooling and diagnostics |
+| `tests/` | Automated checks |
 
-```text
-.
-├── app.py
-├── automation_service.py
-├── database.py
-├── deploy.sh
-├── data/menu_map_seeds/   # checked-in supplier category baselines
-├── docs/
-├── scrapers/
-├── scripts/               # deployment operations and diagnostics
-├── static/
-├── templates/
-└── tests/
-```
-
-## Validation
+## Validate
 
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m py_compile app.py automation_service.py database.py scrapers/*.py
 pytest -q
 ```
+
+## Releases
+
+[`VERSION`](VERSION) records the source version. Release notes are in [CHANGELOG.md](CHANGELOG.md); use [the latest published release](https://github.com/arslanbasharat-o-o/Scraper/releases/latest) for a tagged checkout.
 
 ## License
 
